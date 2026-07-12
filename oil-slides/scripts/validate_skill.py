@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from html.parser import HTMLParser
 from pathlib import Path
 
 from background_presets import BACKGROUND_PRESETS, template_background
@@ -14,6 +15,26 @@ from outline_schema import SHARED_SLIDE_FIELDS, TEMPLATE_CONTENT_HELP, TEMPLATE_
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES = ROOT / "assets" / "templates"
 SKILL = ROOT / "SKILL.md"
+
+
+class TemplateTextCollector(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.ignored = 0
+        self.values: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in {"style", "script", "title"}:
+            self.ignored += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in {"style", "script", "title"} and self.ignored:
+            self.ignored -= 1
+
+    def handle_data(self, data: str) -> None:
+        value = " ".join(data.split())
+        if value and not self.ignored:
+            self.values.append(value)
 
 
 def validate_skill() -> None:
@@ -65,6 +86,29 @@ def validate_skill() -> None:
     for path in sorted(TEMPLATES.glob("*.html")):
         text = path.read_text(encoding="utf-8")
         contract = COMPONENT_CONTRACTS.get(path.stem)
+        if "placeholder" in text.lower():
+            errors.append(f"{path.name}: bundled templates must not contain visible placeholder visuals")
+        collector = TemplateTextCollector()
+        collector.feed(text)
+        structural_text = {"__TITLE__", *(f"{index:02d}" for index in range(1, 9)), "→", "←", "↓"}
+        seeded_text = [value for value in collector.values if value not in structural_text]
+        if seeded_text:
+            errors.append(f"{path.name}: bundled template seeds visible content: {seeded_text[0]}")
+        fragment_match = re.search(r"<!--\s*OIL-SLIDE:START\s*-->(.*?)<!--\s*OIL-SLIDE:END\s*-->", text, re.I | re.S)
+        fragment = fragment_match.group(1) if fragment_match else ""
+        for tag_name in ("h2", "p", "button"):
+            for body in re.findall(rf"<{tag_name}\b[^>]*>(.*?)</{tag_name}>", fragment, re.I | re.S):
+                if re.sub(r"<[^>]+>", "", body).strip():
+                    errors.append(f"{path.name}: bundled templates must not contain example copy in <{tag_name}>")
+                    break
+        for class_name in ("item", "outcome", "symbol"):
+            for body in re.findall(rf'<div\b[^>]*class="[^"]*\b{class_name}\b[^"]*"[^>]*>([^<]*)</div>', fragment, re.I | re.S):
+                if body.strip():
+                    errors.append(f"{path.name}: bundled templates must not seed example content in .{class_name}")
+                    break
+        for forbidden in ('class="ghost"', 'class="bar"', "__INDEX__"):
+            if forbidden in text:
+                errors.append(f"{path.name}: template-owned decorative or fake-data element is forbidden: {forbidden}")
         surface_tags = re.findall(r'<[^>]+class="[^"]*\boil-surface\b[^"]*"[^>]*>', text, re.I)
         for tag in surface_tags:
             tone = re.search(r'data-tone=["\']([^"\']+)["\']', tag, re.I)
@@ -121,6 +165,9 @@ def validate_skill() -> None:
 
     runtime_css = (ROOT / "assets/runtime/deck.css").read_text(encoding="utf-8")
     compact_runtime = re.sub(r"\s+", "", runtime_css)
+    for obsolete in ("oil-bleed-art", "oil-browser-mock", "oil-photo-placeholder"):
+        if obsolete in runtime_css:
+            errors.append(f"runtime must not retain template stand-in visual: {obsolete}")
     for token in ("--slide-safe-x", "--slide-safe-y", "--slide-grid-gap", ".oil-grid"):
         if token not in runtime_css:
             errors.append(f"runtime grid system missing {token}")

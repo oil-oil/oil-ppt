@@ -232,6 +232,12 @@ def build(project: Path) -> str:
         ids.add(slide_id)
         title = html.unescape(SLIDE_TITLE.search(fragment).group(1)).strip()
         planned = outline_slides[slide_index]
+        planned_image = planned.get("image") or planned.get("media") or planned.get("artifact_image")
+        if planned_image and not re.search(r"<img\b", fragment, re.I):
+            raise SystemExit(
+                f"Required media was not rendered in {relative}. "
+                "Return to the confirmed outline and regenerate the slide."
+            )
         if slide_id != planned["id"] or title != planned["title"].strip():
             raise SystemExit(
                 f"Outline/deck mismatch at slide {slide_index + 1}: "

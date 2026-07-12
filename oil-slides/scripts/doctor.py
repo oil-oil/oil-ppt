@@ -50,7 +50,7 @@ def smoke_slides() -> list[dict]:
         {"id": "recap", "title": "三条原则支撑一个结论", "template": "recap", "variant": "thesis-left", "decor": "dots", "content": "最后回到一个清楚的判断", "cards": cards},
         {"id": "tabs", "title": "同一对象的两个视角", "template": "tabs", "variant": "default", "decor": "halo", "sides": [{"title": "视角 A", "body": "从使用者任务理解界面"}, {"title": "视角 B", "body": "从系统实现理解界面"}]},
         {"id": "converge", "title": "两组输入汇聚为结果", "template": "converge", "variant": "default", "decor": "none", "groups": [{"title": "内容输入", "items": ["明确目标", "整理材料"]}, {"title": "设计输入", "items": ["选择组件", "准备视觉"]}], "outcome": "共同形成可交付的演示"},
-        {"id": "editorial", "title": "展陈式页面保留编辑感", "template": "editorial-canvas", "variant": "default", "decor": "none", "content": "把材料、局部和批注放在同一个画布中"},
+        {"id": "editorial", "title": "展陈式页面保留编辑感", "template": "editorial-canvas", "variant": "default", "decor": "none", "content": "把材料、局部和批注放在同一个画布中", "image": image, "media_frame": "content"},
         {"id": "end", "title": "稳定的事情交给程序", "template": "end", "variant": "line", "decor": "none"},
     ]
 

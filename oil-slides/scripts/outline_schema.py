@@ -35,7 +35,7 @@ TEMPLATE_CONTENT_HELP = {
     "metric": "content + metric.value + metric.unit + metric.caption",
     "recap": "content + cards[3] with title + body",
     "converge": "groups[2], each with title + items[2], plus outcome",
-    "editorial-canvas": "content; image optional",
+    "editorial-canvas": "content + image",
     "bleed-split": "content + image",
     "browser-showcase": "content + image",
     "diagonal-split": "content + image",
@@ -46,7 +46,7 @@ TEMPLATE_CONTENT_HELP = {
 
 MEDIA_TEMPLATES = {
     "bleed-split", "browser-showcase", "diagonal-split", "photo-gradient",
-    "photo-split", "split-visual",
+    "photo-split", "split-visual", "editorial-canvas",
 }
 
 SHARED_SLIDE_FIELDS = {
@@ -174,10 +174,6 @@ def validate_slide_content(slide: dict, index: int) -> None:
             values = group.get("items") if isinstance(group, dict) else None
             if not _label(group) or not isinstance(values, list) or len(values) != 2 or any(not _text(v) for v in values):
                 raise SystemExit(f"Outline slide {index} groups[{group_index}] requires title and exactly 2 items.")
-    elif template == "editorial-canvas":
-        _require_content(slide, index)
-
-
 def validate_outline(data: dict, templates_dir: Path) -> list[dict]:
     if not _text(data.get("title")):
         raise SystemExit("Outline requires a title.")
