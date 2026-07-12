@@ -5,9 +5,10 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from background_presets import BACKGROUND_PRESETS, template_background
 from component_contracts import COMPONENT_CONTRACTS, COMPONENT_QUALITY
 from fill_slots import FILLERS
-from outline_schema import TEMPLATE_CONTENT_HELP, TEMPLATE_FAMILIES
+from outline_schema import SHARED_SLIDE_FIELDS, TEMPLATE_CONTENT_HELP, TEMPLATE_FAMILIES
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -24,6 +25,7 @@ def validate_skill() -> None:
         "scripts/init_deck.py",
         "scripts/add_slide.py",
         "scripts/build_deck.py",
+        "scripts/background_presets.py",
         "scripts/doctor.py",
         "scripts/cdp_validate.py",
         "scripts/design_quality.py",
@@ -63,6 +65,11 @@ def validate_skill() -> None:
     for path in sorted(TEMPLATES.glob("*.html")):
         text = path.read_text(encoding="utf-8")
         contract = COMPONENT_CONTRACTS.get(path.stem)
+        surface_tags = re.findall(r'<[^>]+class="[^"]*\boil-surface\b[^"]*"[^>]*>', text, re.I)
+        for tag in surface_tags:
+            tone = re.search(r'data-tone=["\']([^"\']+)["\']', tag, re.I)
+            if not tone or tone.group(1) not in {"neutral", "soft", "accent"}:
+                errors.append(f"{path.name}: every oil-surface container must choose neutral, soft or accent tone")
         if contract:
             if not isinstance(contract.get("use_when"), str) or not contract["use_when"].strip():
                 errors.append(f"{path.name}: contract requires use_when")
@@ -105,16 +112,36 @@ def validate_skill() -> None:
             errors.append(f"{source.relative_to(ROOT)} hardcodes an installation root; use paths relative to SKILL.md")
     if "scripts/oil-slides" not in SKILL.read_text(encoding="utf-8"):
         errors.append("SKILL.md must declare scripts/oil-slides relative to its own directory")
+    highlight = SHARED_SLIDE_FIELDS.get("highlight")
+    if not isinstance(highlight, dict) or highlight.get("required") is not False or "title" not in str(highlight.get("rule")):
+        errors.append("contract must expose optional highlight as an exact phrase inside title")
+    background = SHARED_SLIDE_FIELDS.get("background")
+    if not isinstance(background, dict) or set(background.get("allowed") or ()) != set(BACKGROUND_PRESETS):
+        errors.append("contract must expose every runtime background preset")
 
     runtime_css = (ROOT / "assets/runtime/deck.css").read_text(encoding="utf-8")
     compact_runtime = re.sub(r"\s+", "", runtime_css)
     for token in ("--slide-safe-x", "--slide-safe-y", "--slide-grid-gap", ".oil-grid"):
         if token not in runtime_css:
             errors.append(f"runtime grid system missing {token}")
+    if ".hl" not in runtime_css or "--accent-mark" not in runtime_css:
+        errors.append("runtime must retain the program-rendered marker highlight")
+    if '.oil-surface[data-tone]::before' not in runtime_css:
+        errors.append("runtime must own automatic surface texture geometry")
+    for tone in ("neutral", "soft", "accent"):
+        if f'.oil-surface[data-tone="{tone}"]::before' not in runtime_css:
+            errors.append(f"runtime surface tone {tone} must include an automatic texture treatment")
+    for background_name in BACKGROUND_PRESETS:
+        if f'data-bg="{background_name}"' not in runtime_css:
+            errors.append(f"runtime background preset missing selector for {background_name}")
     if "repeat(12,minmax(0,1fr))" not in compact_runtime:
         errors.append("runtime grid system must use twelve minmax(0,1fr) tracks")
     for path in sorted(TEMPLATES.glob("*.html")):
         text = path.read_text(encoding="utf-8")
+        if len(re.findall(r'data-bg=["\'][^"\']+["\']', text)) != 1:
+            errors.append(f"{path.name}: template must expose exactly one data-bg")
+        elif template_background(path.stem) not in BACKGROUND_PRESETS:
+            errors.append(f"{path.name}: template background is not registered")
         if re.search(r"\.slide-safe[^\{]*\{[^\}]*height\s*:\s*100%", text, re.S):
             errors.append(f"{path.name}: slide-safe must not override inset with height:100%")
 

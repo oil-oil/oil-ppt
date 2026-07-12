@@ -8,6 +8,7 @@ import json
 import re
 from pathlib import Path
 
+from background_presets import effective_background
 from icon_registry import CONNECTOR_ICON, icon_svg_markup
 
 
@@ -343,6 +344,15 @@ def fill_slide_file(path: Path, slide: dict) -> bool:
     if not match:
         raise SystemExit(f"Slide file is missing OIL-SLIDE markers: {path}")
     fragment = match.group(1)
+    background = effective_background(slide)
+    fragment, count = re.subn(
+        r'(data-bg=["\'])[^"\']+(["\'])',
+        rf'\g<1>{background}\g<2>',
+        fragment,
+        count=1,
+    )
+    if count != 1:
+        raise SystemExit(f"Template {template} does not expose data-bg.")
     filler = FILLERS.get(template)
     if filler is None:
         raise SystemExit(f"No content filler registered for template: {template}")

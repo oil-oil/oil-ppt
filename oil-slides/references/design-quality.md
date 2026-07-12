@@ -34,11 +34,11 @@
 
 一张视觉只允许一个主要 frame owner。
 
-- `frame_owner: template`：模板负责圆角、阴影、浏览器壳或设备壳；素材必须是 `media_frame: content`，不再画外框。模板也不得对整张媒体元素追加 `drop-shadow`，否则不透明画布会形成嵌套阴影。
+- `frame_owner: template`：模板负责圆角、边框、浏览器壳或设备壳；素材必须是 `media_frame: content`，不再画外框。
 - `frame_owner: media`：素材本身负责边界或出血；模板不再包卡片壳。
 - `media_frame: self-framed` 只用于素材的外框本身就是证据或内容的情况。
 
-阴影只表达一层真实层级。不要让模板容器、素材画布和素材内部卡片同时使用同强度阴影。
+组件、浏览器壳、卡片、面板和程序化 UI 一律使用扁平样式，不使用 `box-shadow`、`drop-shadow` 或 SVG 阴影滤镜。层级只通过底色、边框、留白、重叠与比例表达。插画内部的墨水明暗不属于组件阴影。
 
 ## 预览前审计
 

@@ -9,6 +9,9 @@ import re
 import webbrowser
 from pathlib import Path
 
+from background_presets import effective_background
+from component_contracts import quality_for
+from design_quality import audit_summary
 from fill_slots import FILLERS
 from outline_schema import validate_outline
 from palette_tokens import PALETTES, canonical_name, normalize_palette
@@ -77,6 +80,15 @@ def prepared_slide(slide: dict, index: int) -> tuple[str, str]:
         additions.append(f' data-component-decor="{html.escape(slide["decor"], quote=True)}"')
     if additions:
         fragment = fragment[:match.end() - 1] + "".join(additions) + fragment[match.end() - 1:]
+    background = effective_background(slide)
+    fragment, count = re.subn(
+        r'(data-bg=["\'])[^"\']+(["\'])',
+        rf'\g<1>{html.escape(background, quote=True)}\g<2>',
+        fragment,
+        count=1,
+    )
+    if count != 1:
+        raise SystemExit(f"Template {slide['template']} does not expose data-bg.")
     filler = FILLERS[slide["template"]]
     fragment = filler(fragment, slide)
     fragment = fragment.replace('src="../', 'src="')
@@ -124,6 +136,65 @@ def palette_controls(data: dict) -> str:
     )
 
 
+def rhythm_panel(data: dict, slides: list[dict]) -> str:
+    background_codes = {
+        "grid-fade": "GF", "grid-wide": "GW", "clean-halo": "CH", "paper-wash": "PW",
+        "soft-spotlight": "SS", "mist-grid": "MG", "section-glow": "SG", "none": "—",
+    }
+    silhouette_codes = {
+        "bleed": "BL", "browser": "BR", "canvas": "CV", "card-grid": "CG", "diagram": "DG",
+        "editorial-list": "EL", "focal": "FC", "metric": "MT", "rail": "RL", "split": "SP",
+        "step-grid": "ST", "timeline": "TL", "two-panel": "TP",
+    }
+
+    def cells(kind: str) -> str:
+        items = []
+        for index, slide in enumerate(slides, start=1):
+            background = effective_background(slide)
+            silhouette = quality_for(slide["template"])["silhouette"]
+            if kind == "background":
+                value = background_codes[background]
+                title = background
+                class_name = f"bg-{background}"
+            elif kind == "silhouette":
+                value = silhouette_codes.get(silhouette, silhouette[:2].upper())
+                title = silhouette
+                class_name = ""
+            else:
+                value = "●" if slide.get("highlight") else "·"
+                title = slide.get("highlight") or "无标题划线强调"
+                class_name = "is-highlight" if slide.get("highlight") else ""
+            items.append(
+                f'<span class="rhythm-cell {class_name}" title="{index:02d} · {esc(slide["title"])} · {esc(title)}">'
+                f'<small>{index:02d}</small><i>{esc(value)}</i></span>'
+            )
+        return "".join(items)
+
+    def issue_hint(item: dict) -> str:
+        suggestion = item.get("suggestion") or {}
+        changes = suggestion.get("set_background") or {}
+        if changes:
+            return "建议：" + "，".join(f"{slide_id} → {background}" for slide_id, background in changes.items())
+        candidates = suggestion.get("candidate_slides") or []
+        if candidates:
+            return "候选页：" + "、".join(candidates)
+        return str(suggestion.get("action") or "")
+
+    summary = audit_summary(data)
+    aesthetic_codes = {"background-monotony", "background-run", "highlight-absence", "highlight-saturation"}
+    issues = [item for item in summary["issues"] if item["code"] in aesthetic_codes]
+    issue_html = "".join(
+        f'<li><code>{esc(item["code"])}</code><span>{esc(item["message"])}</span>'
+        f'<em>{esc(issue_hint(item))}</em></li>' for item in issues
+    ) or '<li class="is-ok">背景、版式与强调节奏没有发现明显重复。</li>'
+    return f'''<section class="rhythm-panel" aria-label="整套演示节奏检查">
+<div class="rhythm-head"><div><strong>整套节奏</strong><span>程序根据 Outline 自动生成；提示只出现在预览壳层。</span></div><ul>{issue_html}</ul></div>
+<div class="rhythm-row"><b>背景</b><div class="rhythm-cells">{cells("background")}</div></div>
+<div class="rhythm-row"><b>版式</b><div class="rhythm-cells">{cells("silhouette")}</div></div>
+<div class="rhythm-row"><b>强调</b><div class="rhythm-cells">{cells("highlight")}</div></div>
+</section>'''
+
+
 def validate_asset_paths(data: dict, base: Path) -> None:
     root = base.resolve()
     for index, slide in enumerate(data.get("slides") or [], start=1):
@@ -143,14 +214,15 @@ def render(data: dict) -> str:
     cards = []
     for index, slide in enumerate(slides, start=1):
         document = html.escape(iframe_document(data, slide, index), quote=True)
-        cards.append(f"""<article><div class="meta"><b>{index:02d}</b><span>{esc(slide['template'])}</span><span>{esc(slide['variant'])}</span><span>{esc(slide['decor'])}</span></div>
+        cards.append(f"""<article><div class="meta"><b>{index:02d}</b><span>{esc(slide['template'])}</span><span>{esc(slide['variant'])}</span><span>{esc(slide['decor'])}</span><span>{esc(effective_background(slide))}</span></div>
 <iframe title="{esc(slide['title'])}" srcdoc="{document}"></iframe><p>{esc(visual_label(slide))}</p></article>""")
     palette_json = json.dumps(PALETTES, ensure_ascii=False).replace("</", "<\\/")
     selected_palette = palette["name"]
     return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(data['title'])} · 预览</title>
-<style>*{{box-sizing:border-box}}body{{margin:0;background:#f5f5f4;color:#292929;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}}main{{width:min(1500px,calc(100% - 40px));margin:auto;padding:44px 0 90px}}header{{margin-bottom:24px}}h1{{margin:0;font-size:40px}}.settings{{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 28px}}.settings>span,.meta span{{padding:7px 10px;border-radius:999px;background:#fff;border:1px solid #e5e5e5;font-size:12px}}.swatch{{display:inline-flex!important;align-items:center;gap:7px}}.swatch::before,.palette-option::before{{content:"";width:12px;height:12px;border-radius:50%;background:var(--swatch);box-shadow:inset 0 0 0 1px rgba(0,0,0,.06)}}.palette-picker{{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:7px;border:1px solid #dedede;border-radius:14px;background:#fff}}.setting-label{{padding:0 5px;font-size:12px;color:#777}}.palette-option{{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid #e5e5e5;border-radius:999px;background:#fff;color:#555;font:600 12px/1 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;cursor:pointer}}.palette-option:hover{{border-color:#aaa}}.palette-option.is-selected{{border-color:#292929;background:#292929;color:#fff}}.pages{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}}article{{padding:14px;border-radius:18px;background:#fff;border:1px solid #e5e5e5}}.meta{{display:flex;align-items:center;gap:7px;margin-bottom:11px}}.meta b{{margin-right:auto}}iframe{{display:block;width:100%;aspect-ratio:16/9;border:1px solid #eee;border-radius:11px;background:#fff}}article p{{margin:10px 2px 0;color:#777;font-size:12px}}@media(max-width:900px){{.pages{{grid-template-columns:1fr}}}}</style></head><body><main>
+<style>*{{box-sizing:border-box}}body{{margin:0;background:#f5f5f4;color:#292929;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}}main{{width:min(1500px,calc(100% - 40px));margin:auto;padding:44px 0 90px}}header{{margin-bottom:24px}}h1{{margin:0;font-size:40px}}.settings{{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 28px}}.settings>span,.meta span{{padding:7px 10px;border-radius:999px;background:#fff;border:1px solid #e5e5e5;font-size:12px}}.swatch{{display:inline-flex!important;align-items:center;gap:7px}}.swatch::before,.palette-option::before{{content:"";width:12px;height:12px;border-radius:50%;background:var(--swatch);border:1px solid rgba(0,0,0,.06)}}.palette-picker{{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:7px;border:1px solid #dedede;border-radius:14px;background:#fff}}.setting-label{{padding:0 5px;font-size:12px;color:#777}}.palette-option{{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid #e5e5e5;border-radius:999px;background:#fff;color:#555;font:600 12px/1 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;cursor:pointer}}.palette-option:hover{{border-color:#aaa}}.palette-option.is-selected{{border-color:#292929;background:#292929;color:#fff}}.rhythm-panel{{margin:0 0 28px;padding:18px;border:1px solid #dedede;border-radius:18px;background:#fff;box-shadow:0 10px 30px rgba(0,0,0,.035)}}.rhythm-head{{display:grid;grid-template-columns:minmax(220px,.7fr) minmax(0,1.3fr);gap:24px;margin-bottom:14px}}.rhythm-head>div{{display:flex;align-items:baseline;gap:10px}}.rhythm-head strong{{font-size:16px}}.rhythm-head span{{color:#888;font-size:12px}}.rhythm-head ul{{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin:0;padding:0;list-style:none}}.rhythm-head li{{display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding:6px 9px;border-radius:9px;background:#fff8df;color:#6d5a16;font-size:11px}}.rhythm-head li.is-ok{{background:#f4f6f2;color:#65705e}}.rhythm-head code{{font:700 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace}}.rhythm-head em{{width:100%;padding-left:calc(7px + 10ch);color:#8c772c;font-style:normal}}.rhythm-row{{display:grid;grid-template-columns:52px minmax(0,1fr);gap:10px;align-items:center;margin-top:8px}}.rhythm-row>b{{color:#777;font-size:12px}}.rhythm-cells{{display:grid;grid-template-columns:repeat({len(slides)},minmax(24px,1fr));gap:5px}}.rhythm-cell{{min-width:0;height:34px;display:grid;grid-template-rows:11px 1fr;place-items:center;border:1px solid #ececec;border-radius:7px;background:#fafafa;color:#a3a3a3;overflow:hidden}}.rhythm-cell small{{font:600 8px/1 ui-monospace,SFMono-Regular,Menlo,monospace;color:#aaa}}.rhythm-cell i{{font:700 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace;font-style:normal}}.rhythm-cell.is-highlight i{{color:#292929}}.rhythm-cell.bg-grid-fade{{background:linear-gradient(145deg,#fff,#f5f5f4)}}.rhythm-cell.bg-grid-wide{{background:repeating-linear-gradient(90deg,#fafafa 0 5px,#ededeb 5px 6px)}}.rhythm-cell.bg-clean-halo{{background:radial-gradient(circle at 70% 30%,#e8e8e5,#fff 58%)}}.rhythm-cell.bg-paper-wash{{background:linear-gradient(145deg,#faf9f5,#efeee9)}}.rhythm-cell.bg-soft-spotlight{{background:radial-gradient(circle at 30% 28%,#e4e4e1,#fff 58%)}}.rhythm-cell.bg-mist-grid{{background:repeating-linear-gradient(135deg,#fff 0 7px,#eeeeeb 7px 8px)}}.rhythm-cell.bg-section-glow{{background:radial-gradient(circle at 78% 22%,#e2e2df,#fff 52%)}}.rhythm-cell.bg-none{{background:#fff}}.pages{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}}article{{padding:14px;border-radius:18px;background:#fff;border:1px solid #e5e5e5}}.meta{{display:flex;align-items:center;gap:7px;margin-bottom:11px}}.meta b{{margin-right:auto}}iframe{{display:block;width:100%;aspect-ratio:16/9;border:1px solid #eee;border-radius:11px;background:#fff}}article p{{margin:10px 2px 0;color:#777;font-size:12px}}@media(max-width:900px){{.rhythm-head{{grid-template-columns:1fr}}.rhythm-head ul{{justify-content:flex-start}}.rhythm-panel{{overflow-x:auto}}.rhythm-row{{min-width:720px}}.pages{{grid-template-columns:1fr}}}}</style></head><body><main>
 <header><h1>{esc(data['title'])}</h1></header>
-<div class="settings">{palette_controls(data)}<span>字体 {esc(TYPE_META[data['typography']]['label'])}</span><span>圆角 {esc(SHAPE_META[data['shape']]['label'])}</span></div>
+<div class="settings">{palette_controls(data)}<span>字体 {esc(TYPE_META[data['typography']]['label'])}</span><span>圆角 {esc(SHAPE_META[data['shape']]['label'])}</span><span>鼠标翻页 {'开启' if data['click_navigation'] else '关闭'}</span></div>
+{rhythm_panel(data, slides)}
 <section class="pages">{''.join(cards)}</section></main>
 <script>
 const palettes={palette_json};

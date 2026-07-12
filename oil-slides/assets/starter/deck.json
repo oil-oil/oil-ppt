@@ -2,6 +2,7 @@
   "title": "__TITLE__",
   "lang": "zh-CN",
   "next_preview": true,
+  "click_navigation": false,
   "show_progress": true,
   "show_counter": true,
   "typography": {

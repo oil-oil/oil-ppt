@@ -41,9 +41,9 @@ TYPE_META = {
 }
 
 SHAPE_PROFILES = {
-    "crisp": {"radius": "10px", "shadow": "0 4px 14px rgba(0,0,0,.035)"},
-    "soft": {"radius": "22px", "shadow": "0 10px 28px rgba(0,0,0,.045)"},
-    "round": {"radius": "36px", "shadow": "0 14px 34px rgba(0,0,0,.055)"},
+    "crisp": {"radius": "10px", "shadow": "none"},
+    "soft": {"radius": "22px", "shadow": "none"},
+    "round": {"radius": "36px", "shadow": "none"},
 }
 
 SHAPE_META = {

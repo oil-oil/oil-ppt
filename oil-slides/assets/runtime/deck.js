@@ -195,9 +195,11 @@
       const dx = (event.changedTouches[0]?.clientX || 0) - touchX;
       if (Math.abs(dx) > 50) dx < 0 ? go(index + 1) : go(index - 1);
     }, { passive: true });
-    const clickNav = new URLSearchParams(location.search).has("click") || document.body.hasAttribute("data-click-nav");
+    const clickNav = document.body.dataset.clickNav === "true";
     if (clickNav) addEventListener("click", event => {
-      if (!event.target.closest(".deck-counter, .next-preview, a, button, input, textarea, select")) go(index + 1);
+      if (event.target.closest(".deck-counter, .next-preview, a, button, input, textarea, select, [contenteditable]")) return;
+      if (window.getSelection()?.toString()) return;
+      go(event.clientX < window.innerWidth / 2 ? index - 1 : index + 1);
     });
   }
 

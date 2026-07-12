@@ -162,7 +162,7 @@ def browser_validate(path: Path) -> None:
 def build(project: Path) -> str:
     config_path = project / "deck.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
-    for key in ("next_preview", "show_progress", "show_counter"):
+    for key in ("next_preview", "click_navigation", "show_progress", "show_counter"):
         if not isinstance(config.get(key), bool):
             raise SystemExit(f"deck.json requires boolean {key}.")
     if not isinstance(config.get("palette"), dict):
@@ -292,6 +292,7 @@ def build(project: Path) -> str:
     progress = '<div class="progress-bar" aria-hidden="true"></div>' if config.get("show_progress", True) else ""
     title = html.escape(str(config.get("title", "oil-slides")))
     lang = html.escape(str(config.get("lang", "zh-CN")))
+    click_navigation = "true" if config["click_navigation"] else "false"
     slides_html = "\n".join(fragments)
     slide_css = "\n".join(css_parts)
     output = f"""<!doctype html>
@@ -302,7 +303,7 @@ def build(project: Path) -> str:
 <title>{title}</title>
 <style>{runtime_css}\n{theme}\n{slide_css}</style>
 </head>
-<body data-type-profile="{type_profile}" data-shape-profile="{shape_profile}">
+<body data-type-profile="{type_profile}" data-shape-profile="{shape_profile}" data-click-nav="{click_navigation}">
 <div class="deck-viewport"><div class="deck-stage-shell"><main class="deck-stage">
 {slides_html}
 </main></div></div>

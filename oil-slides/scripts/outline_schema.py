@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from background_presets import BACKGROUND_PRESETS
 from component_contracts import COMPONENT_CONTRACTS, normalize_component_choices
 from palette_tokens import PALETTES, canonical_name
 from profile_tokens import SHAPE_PROFILES, TYPE_PROFILES
@@ -46,6 +47,22 @@ TEMPLATE_CONTENT_HELP = {
 MEDIA_TEMPLATES = {
     "bleed-split", "browser-showcase", "diagonal-split", "photo-gradient",
     "photo-split", "split-visual",
+}
+
+SHARED_SLIDE_FIELDS = {
+    "highlight": {
+        "type": "string",
+        "required": False,
+        "use_when": "标题中有一个需要观众记住的短语",
+        "rule": "复制 title 中的一个精确短语；每页最多一个；不写 HTML",
+    },
+    "background": {
+        "type": "string",
+        "required": False,
+        "allowed": list(BACKGROUND_PRESETS),
+        "use_when": "根据页面关系和整套节奏选择背景；省略时使用模板默认值",
+        "rule": "只填写 allowed 中的名称；不写 CSS 或 data-bg",
+    },
 }
 
 
@@ -182,6 +199,8 @@ def validate_outline(data: dict, templates_dir: Path) -> list[dict]:
         raise SystemExit(f"Outline shape must be one of: {', '.join(SHAPE_PROFILES)}.")
     if data.get("media_policy", "required") not in {"required", "text-only"}:
         raise SystemExit("Outline media_policy must be 'required' or 'text-only'.")
+    if "click_navigation" not in data or not isinstance(data["click_navigation"], bool):
+        raise SystemExit("Outline requires boolean click_navigation.")
 
     slides = data.get("slides")
     if not isinstance(slides, list) or not slides:
@@ -205,6 +224,9 @@ def validate_outline(data: dict, templates_dir: Path) -> list[dict]:
         highlight = slide.get("highlight")
         if highlight is not None and (not isinstance(highlight, str) or not highlight or highlight not in title):
             raise SystemExit(f"Outline slide {index} highlight must be an exact phrase inside its title.")
+        background = slide.get("background")
+        if background is not None and background not in BACKGROUND_PRESETS:
+            raise SystemExit(f"Outline slide {index} background must be one of: {', '.join(BACKGROUND_PRESETS)}.")
         normalize_component_choices(slide, index)
         validate_slide_content(slide, index)
         ids.add(slide_id)

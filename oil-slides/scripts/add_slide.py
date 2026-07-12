@@ -8,6 +8,8 @@ import json
 import re
 from pathlib import Path
 
+from background_presets import BACKGROUND_PRESETS
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -16,6 +18,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--id", dest="slide_id", required=True)
     parser.add_argument("--title", required=True)
     parser.add_argument("--highlight", help="one exact title phrase to render with the marker highlight")
+    parser.add_argument("--background", choices=tuple(BACKGROUND_PRESETS), help="page background preset; defaults to the template value")
     parser.add_argument("--variant", required=True, help="template-owned composition variant")
     parser.add_argument("--decor", required=True, help="template-owned decoration preset")
     parser.add_argument("--after", help="insert after this data-slide-id; default append")
@@ -72,6 +75,15 @@ def main() -> None:
         additions.append(f' data-component-decor="{html.escape(args.decor, quote=True)}"')
     if additions:
         text = text[:match.end() - 1] + "".join(additions) + text[match.end() - 1:]
+    if args.background:
+        text, count = re.subn(
+            r'(data-bg=["\'])[^"\']+(["\'])',
+            rf'\g<1>{html.escape(args.background, quote=True)}\g<2>',
+            text,
+            count=1,
+        )
+        if count != 1:
+            raise SystemExit(f"Template {args.template} does not expose data-bg.")
     if args.highlight:
         highlight = html.escape(args.highlight, quote=True)
         if highlight not in title:
@@ -96,6 +108,7 @@ def main() -> None:
     print(
         f"Added {filename} from template={args.template} variant={args.variant} decor={args.decor}"
         + (f" highlight={args.highlight}" if args.highlight else "")
+        + (f" background={args.background}" if args.background else "")
     )
 
 

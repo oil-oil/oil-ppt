@@ -31,14 +31,14 @@ def smoke_slides() -> list[dict]:
     ]
     image = "assets/smoke.svg"
     return [
-        {"id": "cover", "title": "稳定构建验证", "template": "cover", "variant": "statement", "decor": "none", "content": "一次覆盖全部组件"},
-        {"id": "section", "title": "进入核心内容", "template": "section", "variant": "default", "decor": "none", "content": "接下来检查各类信息关系"},
-        {"id": "steps", "title": "三个连续动作", "template": "three-steps", "variant": "linear", "decor": "dots", "steps": steps3},
+        {"id": "cover", "title": "稳定构建验证", "highlight": "稳定构建", "background": "soft-spotlight", "template": "cover", "variant": "statement", "decor": "none", "content": "一次覆盖全部组件"},
+        {"id": "section", "title": "进入核心内容", "background": "section-glow", "template": "section", "variant": "default", "decor": "none", "content": "接下来检查各类信息关系"},
+        {"id": "steps", "title": "三个连续动作", "background": "mist-grid", "template": "three-steps", "variant": "linear", "decor": "dots", "steps": steps3},
         {"id": "timeline", "title": "四个时间阶段", "template": "timeline", "variant": "default", "decor": "none", "steps": steps4},
-        {"id": "split", "title": "视觉与解释并置", "template": "split-visual", "variant": "default", "decor": "none", "content": "主视觉承担大部分信息", "image": image, "media_frame": "content"},
+        {"id": "split", "title": "视觉与解释并置", "background": "soft-spotlight", "template": "split-visual", "variant": "default", "decor": "none", "content": "主视觉承担大部分信息", "image": image, "media_frame": "content"},
         {"id": "rail", "title": "六步完成流程", "template": "process-rail", "variant": "steps-6", "decor": "none", "steps": [{"label": f"动作{i}"} for i in range(1, 7)]},
         {"id": "cards", "title": "三个并列要点", "template": "card-trio", "variant": "feature-left", "decor": "none", "cards": cards},
-        {"id": "compare", "title": "两个方案直接对比", "template": "comparison", "variant": "default", "decor": "halo", "sides": sides2},
+        {"id": "compare", "title": "两个方案直接对比", "background": "paper-wash", "template": "comparison", "variant": "default", "decor": "halo", "sides": sides2},
         {"id": "compare-list", "title": "两类产物逐项对齐", "template": "comparison-list", "variant": "balanced", "decor": "corner-grid", "sides": sides3},
         {"id": "browser", "title": "真实界面是证据", "template": "browser-showcase", "variant": "default", "decor": "none", "content": "在浏览器外壳中展示界面", "image": image, "media_frame": "content"},
         {"id": "bleed", "title": "主视觉打破页面边界", "template": "bleed-split", "variant": "default", "decor": "none", "content": "为演示带来一次节奏变化", "image": image, "media_frame": "content"},
@@ -114,6 +114,7 @@ def main() -> None:
                         "palette_source": "brand",
                         "typography": "clean",
                         "shape": "soft",
+                        "click_navigation": False,
                         "slides": smoke_slides(),
                     },
                     ensure_ascii=False,
@@ -133,6 +134,13 @@ def main() -> None:
             preview_text = preview_file.read_text(encoding="utf-8")
             if preview_text.count("<iframe ") != len(smoke_slides()):
                 raise RuntimeError("preview did not render every slide as a real template iframe")
+            if 'class=&quot;hl&quot;' not in preview_text:
+                raise RuntimeError("preview did not render the exposed highlight field")
+            if 'class="rhythm-panel"' not in preview_text:
+                raise RuntimeError("preview did not render the deck rhythm panel")
+            for background in ("soft-spotlight", "section-glow", "mist-grid", "paper-wash"):
+                if f'data-bg=&quot;{background}&quot;' not in preview_text:
+                    raise RuntimeError(f"preview did not render background {background}")
             if any(seed in preview_text for seed in TEMPLATE_SEEDS):
                 raise RuntimeError("preview leaked bundled template example copy")
             unverified = subprocess.run(
@@ -158,7 +166,7 @@ def main() -> None:
                 text=True,
             )
             changed = json.loads(outline.read_text(encoding="utf-8"))
-            changed["slides"][0]["title"] = "Build smoke test updated"
+            changed["slides"][0]["title"] = "稳定构建验证 updated"
             outline.write_text(json.dumps(changed, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             invalidated = subprocess.run(
                 [sys.executable, str(entry), "scaffold", str(project), str(outline)],
@@ -196,7 +204,12 @@ def main() -> None:
             smoke_ok = final.is_file()
             if smoke_ok:
                 final_text = final.read_text(encoding="utf-8")
-                smoke_ok = 'data-validation="browser"' in final_text and not any(seed in final_text for seed in TEMPLATE_SEEDS)
+                smoke_ok = (
+                    'data-validation="browser"' in final_text
+                    and '<span class="hl">稳定构建</span>' in final_text
+                    and all(f'data-bg="{background}"' in final_text for background in ("soft-spotlight", "section-glow", "mist-grid", "paper-wash"))
+                    and not any(seed in final_text for seed in TEMPLATE_SEEDS)
+                )
     except subprocess.CalledProcessError as error:
         detail = (error.stderr or error.stdout or str(error)).strip()
         print(f"[DETAIL] {detail}")

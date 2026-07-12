@@ -10,9 +10,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from background_presets import BACKGROUND_PRESETS
 from component_contracts import COMPONENT_CONTRACTS, quality_for
 from design_quality import audit_summary, enforce_outline_quality
-from outline_schema import TEMPLATE_CONTENT_HELP, TEMPLATE_FAMILIES, validate_outline
+from outline_schema import SHARED_SLIDE_FIELDS, TEMPLATE_CONTENT_HELP, TEMPLATE_FAMILIES, validate_outline
 from palette_tokens import PALETTES, canonical_name
 from profile_tokens import SHAPE_PROFILES, TYPE_PROFILES
 from template_tiers import TIER1_TEMPLATES, tier_of
@@ -85,7 +86,10 @@ def print_contract(show_all: bool = False) -> None:
             "palettes": sorted(PALETTES),
             "typography": sorted(TYPE_PROFILES),
             "shape": sorted(SHAPE_PROFILES),
+            "backgrounds": BACKGROUND_PRESETS,
+            "click_navigation_default": False,
         },
+        "slide_fields": SHARED_SLIDE_FIELDS,
         "templates": templates,
         "showing": "all" if show_all else "tier1",
     }
@@ -256,6 +260,8 @@ def materialize_slides(project: Path, data: dict, slides: list[dict]) -> None:
         ]
         if slide.get("highlight"):
             command.extend(["--highlight", slide["highlight"]])
+        if slide.get("background"):
+            command.extend(["--background", slide["background"]])
         run_script("add_slide.py", command)
     outline_path = resolved / "outline.json"
     outline_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -303,6 +309,8 @@ def scaffold(project: Path, outline_path: Path) -> None:
         raise SystemExit(f"Outline palette must be one curated name ({choices}) or a user/brand custom palette.")
     if data.get("next_preview") is False:
         arguments.append("--no-next-preview")
+    if data["click_navigation"]:
+        arguments.append("--click-navigation")
     if data.get("show_progress") is False:
         arguments.append("--no-progress")
     if data.get("show_counter") is False:
@@ -396,6 +404,8 @@ def main() -> None:
                    "--variant", slide["variant"], "--decor", slide["decor"]]
         if slide.get("highlight"):
             command.extend(["--highlight", slide["highlight"]])
+        if slide.get("background"):
+            command.extend(["--background", slide["background"]])
         if args.after:
             command.extend(["--after", args.after])
         run_script("add_slide.py", command)

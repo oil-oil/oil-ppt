@@ -2,8 +2,10 @@
 """Deck-level rhythm and media-composition checks for oil-slides outlines."""
 from __future__ import annotations
 
+import json
 from collections import Counter
 
+from background_presets import effective_background
 from component_contracts import quality_for
 
 
@@ -16,8 +18,37 @@ def has_media(slide: dict) -> bool:
     return any(str(slide.get(key) or "").strip() for key in MEDIA_KEYS)
 
 
-def issue(level: str, code: str, message: str, slide_ids: list[str] | None = None) -> dict:
-    return {"level": level, "code": code, "message": message, "slides": slide_ids or []}
+def issue(
+    level: str,
+    code: str,
+    message: str,
+    slide_ids: list[str] | None = None,
+    suggestion: dict | None = None,
+) -> dict:
+    result = {"level": level, "code": code, "message": message, "slides": slide_ids or []}
+    if suggestion:
+        result["suggestion"] = suggestion
+    return result
+
+
+def suggested_background(slide: dict, current: str) -> str:
+    silhouette = quality_for(slide["template"])["silhouette"]
+    candidates = {
+        "focal": ("section-glow", "soft-spotlight", "paper-wash"),
+        "split": ("soft-spotlight", "mist-grid", "paper-wash"),
+        "bleed": ("none", "soft-spotlight", "paper-wash"),
+        "browser": ("soft-spotlight", "paper-wash", "mist-grid"),
+        "canvas": ("mist-grid", "grid-wide", "paper-wash"),
+        "diagram": ("mist-grid", "grid-wide", "paper-wash"),
+        "rail": ("grid-wide", "mist-grid", "paper-wash"),
+        "timeline": ("grid-wide", "mist-grid", "paper-wash"),
+        "step-grid": ("grid-wide", "mist-grid", "paper-wash"),
+        "card-grid": ("paper-wash", "mist-grid", "soft-spotlight"),
+        "two-panel": ("paper-wash", "mist-grid", "soft-spotlight"),
+        "metric": ("soft-spotlight", "section-glow", "paper-wash"),
+        "editorial-list": ("paper-wash", "mist-grid", "soft-spotlight"),
+    }.get(silhouette, ("mist-grid", "paper-wash", "soft-spotlight"))
+    return next((value for value in candidates if value != current), "grid-fade")
 
 
 def content_segments(slides: list[dict]) -> list[list[dict]]:
@@ -64,6 +95,62 @@ def audit_outline(data: dict) -> list[dict]:
             f"{len(heavy)}/{len(content)} content slides use surface-heavy card or panel silhouettes; keep this at 48% or below.",
             [slide["id"] for slide in heavy],
         ))
+
+    if len(content) >= 8:
+        backgrounds = [effective_background(slide) for slide in content]
+        counts = Counter(backgrounds)
+        dominant, dominant_count = counts.most_common(1)[0]
+        if len(counts) == 1 or dominant_count / len(content) > .72:
+            dominant_slides = [slide for slide in content if effective_background(slide) == dominant]
+            candidates = dominant_slides[2::4] or dominant_slides[len(dominant_slides) // 2:len(dominant_slides) // 2 + 1]
+            candidates = candidates[:3]
+            changes = {slide["id"]: suggested_background(slide, dominant) for slide in candidates}
+            results.append(issue(
+                "warning", "background-monotony",
+                f"Background {dominant!r} appears on {dominant_count}/{len(content)} content slides; introduce a small number of deliberate background changes.",
+                [slide["id"] for slide in dominant_slides],
+                {"set_background": changes},
+            ))
+
+        run: list[dict] = []
+        run_background = ""
+        for slide in [*content, None]:
+            background = effective_background(slide) if slide is not None else ""
+            if slide is not None and (not run or background == run_background):
+                if not run:
+                    run_background = background
+                run.append(slide)
+                continue
+            if len(run) >= 5:
+                target = run[len(run) // 2]
+                results.append(issue(
+                    "warning", "background-run",
+                    f"{len(run)} consecutive content slides use background {run_background!r}.",
+                    [item["id"] for item in run],
+                    {"set_background": {target["id"]: suggested_background(target, run_background)}},
+                ))
+            run = [slide] if slide is not None else []
+            run_background = background
+
+        highlighted = [slide for slide in content if slide.get("highlight")]
+        if not highlighted:
+            candidates = content[2::4][:4] or content[:1]
+            results.append(issue(
+                "warning", "highlight-absence",
+                "Long decks have no title marker highlights; choose a few key titles rather than emphasizing every page.",
+                [slide["id"] for slide in candidates],
+                {
+                    "action": "set highlight to one exact phrase inside title",
+                    "candidate_slides": [slide["id"] for slide in candidates],
+                },
+            ))
+        elif len(highlighted) / len(content) > .4:
+            results.append(issue(
+                "warning", "highlight-saturation",
+                f"{len(highlighted)}/{len(content)} content slides use title highlights; keep emphasis selective.",
+                [slide["id"] for slide in highlighted],
+                {"action": "remove highlight from supporting slides"},
+            ))
 
     for segment_index, segment in enumerate(content_segments(slides), start=1):
         if not segment:
@@ -160,7 +247,8 @@ def enforce_outline_quality(data: dict) -> list[dict]:
     for item in results:
         if item["level"] == "warning":
             suffix = f" Slides: {', '.join(item['slides'])}." if item["slides"] else ""
-            print(f"[WARN] {item['code']}: {item['message']}{suffix}")
+            suggestion = f" Suggestion: {json.dumps(item['suggestion'], ensure_ascii=False)}" if item.get("suggestion") else ""
+            print(f"[WARN] {item['code']}: {item['message']}{suffix}{suggestion}")
     errors = [item for item in results if item["level"] == "error"]
     if errors:
         lines = []

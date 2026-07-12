@@ -20,6 +20,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--accent-soft", help="custom soft accent")
     parser.add_argument("--accent-strong", help="custom strong accent")
     parser.add_argument("--no-next-preview", action="store_true")
+    parser.add_argument("--click-navigation", action="store_true", help="allow left/right mouse click navigation; off by default")
     parser.add_argument("--no-progress", action="store_true")
     parser.add_argument("--no-counter", action="store_true")
     parser.add_argument("--type-profile", choices=tuple(TYPE_PROFILES), required=True)
@@ -54,6 +55,7 @@ def main() -> None:
     config = json.loads((starter / "deck.json").read_text(encoding="utf-8"))
     config["title"] = args.title
     config["next_preview"] = not args.no_next_preview
+    config["click_navigation"] = bool(args.click_navigation)
     config["show_progress"] = not args.no_progress
     config["show_counter"] = not args.no_counter
     config["typography"] = {"profile": args.type_profile}
