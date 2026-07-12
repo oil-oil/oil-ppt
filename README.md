@@ -1,13 +1,17 @@
 # oil-slides
 
-oil-slides is a personal Codex skill for making 16:9 technical slide decks in a fixed visual style:
+oil-slides is a Codex skill for creating 16:9 HTML presentations with a restrained oil visual style:
 
 - white background with a subtle grid
-- black, white, grey, and warm yellow
-- large, low-density presentation pages
-- one strong visual per slide
-- manga ink illustrations with a yellow Border Collie companion
-- width-filled browser preview with no side black bars
+- clear hierarchy and large presentation typography
+- structured component and layout contracts
+- real media planning and deck-level rhythm checks
+- browser-validated, self-contained delivery HTML
+
+New presentations follow two confirmation gates:
+
+1. Create and confirm a human-readable `outline.md`.
+2. Generate and confirm the real visual preview before building.
 
 ## Install
 
@@ -26,12 +30,10 @@ Restart Codex after installation.
 Ask Codex to use `oil-slides`, for example:
 
 ```text
-[$oil-slides] Make this HTML into a slide deck.
+[$oil-slides] Create a presentation about this topic.
 ```
 
-## Optional Image Fallback
-
-The skill prefers Codex built-in image generation. The bundled `scripts/gen_art.py` is only a fallback path and needs `ZENMUX_API_KEY` when used.
+The skill first asks whether to develop the Markdown outline through conversation or generate a complete first draft directly.
 
 ## License
 
