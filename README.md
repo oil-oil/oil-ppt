@@ -2,10 +2,6 @@
   <img src="./assets/readme/readme-title.svg" width="100%" alt="oil-ppt：用最简单的方式，做出最好看的 PPT。">
 </p>
 
-```bash
-npx skills add oil-oil/oil-ppt
-```
-
 <p align="center">
   <img src="./assets/readme/readme-section-showcase.svg" width="100%" alt="01 先看效果">
 </p>
@@ -20,26 +16,18 @@ npx skills add oil-oil/oil-ppt
     <td width="50%"><img src="./assets/readme/showcase-jwst-cobalt.png" alt="詹姆斯·韦布空间望远镜演示，钴蓝主题"></td>
   </tr>
   <tr>
-    <td align="center"><sub>oil-ppt 产品理念 · 黄色</sub></td>
-    <td align="center"><sub>詹姆斯·韦布空间望远镜 · 钴蓝</sub></td>
-  </tr>
-  <tr>
     <td width="50%"><img src="./assets/readme/showcase-highline-moss.png" alt="纽约高线公园演示，苔绿色主题"></td>
     <td width="50%"><img src="./assets/readme/showcase-bauhaus-clay.png" alt="包豪斯设计方法演示，陶土色主题"></td>
   </tr>
-  <tr>
-    <td align="center"><sub>纽约高线公园 · 苔绿</sub></td>
-    <td align="center"><sub>包豪斯设计方法 · 陶土色</sub></td>
-  </tr>
 </table>
-
-这些页面来自四套真实演示。它们使用同一套设计系统，但配色、素材、密度和页面结构会跟着内容改变。
 
 <p align="center">
   <img src="./assets/readme/readme-section-system.svg" width="100%" alt="02 oil-ppt 是什么">
 </p>
 
 oil-ppt 是一个给 Agent 使用的 PPT Skill。我们可以给它一个主题、一份文档或一组材料，它会先确认这套演示要讲什么，再生成可以全屏播放、离线打开的 16:9 HTML 演示文稿。
+
+上面的十五张页面来自四套真实演示，分别使用黄色、钴蓝、苔绿和陶土色。它们共享同一套设计系统，但素材、密度和页面结构会跟着内容改变。
 
 它不让模型同时承担内容、排版、图片适配和浏览器检查。模型负责理解与选择，oil-ppt 负责稳定执行，我们负责两次关键确认。最后只交付一个 `演示文稿.html`。
 
@@ -90,7 +78,21 @@ oil-ppt 把每次修改限制在当前页面，让每页可以单独生成、检
   <img src="./assets/readme/readme-section-start.svg" width="100%" alt="06 怎么使用">
 </p>
 
-产品与仓库名是 `oil-ppt`，当前兼容调用名仍是 `oil-slides`：
+**方式一 · 执行命令**
+
+```bash
+npx skills add oil-oil/oil-ppt
+```
+
+**方式二 · 直接交给 Agent**
+
+把下面这句话发给 Agent，让它完成安装：
+
+```text
+请安装这个 Skill：https://github.com/oil-oil/oil-ppt
+```
+
+安装完成后，当前兼容调用名仍是 `oil-slides`：
 
 ```text
 [$oil-slides] 帮我做一份关于这个主题的演示文稿。
