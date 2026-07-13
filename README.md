@@ -36,15 +36,7 @@ oil-ppt 把大任务拆成四个有限选择：
 这不是说性价比模型在所有能力上等同于 Claude 或 GPT，而是让它在「制作 PPT」这件事上，不必凭空成为全能设计师，也能沿着清楚的路径做出比肩更强模型的成品。
 
 <p align="center">
-  <img src="./assets/readme/readme-section-html.svg" width="100%" alt="04 为什么制作时一页一个 HTML">
-</p>
-
-如果十几页都写在一个大 HTML 里，模型修改第 7 页时，也可能误伤其他页面的样式、脚本或元素编号。文件越长，能力较弱的模型越容易改坏整套演示。
-
-oil-ppt 把每次修改限制在当前页面，让每页可以单独生成、检查和修复；构建时再把所有页面、样式、脚本和素材合并起来。**内部容易修改，最后仍然只有一个文件。**
-
-<p align="center">
-  <img src="./assets/readme/readme-section-workflow.svg" width="100%" alt="05 怎么完成一套演示">
+  <img src="./assets/readme/readme-section-workflow.svg" width="100%" alt="04 怎么完成一套演示">
 </p>
 
 ```text
@@ -60,7 +52,7 @@ oil-ppt 把每次修改限制在当前页面，让每页可以单独生成、检
 大纲没有确认之前不会提前设计，正式预览没有确认之前不会构建最终文件。
 
 <p align="center">
-  <img src="./assets/readme/readme-section-start.svg" width="100%" alt="06 怎么使用">
+  <img src="./assets/readme/readme-section-start.svg" width="100%" alt="05 怎么使用">
 </p>
 
 **方式一 · 执行命令**
@@ -77,10 +69,10 @@ npx skills add oil-oil/oil-ppt
 请安装这个 Skill：https://github.com/oil-oil/oil-ppt
 ```
 
-安装完成后，当前兼容调用名仍是 `oil-slides`：
+安装完成后，调用名是 `oil-ppt`：
 
 ```text
-[$oil-slides] 帮我做一份关于这个主题的演示文稿。
+[$oil-ppt] 帮我做一份关于这个主题的演示文稿。
 ```
 
 新建演示时，我们可以选择通过对话一起整理大纲，或根据已有材料直接生成第一版。
@@ -91,7 +83,7 @@ npx skills add oil-oil/oil-ppt
 <summary><strong>维护与本地检查</strong></summary>
 
 ```bash
-oil-slides/scripts/oil-slides doctor
+oil-ppt/scripts/oil-ppt doctor
 ```
 
 </details>
