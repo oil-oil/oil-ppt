@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="320" viewBox="0 0 1200 320" role="img" aria-labelledby="title desc">
+  <title id="title">oil-ppt</title>
+  <desc id="desc">用最简单的方式，做出最好看的 PPT。</desc>
+  <defs>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M 48 0 L 0 0 0 48" fill="none" stroke="#202220" stroke-opacity="0.055" stroke-width="1"/>
+    </pattern>
+    <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="2" fill="#202220" fill-opacity="0.13"/>
+    </pattern>
+    <linearGradient id="fade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f8f8f5" stop-opacity="0"/>
+      <stop offset="0.36" stop-color="#f8f8f5" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#f8f8f5"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="320" rx="30" fill="#f8f8f5"/>
+  <rect width="1200" height="320" rx="30" fill="url(#grid)"/>
+
+  <g transform="translate(72 46)">
+    <text x="0" y="17" fill="#777b77" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="18" font-weight="700" letter-spacing="3.2">OIL · PRESENTATION SYSTEM</text>
+    <rect x="0" y="39" width="54" height="6" rx="3" fill="#efc84a"/>
+    <text x="0" y="142" fill="#202220" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="92" font-weight="780" letter-spacing="-4">oil-ppt</text>
+    <rect x="0" y="169" width="498" height="28" rx="3" fill="#f6df88" fill-opacity="0.8"/>
+    <text x="0" y="198" fill="#303330" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="36" font-weight="620">用最简单的方式，做出最好看的 PPT。</text>
+    <text x="0" y="246" fill="#878b87" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="17" font-weight="600" letter-spacing="1.5">OUTLINE FIRST · REAL MEDIA · BROWSER VERIFIED · ONE FILE</text>
+  </g>
+
+  <g transform="translate(865 64)">
+    <rect width="260" height="190" fill="url(#dots)"/>
+    <rect x="34" y="36" width="154" height="92" fill="#ffffff" fill-opacity="0.76"/>
+    <path d="M38 144 H214" stroke="#202220" stroke-opacity="0.13"/>
+    <circle cx="214" cy="144" r="7" fill="#efc84a"/>
+    <rect x="0" y="0" width="260" height="190" fill="url(#fade)"/>
+  </g>
+</svg>
