@@ -35,7 +35,7 @@ COMPONENT_CONTRACTS = {
     "photo-gradient": {"use_when": "照片铺满页面并与少量文字自然融合；按主体空白选择文字落在左或右。", "variants": ("copy-left", "copy-right"), "decorations": ("none",)},
     "photo-split": {"use_when": "照片与解释文字权重接近；按阅读顺序选择媒体在左或右。", "variants": ("media-right", "media-left"), "decorations": ("none",)},
     "process-rail": {
-        "use_when": "六或八个短动作组成一条完整流程总览。",
+        "use_when": "六个带简短解释的步骤，或八个只需短标签的动作，组成一条完整流程总览。",
         "variants": ("steps-8", "steps-6"),
         # Open canvas: no wrapping surface, so no surface decorations.
         "decorations": ("none",),

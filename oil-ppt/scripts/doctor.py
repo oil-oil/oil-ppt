@@ -60,7 +60,7 @@ def smoke_slides() -> list[dict]:
         {"id": "steps", "title": "三个连续动作", "background": "grid-wide", "template": "three-steps", "variant": "linear", "decor": "dots", "steps": steps3},
         {"id": "timeline", "title": "四个时间阶段", "template": "timeline", "variant": "default", "decor": "none", "steps": steps4},
         {"id": "split", "title": "视觉与解释并置", "background": "soft-spotlight", "template": "split-visual", "variant": "media-dominant", "decor": "none", "content": "主视觉承担大部分信息", "image": image, "media_frame": "content"},
-        {"id": "rail", "title": "六步完成流程", "template": "process-rail", "variant": "steps-6", "decor": "none", "steps": [{"label": f"动作{i}"} for i in range(1, 7)]},
+        {"id": "rail", "title": "六步完成流程", "template": "process-rail", "variant": "steps-6", "decor": "none", "steps": [{"label": f"动作{i}", "body": f"说明第{i}步如何推进"} for i in range(1, 7)]},
         {"id": "cards", "title": "三个并列要点", "template": "card-trio", "variant": "media-evidence", "decor": "none", "content": "两组可见证据最终收束为一个判断", "cards": [{**cards[0], "images": [image, image]}, {**cards[1], "images": [image, image]}, cards[2]], "media_frame": "content"},
         {"id": "compare", "title": "两个方案直接对比", "content": "同一组标准需要放在两侧同时判断", "background": "block-field", "template": "comparison", "variant": "visual-evidence", "decor": "corner-grid", "sides": sides2, "media_frame": "content"},
         {"id": "compare-list", "title": "两类产物逐项对齐", "template": "comparison-list", "variant": "balanced", "decor": "corner-grid", "sides": sides3},
@@ -75,7 +75,7 @@ def smoke_slides() -> list[dict]:
         {"id": "tabs", "title": "同一对象的两个视角", "template": "tabs", "variant": "default", "decor": "dots", "sides": [{"title": "视角 A", "body": "从使用者任务理解界面"}, {"title": "视角 B", "body": "从系统实现理解界面"}]},
         {"id": "converge", "title": "两组输入汇聚为结果", "template": "converge", "variant": "default", "decor": "none", "groups": [{"title": "内容输入", "items": ["明确目标", "整理材料"]}, {"title": "设计输入", "items": ["选择组件", "准备视觉"]}], "outcome": "共同形成可交付的演示"},
         {"id": "editorial", "title": "展陈式页面保留编辑感", "template": "editorial-canvas", "variant": "default", "decor": "none", "content": "把材料、局部和批注放在同一个画布中", "image": image, "media_frame": "content"},
-        {"id": "editorial-feature", "title": "主视觉与三条支撑并置", "template": "editorial-feature", "variant": "hero-collage", "decor": "none", "content": "主视觉承担证据，支撑模块解释判断依据", "image": image, "secondary_image": "assets/secondary.svg", "media_frame": "content", "cards": compound_cards},
+        {"id": "editorial-feature", "title": "主视觉与三条支撑并置", "template": "editorial-feature", "variant": "hero-collage", "decor": "none", "content": "主视觉承担证据，支撑模块解释判断依据", "image": image, "secondary_image": "assets/secondary.svg", "media_frame": "content", "cards": [{key: value for key, value in card.items() if key != "icon"} for card in compound_cards]},
         {"id": "catalog-board", "title": "把重复内容整理为知识地图", "template": "catalog-board", "variant": "default", "decor": "none", "metrics": [{"value": "12", "label": "条目"}, {"value": "4", "label": "分类"}, {"value": "1", "label": "体系"}], "groups": catalog_groups},
         {"id": "case-study-board", "title": "证据与结论共享同一页", "template": "case-study-board", "variant": "evidence", "decor": "none", "content": "主要证据占据页面主体", "image": image, "media_frame": "content", "metrics": [{"value": "12 周", "label": "周期"}, {"value": "+36%", "label": "变化"}], "insight": {"title": "核心判断", "body": "结论必须能回到证据", "icon": "chart-line"}},
         {"id": "annotated-showcase", "title": "同一份材料读出三个判断", "template": "annotated-showcase", "variant": "default", "decor": "none", "content": "标注只指出应该观察的局部", "image": image, "media_frame": "content", "annotations": [{"title": "入口", "body": "先看哪里"}, {"title": "主体", "body": "承接什么"}, {"title": "支撑", "body": "解释什么"}]},
@@ -121,6 +121,8 @@ def render_component_matrix(root: Path, browser: str) -> int:
                         "image": "assets/smoke.svg", "media_frame": "content", "image_alt": "程序验证图",
                         "artifact_title": "交付物", "artifact_body": "扫码或查看最终文件", "content": "交付保持清楚",
                     })
+                if template == "process-rail" and variant == "steps-8":
+                    slide["steps"] = [{"label": f"动作{i}"} for i in range(1, 9)]
                 css, fragment = prepared_slide(slide, index)
                 css_parts.append(css)
                 fragments.append(fragment)
@@ -172,6 +174,48 @@ def verify_layout_containment_guard(root: Path, browser: str) -> None:
         raise RuntimeError(f"layout containment guard missed an implicit grid row: {report}")
 
 
+def verify_optional_region_guard(root: Path, browser: str) -> None:
+    probe = root / "empty-optional-region-probe.html"
+    probe.write_text(
+        "<!doctype html><html data-oil-validated='ok'><body>"
+        "<main class='deck-stage'>"
+        "<section class='oil-slide' data-slide-id='active-probe'><div class='slide-safe'>"
+        "<div data-optional-region='filled'>内容</div>"
+        "<div data-optional-region='explicitly-hidden' hidden style='width:200px;height:80px'></div>"
+        "</div></section>"
+        "<section class='oil-slide' data-slide-id='inactive-probe' style='visibility:hidden'><div class='slide-safe'>"
+        "<div data-optional-region='footer' style='display:block;width:200px;height:80px'></div>"
+        "</div></section></main></body></html>",
+        encoding="utf-8",
+    )
+    report = validate_file(browser, probe, timeout=10)
+    invalid = report.get("invalidOptionalRegions") or []
+    probe.unlink(missing_ok=True)
+    if report.get("status") != "error" or len(invalid) != 1 or not any(
+        item.get("reason") == "empty-optional-region" and item.get("region") == "footer" for item in invalid
+    ):
+        raise RuntimeError(f"empty optional-region guard did not fire: {report}")
+
+    slide = {
+        "id": "process-collapse", "title": "没有附加测量区", "template": "process-cards", "variant": "linear", "decor": "none",
+        "content": "可选字段缺省后，步骤卡片自动占满主体区域。",
+        "steps": [{"title": f"步骤{i}", "body": f"完成第{i}个动作"} for i in range(1, 5)],
+    }
+    css, fragment = prepared_slide(slide, 1)
+    positive = root / "process-cards-optional-collapse.html"
+    positive.write_text(
+        "<!doctype html><html data-oil-validated='ok'><head><style>"
+        + RUNTIME_CSS + theme_css({"palette": "oil-yellow", "typography": "clean", "shape": "soft"}) + css
+        + "</style></head><body data-oil-mode='preview'><main class='slide-preview-stage'>"
+        + fragment + f"</main><script>{RUNTIME_JS}</script></body></html>",
+        encoding="utf-8",
+    )
+    positive_report = validate_file(browser, positive, timeout=10)
+    positive.unlink(missing_ok=True)
+    if positive_report.get("status") != "ok" or positive_report.get("invalidOptionalRegions"):
+        raise RuntimeError(f"process-cards optional collapse did not survive browser validation: {positive_report}")
+
+
 def verify_specialized_capability_gate() -> None:
     summary = audit_summary({
         "media_policy": "text-only",
@@ -192,6 +236,19 @@ def verify_specialized_capability_gate() -> None:
 
 
 def verify_regression_guards(entry: Path) -> None:
+    templates = Path(__file__).resolve().parent.parent / "assets" / "templates"
+
+    def expect_outline_rejected(slide: dict, reason: str) -> None:
+        deck = {
+            "title": reason, "palette": "oil-yellow", "typography": "clean", "shape": "soft",
+            "click_navigation": False, "media_policy": "text-only", "slides": [slide],
+        }
+        try:
+            validate_outline(deck, templates)
+        except SystemExit:
+            return
+        raise RuntimeError(reason)
+
     mutually_exclusive = subprocess.run(
         [sys.executable, str(entry), "contract", "--schema", "--list"],
         check=False,
@@ -212,7 +269,11 @@ def verify_regression_guards(entry: Path) -> None:
     slide_schema = (((schema.get("properties") or {}).get("slides") or {}).get("items") or {})
     slide_properties = slide_schema.get("properties") or {}
     if (
-        not {"card", "step", "side", "group", "measurement", "annotation"}.issubset(definitions)
+        not {
+            "card", "plainCard", "iconCard", "evidenceCard", "decisionCard",
+            "step", "stepBody", "stepIconBody", "stepMediaBody", "stepLabel",
+            "side", "plainSide", "visualSide", "tabSide", "group", "convergeGroup", "measurement", "annotation",
+        }.issubset(definitions)
         or set((slide_properties.get("metric") or {}).get("required") or ()) != {"value", "unit", "caption"}
         or not (slide_properties.get("cards") or {}).get("items")
     ):
@@ -238,6 +299,91 @@ def verify_regression_guards(entry: Path) -> None:
     if 'data-slot="aside"' not in end_fragment or "这句必须显示在余韵区" not in end_fragment:
         raise RuntimeError("end/line-note content was not mapped into its visible aside")
 
+    rail = {
+        "id": "rail-body", "title": "六步流程", "template": "process-rail", "variant": "steps-6", "decor": "none",
+        "steps": [{"title": f"步骤{i}", "body": f"可见解释{i}"} for i in range(1, 7)],
+    }
+    _, rail_fragment = prepared_slide(rail, 1)
+    if any(f"可见解释{i}" not in rail_fragment for i in range(1, 7)):
+        raise RuntimeError("process-rail/steps-6 accepted body copy but did not render it")
+    expect_outline_rejected(
+        {
+            "id": "rail-eight-body", "title": "八步流程", "template": "process-rail", "variant": "steps-8", "decor": "none",
+            "steps": [{"title": f"步骤{i}", "body": "八步变体没有正文槽"} for i in range(1, 9)],
+        },
+        "process-rail/steps-8 accepted body copy that it cannot render",
+    )
+
+    process_without_optional = {
+        "id": "process-clean", "title": "四步路径", "template": "process-cards", "variant": "linear", "decor": "none",
+        "content": "没有图标和测量数据时仍然占满主体区域",
+        "steps": [{"title": f"步骤{i}", "body": f"完成动作{i}"} for i in range(1, 5)],
+    }
+    validate_outline({
+        "title": "optional collapse", "palette": "oil-yellow", "typography": "clean", "shape": "soft",
+        "click_navigation": False, "media_policy": "text-only", "slides": [process_without_optional],
+    }, templates)
+    _, process_fragment = prepared_slide(process_without_optional, 1)
+    if 'data-measurements="none"' not in process_fragment or 'data-icons="none"' not in process_fragment:
+        raise RuntimeError("process-cards did not expose the programmatic optional-region collapse state")
+    if not re.search(r'class="measurements"[^>]*\bhidden\b', process_fragment):
+        raise RuntimeError("process-cards left its empty measurements region visible")
+
+    partial_icons = json.loads(json.dumps(process_without_optional, ensure_ascii=False))
+    partial_icons["steps"][0]["icon"] = "lightbulb"
+    expect_outline_rejected(partial_icons, "process-cards accepted a partially populated icon group")
+
+    measurements_without_context = json.loads(json.dumps(process_without_optional, ensure_ascii=False))
+    measurements_without_context["measurements"] = [{"label": f"项{i}", "value": "完成"} for i in range(1, 5)]
+    expect_outline_rejected(measurements_without_context, "process-cards accepted measurements without the note column content")
+
+    expect_outline_rejected(
+        {
+            "id": "recap-hidden-media", "title": "总结", "template": "recap", "variant": "thesis-left", "decor": "none",
+            "content": "结论", "cards": [
+                {"title": "一", "body": "说明", "images": ["assets/smoke.svg"]},
+                {"title": "二", "body": "说明"}, {"title": "三", "body": "说明"},
+            ],
+        },
+        "recap accepted nested media that it cannot render",
+    )
+    expect_outline_rejected(
+        {
+            "id": "tabs-hidden-evidence", "title": "视角", "template": "tabs", "variant": "default", "decor": "none",
+            "sides": [
+                {"title": "一", "body": "说明", "evidence": ["assets/smoke.svg"]},
+                {"title": "二", "body": "说明"},
+            ],
+        },
+        "tabs accepted nested evidence that it cannot render",
+    )
+    expect_outline_rejected(
+        {
+            "id": "converge-object", "title": "汇聚", "template": "converge", "variant": "default", "decor": "none",
+            "groups": [
+                {"title": "输入一", "items": [{"title": "会被 stringify", "body": "错误"}, "普通文本"]},
+                {"title": "输入二", "items": ["普通文本", "普通文本"]},
+            ], "outcome": "结果",
+        },
+        "converge accepted object items that the filler would stringify",
+    )
+    expect_outline_rejected(
+        {"id": "end-hidden", "title": "结束", "template": "end", "variant": "line", "decor": "none", "content": "不会显示"},
+        "end/line accepted hidden supporting copy",
+    )
+    expect_outline_rejected(
+        {
+            "id": "tabs-alias", "title": "视角", "template": "tabs", "variant": "default", "decor": "none",
+            "sides": [{"h2": "旧标题", "p": "旧正文"}, {"h2": "旧标题", "p": "旧正文"}],
+        },
+        "nested legacy aliases passed validation even though fillers use title/label/body",
+    )
+
+    catalog_without_meta = next(slide for slide in smoke_slides() if slide["template"] == "catalog-board")
+    catalog_without_meta = json.loads(json.dumps(catalog_without_meta, ensure_ascii=False))
+    catalog_without_meta["groups"][0].pop("meta")
+    expect_outline_rejected(catalog_without_meta, "catalog-board accepted a group with an empty metadata slot")
+
     invalid_metric = {
         "title": "metric guard", "palette": "oil-yellow", "typography": "clean", "shape": "soft",
         "click_navigation": False, "media_policy": "text-only", "slides": [{
@@ -246,18 +392,18 @@ def verify_regression_guards(entry: Path) -> None:
         }],
     }
     try:
-        validate_outline(invalid_metric, Path(__file__).resolve().parent.parent / "assets" / "templates")
+        validate_outline(invalid_metric, templates)
     except SystemExit:
         pass
     else:
         raise RuntimeError("metric accepted a value that cannot fit its fixed component")
     valid_zero_metric = json.loads(json.dumps(invalid_metric, ensure_ascii=False))
     valid_zero_metric["slides"][0]["metric"] = {"value": 0, "unit": "%", "caption": "允许真实的零值"}
-    validate_outline(valid_zero_metric, Path(__file__).resolve().parent.parent / "assets" / "templates")
+    validate_outline(valid_zero_metric, templates)
     invalid_boolean_metric = json.loads(json.dumps(valid_zero_metric, ensure_ascii=False))
     invalid_boolean_metric["slides"][0]["metric"]["value"] = False
     try:
-        validate_outline(invalid_boolean_metric, Path(__file__).resolve().parent.parent / "assets" / "templates")
+        validate_outline(invalid_boolean_metric, templates)
     except SystemExit:
         pass
     else:
@@ -285,7 +431,7 @@ def verify_regression_guards(entry: Path) -> None:
         }],
     }
     try:
-        validate_outline(invalid_measurements, Path(__file__).resolve().parent.parent / "assets" / "templates")
+        validate_outline(invalid_measurements, templates)
     except SystemExit:
         pass
     else:
@@ -297,7 +443,7 @@ def verify_regression_guards(entry: Path) -> None:
         "click_navigation": False, "media_policy": "text-only", "slides": [invalid_boolean_measurement],
     }
     try:
-        validate_outline(invalid_boolean_deck, Path(__file__).resolve().parent.parent / "assets" / "templates")
+        validate_outline(invalid_boolean_deck, templates)
     except SystemExit:
         pass
     else:
@@ -312,6 +458,52 @@ def verify_regression_guards(entry: Path) -> None:
     })
     if not any(item.get("code") == "media-required" for item in no_media.get("issues") or []):
         raise RuntimeError("short media-required decks can still pass with zero visible media")
+    if any(item.get("code") == "media-coverage" for item in no_media.get("issues") or []):
+        raise RuntimeError("zero-media decks report both media-required and media-coverage for the same defect")
+
+    sparse_visual_slides = [
+        {"id": "m1", "title": "媒体", "template": "split-visual", "variant": "balanced", "decor": "none", "image": "assets/smoke.svg", "media_frame": "content", "background": "soft-spotlight"},
+        {"id": "m2", "title": "引用", "template": "quote", "variant": "default", "decor": "none", "background": "grid-wide"},
+        {"id": "m3", "title": "三步", "template": "three-steps", "variant": "linear", "decor": "none", "background": "block-field"},
+        {"id": "m4", "title": "对比", "template": "comparison", "variant": "default", "decor": "none", "background": "grid-fade"},
+        {"id": "m5", "title": "指标", "template": "metric", "variant": "default", "decor": "none", "background": "soft-spotlight"},
+        {"id": "m6", "title": "总结", "template": "recap", "variant": "thesis-left", "decor": "none", "background": "block-field"},
+        {"id": "m7", "title": "时间", "template": "timeline", "variant": "default", "decor": "none", "background": "grid-wide"},
+        {"id": "m8", "title": "叙事", "template": "narrative-bento", "variant": "default", "decor": "none", "background": "grid-fade"},
+    ]
+    sparse_media = audit_summary({"media_policy": "required", "slides": sparse_visual_slides})
+    if not any(item.get("code") == "media-coverage" for item in sparse_media.get("issues") or []):
+        raise RuntimeError("eight content slides still passed with only one media slide")
+
+    monotone_slides = json.loads(json.dumps(sparse_visual_slides, ensure_ascii=False))
+    for slide in monotone_slides:
+        slide.pop("image", None)
+        slide.pop("media_frame", None)
+        slide["background"] = "grid-fade"
+    monotone = audit_summary({"media_policy": "text-only", "slides": monotone_slides})
+    if not any(
+        item.get("code") in {"background-monotony", "background-class-monotony"} and item.get("level") == "error"
+        for item in monotone.get("issues") or []
+    ):
+        raise RuntimeError("perceptually monotone backgrounds did not block the visual plan")
+
+    same_class_slides = json.loads(json.dumps(monotone_slides, ensure_ascii=False))
+    for index, slide in enumerate(same_class_slides):
+        slide["background"] = "grid-fade" if index % 2 == 0 else "grid-wide"
+    same_class = audit_summary({"media_policy": "text-only", "slides": same_class_slides})
+    if not any(item.get("code") == "background-class-monotony" for item in same_class.get("issues") or []):
+        raise RuntimeError("mixed preset names bypassed same-class background monotony")
+
+    media_owned = [
+        {
+            "id": f"photo-{index}", "title": f"照片 {index}", "template": "photo-gradient",
+            "variant": "copy-left", "decor": "none", "image": f"assets/photo-{index}.jpg", "media_frame": "content",
+        }
+        for index in range(1, 9)
+    ]
+    media_owned_audit = audit_summary({"media_policy": "required", "slides": media_owned})
+    if any(str(item.get("code", "")).startswith("background-") for item in media_owned_audit.get("issues") or []):
+        raise RuntimeError("media-owned full-screen images were treated as a monotonous runtime background")
 
     with tempfile.TemporaryDirectory(prefix="oil-ppt-state-regression-") as temp_dir:
         project = Path(temp_dir) / "project"
@@ -585,8 +777,17 @@ def main() -> None:
                     raise RuntimeError("failed programmatic render replaced an existing asset")
                 verify_responsive_stage(root, browser)
                 verify_layout_containment_guard(root, browser)
+                verify_optional_region_guard(root, browser)
                 matrix_count = render_component_matrix(root, browser)
                 matrix_ok = matrix_count > 0
+            smoke_deck_slides = smoke_slides()
+            background_cycle = ("grid-fade", "block-field", "soft-spotlight")
+            content_index = 0
+            for slide in smoke_deck_slides:
+                if slide["template"] in {"cover", "section", "end"}:
+                    continue
+                slide["background"] = background_cycle[content_index % len(background_cycle)]
+                content_index += 1
             outline.write_text(
                 json.dumps(
                     {
@@ -599,7 +800,7 @@ def main() -> None:
                         "typography": "clean",
                         "shape": "soft",
                         "click_navigation": False,
-                        "slides": smoke_slides(),
+                        "slides": smoke_deck_slides,
                     },
                     ensure_ascii=False,
                     indent=2,

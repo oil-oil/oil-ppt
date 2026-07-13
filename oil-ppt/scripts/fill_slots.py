@@ -259,8 +259,8 @@ def fill_process_rail(fragment: str, slide: dict) -> str:
     if isinstance(steps, list):
         for i, item in enumerate(steps[:8]):
             label = item if isinstance(item, str) else (item.get("label") or item.get("title"))
-            if label:
-                fragment = replace_nth_h2(fragment, i, str(label))
+            body = None if isinstance(item, str) else (item.get("body") or item.get("text") or item.get("p"))
+            fragment = replace_step_block(fragment, i, label, body)
     fragment = fill_connectors(fragment)
     return fragment
 
@@ -628,7 +628,17 @@ def fill_sequence_gallery(fragment: str, slide: dict) -> str:
 
 def fill_process_cards(fragment: str, slide: dict) -> str:
     fragment = fill_common_slots(fragment, slide)
-    for index, step in enumerate((slide.get("steps") or [])[:4], start=1):
+    steps = (slide.get("steps") or [])[:4]
+    icon_count = sum(bool(isinstance(step, dict) and str(step.get("icon") or "").strip()) for step in steps)
+    icon_state = "all" if icon_count else "none"
+    fragment = re.sub(
+        r"(<section\b[^>]*)(>)",
+        lambda match: match.group(1) + f' data-icons="{icon_state}"' + match.group(2),
+        fragment,
+        count=1,
+        flags=re.I,
+    )
+    for index, step in enumerate(steps, start=1):
         if not isinstance(step, dict):
             continue
         fragment = set_slot_text_force(fragment, f"step-title-{index}", str(step.get("title") or step.get("label") or ""))
@@ -641,8 +651,21 @@ def fill_process_cards(fragment: str, slide: dict) -> str:
         fragment = set_slot_text_force(fragment, f"measurement-value-{index}", display_value(metric.get("value")))
     fragment = set_slot_text_force(fragment, "measurement-note", str(slide.get("measurement_note") or ""))
     fragment = set_slot_text_force(fragment, "measurement-meta", str(slide.get("measurement_meta") or ""))
-    if not slide.get("measurements") and not slide.get("measurement_note") and not slide.get("measurement_meta"):
-        fragment = fragment.replace('class="measurements"', 'class="measurements" hidden', 1)
+    has_measurements = bool(slide.get("measurements"))
+    measurement_state = "all" if has_measurements else "none"
+    fragment = re.sub(
+        r"(<section\b[^>]*)(>)",
+        lambda match: match.group(1) + f' data-measurements="{measurement_state}"' + match.group(2),
+        fragment,
+        count=1,
+        flags=re.I,
+    )
+    if not has_measurements:
+        fragment = fragment.replace(
+            'class="measurements" data-optional-region="measurements"',
+            'class="measurements" data-optional-region="measurements" hidden aria-hidden="true"',
+            1,
+        )
     return fill_connectors(fragment)
 
 

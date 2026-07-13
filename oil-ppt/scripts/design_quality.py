@@ -144,11 +144,11 @@ def audit_outline(data: dict) -> list[dict]:
                 [slide["id"]],
             ))
     require_media = data.get("media_policy", "required") != "text-only"
-    all_media_slides = [slide for slide in slides if has_media(slide)]
-    if require_media and not all_media_slides:
+    media_slides = [slide for slide in content if has_media(slide)]
+    if require_media and not media_slides:
         results.append(issue(
             "error", "media-required",
-            "media_policy='required' needs at least one visible media slide; use a real local asset or explicitly confirm text-only.",
+            "media_policy='required' needs at least one visible media slide in the content deck; use a real local asset or explicitly confirm text-only.",
             [slide["id"] for slide in content],
         ))
     if not content:
@@ -171,14 +171,14 @@ def audit_outline(data: dict) -> list[dict]:
             },
         ))
 
-    media_slides = [slide for slide in content if has_media(slide)]
-    if require_media and len(content) >= 15:
+    if require_media and media_slides:
         minimum = (len(content) + 4) // 5
         if len(media_slides) < minimum:
+            missing_media = [slide for slide in content if not has_media(slide)]
             results.append(issue(
                 "error", "media-coverage",
-                f"Long decks require media on at least 20% of content slides; found {len(media_slides)}/{len(content)}, need {minimum}.",
-                [slide["id"] for slide in media_slides],
+                f"The content deck needs at least one real visual every five slides; found {len(media_slides)}/{len(content)}, need {minimum}.",
+                [slide["id"] for slide in missing_media],
             ))
 
     heavy = [slide for slide in content if slide_quality(slide)["surface_density"] == "heavy"]
@@ -277,13 +277,13 @@ def audit_outline(data: dict) -> list[dict]:
         backgrounds = [effective_background(slide) for slide in content]
         counts = Counter(backgrounds)
         dominant, dominant_count = counts.most_common(1)[0]
-        if len(counts) == 1 or dominant_count / len(content) > .72:
+        if dominant != "media-owned" and (len(counts) == 1 or dominant_count / len(content) > .72):
             dominant_slides = [slide for slide in content if effective_background(slide) == dominant]
             candidates = dominant_slides[2::4] or dominant_slides[len(dominant_slides) // 2:len(dominant_slides) // 2 + 1]
             candidates = candidates[:3]
             changes = {slide["id"]: suggested_background(slide, dominant) for slide in candidates}
             results.append(issue(
-                "warning", "background-monotony",
+                "error", "background-monotony",
                 f"Background {dominant!r} appears on {dominant_count}/{len(content)} content slides; introduce a small number of deliberate background changes.",
                 [slide["id"] for slide in dominant_slides],
                 {"set_background": changes},
@@ -291,12 +291,12 @@ def audit_outline(data: dict) -> list[dict]:
 
         classes = Counter(BACKGROUND_CLASSES[value] for value in backgrounds)
         dominant_class, dominant_class_count = classes.most_common(1)[0]
-        if len(counts) > 1 and dominant_class_count / len(content) > .72:
+        if dominant_class != "media" and len(counts) > 1 and dominant_class_count / len(content) > .72:
             same_class = [slide for slide in content if BACKGROUND_CLASSES[effective_background(slide)] == dominant_class]
             candidates = same_class[2::4][:3] or same_class[:1]
             changes = {slide["id"]: suggested_background(slide, effective_background(slide)) for slide in candidates}
             results.append(issue(
-                "warning", "background-class-monotony",
+                "error", "background-class-monotony",
                 f"Perceptually similar {dominant_class!r} backgrounds appear on {dominant_class_count}/{len(content)} content slides, even though preset names differ.",
                 [slide["id"] for slide in same_class],
                 {"set_background": changes},
@@ -311,7 +311,7 @@ def audit_outline(data: dict) -> list[dict]:
                     run_background = background
                 run.append(slide)
                 continue
-            if len(run) >= 5:
+            if len(run) >= 5 and run_background != "media-owned":
                 target = run[len(run) // 2]
                 results.append(issue(
                     "warning", "background-run",
@@ -405,10 +405,11 @@ def audit_outline(data: dict) -> list[dict]:
 
         if require_media and len(segment) >= 5:
             segment_media = [slide for slide in segment if has_media(slide)]
-            if not segment_media:
+            minimum = (len(segment) + 4) // 5
+            if len(segment_media) < minimum:
                 results.append(issue(
                     "error", "missing-section-media",
-                    f"Section {segment_index} has {len(segment)} content slides but no media slide.",
+                    f"Section {segment_index} has {len(segment)} content slides but only {len(segment_media)} media slide(s); need {minimum}.",
                     [slide["id"] for slide in segment],
                 ))
             else:
@@ -417,7 +418,7 @@ def audit_outline(data: dict) -> list[dict]:
                     if slide is not None and not has_media(slide):
                         run.append(slide)
                         continue
-                    if len(run) >= 6:
+                    if len(run) >= 5:
                         results.append(issue(
                             "error", "media-gap",
                             f"Section {segment_index} has {len(run)} consecutive content slides without media.",
@@ -432,7 +433,11 @@ def audit_summary(data: dict) -> dict:
     results = audit_outline(data)
     review = recommend_outline(data)
     return {
-        "status": "error" if any(item["level"] == "error" for item in results) else "ok",
+        "status": (
+            "error" if any(item["level"] == "error" for item in results)
+            else "warning" if any(item["level"] == "warning" for item in results)
+            else "ok"
+        ),
         "issues": results,
         "counts": dict(Counter(item["level"] for item in results)),
         "coverage": coverage_summary(data),

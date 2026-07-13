@@ -210,19 +210,62 @@ def contract_schema() -> dict:
             ],
         },
         "card": {
-            "type": "object", "required": ["title", "body"], "additionalProperties": False,
+            "type": "object", "required": ["body"], "additionalProperties": False,
+            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
             "properties": {
                 "title": {"type": "string", "minLength": 1},
+                "label": {"type": "string", "minLength": 1},
                 "body": {"type": "string", "minLength": 1},
                 "icon": {"type": "string", "minLength": 1},
                 "backdrop": {"type": "string", "minLength": 1},
                 "images": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
             },
         },
-        "step": {
-            "type": "object", "required": ["title"], "additionalProperties": False,
+        "plainCard": {
+            "type": "object", "required": ["body"], "additionalProperties": False,
+            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
             "properties": {
                 "title": {"type": "string", "minLength": 1},
+                "label": {"type": "string", "minLength": 1},
+                "body": {"type": "string", "minLength": 1},
+            },
+        },
+        "iconCard": {
+            "type": "object", "required": ["body"], "additionalProperties": False,
+            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "properties": {
+                "title": {"type": "string", "minLength": 1},
+                "label": {"type": "string", "minLength": 1},
+                "body": {"type": "string", "minLength": 1},
+                "icon": {"type": "string", "minLength": 1},
+            },
+        },
+        "evidenceCard": {
+            "type": "object", "required": ["body", "images"], "additionalProperties": False,
+            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "properties": {
+                "title": {"type": "string", "minLength": 1},
+                "label": {"type": "string", "minLength": 1},
+                "body": {"type": "string", "minLength": 1},
+                "images": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/evidence"}},
+            },
+        },
+        "decisionCard": {
+            "type": "object", "required": ["body"], "additionalProperties": False,
+            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "properties": {
+                "title": {"type": "string", "minLength": 1},
+                "label": {"type": "string", "minLength": 1},
+                "body": {"type": "string", "minLength": 1},
+                "backdrop": {"type": "string", "minLength": 1},
+            },
+        },
+        "step": {
+            "type": "object", "additionalProperties": False,
+            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "properties": {
+                "title": {"type": "string", "minLength": 1},
+                "label": {"type": "string", "minLength": 1},
                 "body": {"type": "string", "minLength": 1},
                 "icon": {"type": "string", "minLength": 1},
                 "image": {"type": "string", "minLength": 1},
@@ -232,15 +275,43 @@ def contract_schema() -> dict:
             },
         },
         "stepBody": {
-            "type": "object", "required": ["title", "body"], "additionalProperties": False,
+            "type": "object", "required": ["body"], "additionalProperties": False,
+            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
             "properties": {
                 "title": {"type": "string", "minLength": 1},
+                "label": {"type": "string", "minLength": 1},
+                "body": {"type": "string", "minLength": 1},
+            },
+        },
+        "stepIconBody": {
+            "type": "object", "required": ["body"], "additionalProperties": False,
+            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "properties": {
+                "title": {"type": "string", "minLength": 1},
+                "label": {"type": "string", "minLength": 1},
                 "body": {"type": "string", "minLength": 1},
                 "icon": {"type": "string", "minLength": 1},
+            },
+        },
+        "stepMediaBody": {
+            "type": "object", "required": ["body", "image"], "additionalProperties": False,
+            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "properties": {
+                "title": {"type": "string", "minLength": 1},
+                "label": {"type": "string", "minLength": 1},
+                "body": {"type": "string", "minLength": 1},
                 "image": {"type": "string", "minLength": 1},
                 "image_alt": {"type": "string", "minLength": 1},
                 "media_question": {"type": "string", "minLength": 1},
                 "media_source": {"$ref": "#/$defs/mediaSource"},
+            },
+        },
+        "stepLabel": {
+            "type": "object", "additionalProperties": False,
+            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "properties": {
+                "title": {"type": "string", "minLength": 1},
+                "label": {"type": "string", "minLength": 1},
             },
         },
         "point": {
@@ -255,14 +326,67 @@ def contract_schema() -> dict:
                 },
             ],
         },
+        "pointBody": {
+            "oneOf": [
+                {"type": "string", "minLength": 1},
+                {
+                    "type": "object", "required": ["body"], "additionalProperties": False,
+                    "properties": {"body": {"type": "string", "minLength": 1}},
+                },
+            ],
+        },
+        "pointFinding": {
+            "oneOf": [
+                {"type": "string", "minLength": 1},
+                {
+                    "type": "object", "required": ["body"], "additionalProperties": False,
+                    "properties": {
+                        "title": {"type": "string", "minLength": 1},
+                        "label": {"type": "string", "minLength": 1},
+                        "body": {"type": "string", "minLength": 1},
+                    },
+                },
+            ],
+        },
         "side": {
-            "type": "object", "required": ["title"], "additionalProperties": False,
+            "type": "object", "additionalProperties": False,
+            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
             "properties": {
                 "title": {"type": "string", "minLength": 1},
+                "label": {"type": "string", "minLength": 1},
                 "body": {"type": "string", "minLength": 1},
                 "lead": {"type": "string", "minLength": 1},
                 "points": {"type": "array", "items": {"$ref": "#/$defs/point"}},
                 "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
+            },
+        },
+        "plainSide": {
+            "type": "object", "required": ["points"], "additionalProperties": False,
+            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "properties": {
+                "title": {"type": "string", "minLength": 1},
+                "label": {"type": "string", "minLength": 1},
+                "points": {"type": "array", "items": {"$ref": "#/$defs/pointBody"}},
+            },
+        },
+        "visualSide": {
+            "type": "object", "required": ["points", "evidence"], "additionalProperties": False,
+            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "properties": {
+                "title": {"type": "string", "minLength": 1},
+                "label": {"type": "string", "minLength": 1},
+                "lead": {"type": "string", "minLength": 1},
+                "points": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/pointFinding"}},
+                "evidence": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/evidence"}},
+            },
+        },
+        "tabSide": {
+            "type": "object", "required": ["body"], "additionalProperties": False,
+            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "properties": {
+                "title": {"type": "string", "minLength": 1},
+                "label": {"type": "string", "minLength": 1},
+                "body": {"type": "string", "minLength": 1},
             },
         },
         "groupItem": {
@@ -273,13 +397,24 @@ def contract_schema() -> dict:
             },
         },
         "group": {
-            "type": "object", "required": ["title", "items"], "additionalProperties": False,
+            "type": "object", "required": ["items"], "additionalProperties": False,
+            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
             "properties": {
                 "title": {"type": "string", "minLength": 1},
+                "label": {"type": "string", "minLength": 1},
                 "meta": {"type": "string", "minLength": 1},
                 "items": {"type": "array", "items": {"oneOf": [
                     {"type": "string", "minLength": 1}, {"$ref": "#/$defs/groupItem"},
                 ]}},
+            },
+        },
+        "convergeGroup": {
+            "type": "object", "required": ["items"], "additionalProperties": False,
+            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "properties": {
+                "title": {"type": "string", "minLength": 1},
+                "label": {"type": "string", "minLength": 1},
+                "items": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "string", "minLength": 1}},
             },
         },
         "measurement": {
@@ -304,7 +439,7 @@ def contract_schema() -> dict:
         },
     }
     string_fields = {
-        key: {"type": "string"}
+        key: ({"type": "string"} if key in {"image_alt", "secondary_image_alt"} else {"type": "string", "minLength": 1})
         for key in SLIDE_ALLOWED_FIELDS
         if key not in {
             "cards", "steps", "sides", "groups", "metrics", "annotations", "measurements",
@@ -364,37 +499,53 @@ def contract_schema() -> dict:
         ]},
         "media_treatment": {"enum": ["natural", "muted", "mono"]},
         "media_fidelity": {"enum": ["strict", "contextual", "illustrative"]},
-        "visual_task": {"type": "string", "description": "planning-only recommender hint; not rendered"},
-        "media_intent": {"type": "string", "description": "planning-only recommender hint; not rendered"},
+        "visual_task": {"type": "string", "minLength": 1, "description": "planning-only recommender hint; not rendered"},
+        "media_intent": {"type": "string", "minLength": 1, "description": "planning-only recommender hint; not rendered"},
     })
-    content_required = {"required": ["content"]}
+    def exactly_one_required(*fields: str) -> dict:
+        return {
+            "oneOf": [
+                {
+                    "required": [field],
+                    "not": {"anyOf": [{"required": [other]} for other in fields if other != field]},
+                }
+                for field in fields
+            ]
+        }
+
+    copy_required = exactly_one_required("content", "note")
+    image_required = exactly_one_required("image", "media")
+    media_contract_fields = (
+        "image", "media", "artifact_image", "image_alt", "media_frame", "media_fit",
+        "media_position", "media_treatment", "media_role", "media_fidelity", "media_question", "media_source",
+    )
+
+    def forbid_fields(*fields: str) -> dict:
+        return {"not": {"anyOf": [{"required": [field]} for field in fields]}}
+
     component_rules: dict[str, dict] = {
-        "section": content_required,
+        "section": copy_required,
         "three-steps": {"required": ["steps"], "properties": {"steps": {"minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/stepBody"}}}},
         "timeline": {"required": ["steps"], "properties": {"steps": {"minItems": 4, "maxItems": 4, "items": {"$ref": "#/$defs/stepBody"}}}},
         "quote": {"required": ["quote", "source"]},
-        "recap": {"required": ["content", "cards"], "properties": {"cards": {"minItems": 3, "maxItems": 3}}},
+        "recap": {"required": ["cards"], "allOf": [copy_required], "properties": {"cards": {"minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/plainCard"}}}},
         "comparison-list": {
             "required": ["sides"],
             "properties": {"sides": {"minItems": 2, "maxItems": 2, "items": {"allOf": [
-                {"$ref": "#/$defs/side"},
-                {"required": ["points"], "properties": {"points": {"minItems": 3, "maxItems": 3}}},
+                {"$ref": "#/$defs/plainSide"},
+                {"properties": {"points": {"minItems": 3, "maxItems": 3}}},
             ]}}},
         },
         "tabs": {
             "required": ["sides"],
-            "properties": {"sides": {"minItems": 2, "maxItems": 2, "items": {"allOf": [
-                {"$ref": "#/$defs/side"}, {"required": ["body"]},
-            ]}}},
+            "properties": {"sides": {"minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/tabSide"}}},
         },
-        "metric": {"required": ["content", "metric"]},
+        "metric": {"required": ["metric"], "allOf": [copy_required]},
         "converge": {
             "required": ["groups", "outcome"],
-            "properties": {"groups": {"minItems": 2, "maxItems": 2, "items": {"allOf": [
-                {"$ref": "#/$defs/group"}, {"properties": {"items": {"minItems": 2, "maxItems": 2}}},
-            ]}}},
+            "properties": {"groups": {"minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/convergeGroup"}}},
         },
-        "editorial-feature": {"required": ["content", "image", "media_frame", "cards"], "properties": {"cards": {"minItems": 3, "maxItems": 3}}},
+        "editorial-feature": {"required": ["media_frame", "cards"], "allOf": [copy_required, image_required], "properties": {"cards": {"minItems": 3, "maxItems": 3}}},
         "catalog-board": {
             "required": ["metrics", "groups"],
             "properties": {
@@ -407,28 +558,32 @@ def contract_schema() -> dict:
                 ]}},
             },
         },
-        "annotated-showcase": {"required": ["content", "image", "media_frame", "annotations"], "properties": {"annotations": {"minItems": 3, "maxItems": 3}}},
-        "narrative-bento": {"required": ["content", "statement", "statement_body", "quote", "cards"], "properties": {"cards": {"minItems": 2, "maxItems": 2}}},
+        "annotated-showcase": {"required": ["media_frame", "annotations"], "allOf": [copy_required, image_required], "properties": {"annotations": {"minItems": 3, "maxItems": 3}}},
+        "narrative-bento": {"required": ["statement", "statement_body", "quote", "cards"], "allOf": [copy_required], "properties": {"cards": {"minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/iconCard"}}}},
         "sequence-gallery": {
-            "required": ["content", "conclusion", "media_frame", "steps"],
-            "properties": {"steps": {"minItems": 3, "maxItems": 3, "items": {"allOf": [
-                {"$ref": "#/$defs/stepBody"}, {"required": ["image"]},
-            ]}}},
+            "required": ["conclusion", "media_frame", "steps"],
+            "allOf": [copy_required],
+            "properties": {"steps": {"minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/stepMediaBody"}}},
         },
         "process-cards": {
-            "required": ["content", "steps"],
+            "required": ["steps"],
+            "allOf": [copy_required, {"oneOf": [
+                {"properties": {"steps": {"contains": {"required": ["icon"]}, "minContains": 4, "maxContains": 4}}},
+                {"properties": {"steps": {"not": {"contains": {"required": ["icon"]}}}}},
+            ]}],
             "properties": {
-                "steps": {"minItems": 4, "maxItems": 4, "items": {"$ref": "#/$defs/stepBody"}},
+                "steps": {"minItems": 4, "maxItems": 4, "items": {"$ref": "#/$defs/stepIconBody"}},
                 "measurements": {"minItems": 4, "maxItems": 4},
             },
             "dependentRequired": {
+                "measurements": ["measurement_note", "measurement_meta"],
                 "measurement_note": ["measurements"],
                 "measurement_meta": ["measurements"],
             },
         },
     }
     for name in ("bleed-split", "browser-showcase", "diagonal-split", "editorial-canvas", "photo-gradient", "photo-split", "split-visual"):
-        component_rules[name] = {"required": ["content", "image", "media_frame"]}
+        component_rules[name] = {"required": ["media_frame"], "allOf": [copy_required, image_required]}
     component_conditions = []
     for name, contract in sorted(COMPONENT_CONTRACTS.items()):
         forbidden = sorted(set(SLIDE_ALLOWED_FIELDS) - set(BASE_VISIBLE_FIELDS) - set(TEMPLATE_VISIBLE_FIELDS[name]))
@@ -447,76 +602,126 @@ def contract_schema() -> dict:
                 then["properties"] = {**then["properties"], **rule["properties"]}
         variant_rules = []
         if name == "cover":
-            variant_rules.append({
-                "if": {"properties": {"variant": {"const": "media"}}},
-                "then": {"required": ["image", "media_frame"]},
-            })
+            variant_rules.extend([
+                {
+                    "if": {"properties": {"variant": {"const": "statement"}}},
+                    "then": forbid_fields(*media_contract_fields),
+                },
+                {
+                    "if": {"properties": {"variant": {"const": "media"}}},
+                    "then": {"required": ["media_frame"], **image_required},
+                },
+            ])
         elif name == "end":
             variant_rules.extend([
                 {
+                    "if": {"properties": {"variant": {"const": "line"}}},
+                    "then": {"not": {"anyOf": [{"required": [field]} for field in (
+                        "content", "note", "meta", "aside", "aside_label", "artifact_title", "artifact_body",
+                        *media_contract_fields,
+                    )]}},
+                },
+                {
                     "if": {"properties": {"variant": {"const": "line-note"}}},
-                    "then": {"anyOf": [{"required": ["aside"]}, {"required": ["content"]}]},
+                    "then": {
+                        "oneOf": [
+                            {"required": [field], "not": {"anyOf": [{"required": [other]} for other in ("aside", "content", "note") if other != field]}}
+                            for field in ("aside", "content", "note")
+                        ],
+                        "not": {"anyOf": [{"required": [field]} for field in (
+                            "meta", "artifact_title", "artifact_body", *media_contract_fields,
+                        )]},
+                    },
                 },
                 {
                     "if": {"properties": {"variant": {"const": "line-artifact"}}},
-                    "then": {"required": ["image", "media_frame", "artifact_title", "artifact_body"]},
+                    "then": {
+                        "required": ["media_frame", "artifact_title", "artifact_body"],
+                        "allOf": [exactly_one_required("image", "artifact_image")],
+                        "not": {"anyOf": [
+                            *[{"required": [field]} for field in ("meta", "aside", "aside_label")],
+                            {"required": ["content", "note"]},
+                        ]},
+                    },
                 },
             ])
         elif name == "process-rail":
             variant_rules.extend([
                 {
                     "if": {"properties": {"variant": {"const": "steps-6"}}},
-                    "then": {"required": ["steps"], "properties": {"steps": {"minItems": 6, "maxItems": 6}}},
+                    "then": {"required": ["steps"], "properties": {"steps": {"minItems": 6, "maxItems": 6, "items": {"$ref": "#/$defs/stepBody"}}}},
                 },
                 {
                     "if": {"properties": {"variant": {"const": "steps-8"}}},
-                    "then": {"required": ["steps"], "properties": {"steps": {"minItems": 8, "maxItems": 8}}},
+                    "then": {"required": ["steps"], "properties": {"steps": {"minItems": 8, "maxItems": 8, "items": {"$ref": "#/$defs/stepLabel"}}}},
                 },
             ])
         elif name == "card-trio":
             then.update({"required": ["cards"], "properties": {**then["properties"], "cards": {"minItems": 3, "maxItems": 3}}})
-            variant_rules.append({
-                "if": {"properties": {"variant": {"const": "media-evidence"}}},
-                "then": {
-                    "required": ["content", "media_frame"],
-                    "properties": {"cards": {"prefixItems": [
-                        {"allOf": [{"$ref": "#/$defs/card"}, {"required": ["images"], "properties": {"images": {"minItems": 2, "maxItems": 2}}}]},
-                        {"allOf": [{"$ref": "#/$defs/card"}, {"required": ["images"], "properties": {"images": {"minItems": 2, "maxItems": 2}}}]},
-                        {"$ref": "#/$defs/card"},
-                    ], "items": False}},
+            variant_rules.extend([
+                {
+                    "if": {"properties": {"variant": {"enum": ["feature-left", "feature-right", "feature-top"]}}},
+                    "then": {
+                        **forbid_fields("content", "note", "kicker", "media_frame", "media_fit", "media_position", "media_treatment", "media_role", "media_fidelity", "media_question", "media_source"),
+                        "properties": {"cards": {"items": {"$ref": "#/$defs/plainCard"}}},
+                    },
                 },
-            })
+                {
+                    "if": {"properties": {"variant": {"const": "media-evidence"}}},
+                    "then": {
+                        "required": ["media_frame"],
+                        "allOf": [copy_required],
+                        "properties": {"cards": {"prefixItems": [
+                            {"$ref": "#/$defs/evidenceCard"},
+                            {"$ref": "#/$defs/evidenceCard"},
+                            {"$ref": "#/$defs/decisionCard"},
+                        ], "items": False}},
+                    },
+                },
+            ])
         elif name == "comparison":
             then.update({"required": ["sides"], "properties": {**then["properties"], "sides": {"minItems": 2, "maxItems": 2}}})
             variant_rules.extend([
                 {
                     "if": {"properties": {"variant": {"const": "default"}}},
-                    "then": {"properties": {"sides": {"items": {"allOf": [
-                        {"$ref": "#/$defs/side"},
-                        {"required": ["points"], "properties": {"points": {"minItems": 2, "maxItems": 2}}},
-                    ]}}}},
+                    "then": {
+                        **forbid_fields("content", "note", "kicker", "media_frame", "media_fit", "media_position", "media_treatment", "media_role", "media_fidelity", "media_question", "media_source"),
+                        "properties": {"sides": {"items": {"allOf": [
+                            {"$ref": "#/$defs/plainSide"},
+                            {"properties": {"points": {"minItems": 2, "maxItems": 2}}},
+                        ]}}},
+                    },
                 },
                 {
                     "if": {"properties": {"variant": {"const": "visual-evidence"}}},
-                    "then": {"required": ["content", "media_frame"], "properties": {"sides": {"items": {"allOf": [
-                        {"$ref": "#/$defs/side"},
-                        {"required": ["points", "evidence"], "properties": {
-                            "points": {"minItems": 2, "maxItems": 2},
-                            "evidence": {"minItems": 2, "maxItems": 2},
-                        }},
-                    ]}}}},
+                    "then": {"required": ["media_frame"], "allOf": [copy_required], "properties": {"sides": {"items": {"$ref": "#/$defs/visualSide"}}}},
                 },
             ])
         elif name == "editorial-feature":
-            variant_rules.append({
-                "if": {"properties": {"variant": {"const": "hero-collage"}}},
-                "then": {"required": ["secondary_image"]},
-            })
-        elif name == "case-study-board":
-            then.update({"required": ["content", "metrics", "insight"], "properties": {**then["properties"], "metrics": {"minItems": 2, "maxItems": 2}}})
             variant_rules.extend([
-                {"if": {"properties": {"variant": {"const": "evidence"}}}, "then": {"required": ["image", "media_frame"]}},
-                {"if": {"properties": {"variant": {"const": "chart"}}}, "then": {"required": ["chart"]}},
+                {
+                    "if": {"properties": {"variant": {"const": "default"}}},
+                    "then": {
+                        **forbid_fields("badge", "media_note", "secondary_image", "secondary_image_alt"),
+                        "properties": {"cards": {"items": {"$ref": "#/$defs/iconCard"}}},
+                    },
+                },
+                {
+                    "if": {"properties": {"variant": {"const": "hero-collage"}}},
+                    "then": {"required": ["secondary_image"], "properties": {"cards": {"items": {"$ref": "#/$defs/plainCard"}}}},
+                },
+            ])
+        elif name == "case-study-board":
+            then.update({"required": ["metrics", "insight"], "allOf": [copy_required], "properties": {**then["properties"], "metrics": {"minItems": 2, "maxItems": 2}}})
+            variant_rules.extend([
+                {
+                    "if": {"properties": {"variant": {"const": "evidence"}}},
+                    "then": {"required": ["media_frame"], **image_required, **forbid_fields("chart")},
+                },
+                {
+                    "if": {"properties": {"variant": {"const": "chart"}}},
+                    "then": {"required": ["chart"], **forbid_fields(*media_contract_fields)},
+                },
             ])
         if variant_rules:
             then.setdefault("allOf", []).extend(variant_rules)
@@ -560,7 +765,15 @@ def contract_schema() -> dict:
                     "required": ["id", "title", "template", "variant", "decor"],
                     "additionalProperties": False,
                     "properties": slide_properties,
-                    "allOf": component_conditions,
+                    "allOf": [
+                        {"not": {"required": ["content", "note"]}},
+                        {"not": {"anyOf": [
+                            {"required": ["image", "media"]},
+                            {"required": ["image", "artifact_image"]},
+                            {"required": ["media", "artifact_image"]},
+                        ]}},
+                        *component_conditions,
+                    ],
                 },
             },
         },

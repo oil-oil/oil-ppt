@@ -29,11 +29,11 @@ TEMPLATE_FAMILIES = {
 
 TEMPLATE_CONTENT_HELP = {
     "cover": "content optional; media variant also requires image",
-    "end": "line needs title; line-note needs aside or content (rendered in the aside); line-artifact needs image + artifact_title + artifact_body",
+    "end": "line needs title; line-note needs exactly one of aside/content/note; line-artifact needs image + artifact_title + artifact_body",
     "section": "content",
     "three-steps": "steps[3] with label + body",
     "timeline": "steps[4] with label + body",
-    "process-rail": "steps[6] or steps[8] with label",
+    "process-rail": "steps-6 uses steps[6] with title + body; steps-8 uses steps[8] with title only",
     "quote": "quote + source",
     "card-trio": "feature variants use cards[3] with title + body; media-evidence additionally requires cards[1..2].images[2] with image + optional caption",
     "comparison": "default uses sides[2] with title + points[2]; visual-evidence additionally requires evidence[2] per side",
@@ -55,13 +55,23 @@ TEMPLATE_CONTENT_HELP = {
     "annotated-showcase": "content + image + annotations[3] with title + body",
     "narrative-bento": "content + statement + statement_body + cards[2] + quote; optional icons",
     "sequence-gallery": "content + conclusion + steps[3], each with title + body + image",
-    "process-cards": "steps[4] with title + body; optional step.icon; measurement_note/meta require measurements[4]",
+    "process-cards": "steps[4] with title + body; icons are all-or-none; optional measurements[4] require measurement_note + measurement_meta",
 }
 
 
 # Only complex variants need an extra map. This is emitted by `contract --id`
 # so a weaker model sees the shortest valid input before optional polish.
 VARIANT_INPUT_GUIDANCE = {
+    "process-rail": {
+        "steps-6": {
+            "minimum": ["steps[6]: title + body"],
+            "optional": [],
+        },
+        "steps-8": {
+            "minimum": ["steps[8]: title only"],
+            "optional": [],
+        },
+    },
     "editorial-feature": {
         "default": {
             "minimum": ["content", "image", "cards[3]: title + body"],
@@ -92,8 +102,8 @@ VARIANT_INPUT_GUIDANCE = {
         },
     },
     "process-cards": {
-        "linear": {"minimum": ["content", "steps[4]: title + body"], "optional": ["steps[].icon", "measurements[4] with optional measurement_note/measurement_meta"]},
-        "terminal-focus": {"minimum": ["content", "steps[4]: title + body"], "optional": ["steps[].icon", "measurements[4] with optional measurement_note/measurement_meta"]},
+        "linear": {"minimum": ["content", "steps[4]: title + body"], "optional": ["icons on all 4 steps", "measurements[4] + measurement_note + measurement_meta"]},
+        "terminal-focus": {"minimum": ["content", "steps[4]: title + body"], "optional": ["icons on all 4 steps", "measurements[4] + measurement_note + measurement_meta"]},
     },
     "catalog-board": {
         "default": {
@@ -356,6 +366,13 @@ def _require_sides(slide: dict, index: int, points: int) -> None:
             raise SystemExit(f"Outline slide {index} sides[{side_index}] requires exactly {points} non-empty points.")
 
 
+def _reject_point_fields(sides: list, index: int, allowed: set[str], reason: str) -> None:
+    for side_index, side in enumerate(sides, start=1):
+        values = side.get("points") if isinstance(side, dict) else None
+        if isinstance(values, list):
+            _reject_nested_fields(values, index, f"sides[{side_index}].points", allowed, reason)
+
+
 def _require_content(slide: dict, index: int) -> None:
     if not _text(slide.get("content") or slide.get("note")):
         raise SystemExit(f"Outline slide {index} template {slide['template']!r} requires content/note text.")
@@ -370,6 +387,23 @@ def _reject_fields(slide: dict, index: int, fields: tuple[str, ...], reason: str
         )
 
 
+def _reject_object_fields(item: object, index: int, path: str, allowed: set[str], reason: str) -> None:
+    if not isinstance(item, dict):
+        return
+    hidden = sorted(set(item) - allowed)
+    if hidden:
+        raise SystemExit(
+            f"Outline slide {index} {path} field(s) {', '.join(hidden)} are not rendered "
+            f"({reason}). Remove them or choose the matching component/variant."
+        )
+
+
+def _reject_nested_fields(items: list, index: int, key: str, allowed: set[str], reason: str) -> None:
+    """Reject nested keys that the selected component cannot visibly consume."""
+    for item_index, item in enumerate(items, start=1):
+        _reject_object_fields(item, index, f"{key}[{item_index}]", allowed, reason)
+
+
 def _require_metrics(slide: dict, index: int, count: int) -> list:
     metrics = _items(slide, "metrics")
     if len(metrics) != count:
@@ -377,6 +411,9 @@ def _require_metrics(slide: dict, index: int, count: int) -> list:
     for metric_index, metric in enumerate(metrics, start=1):
         if not isinstance(metric, dict) or not _text(metric.get("label")) or not _text(metric.get("value")):
             raise SystemExit(f"Outline slide {index} metrics[{metric_index}] requires label and value.")
+        hidden = sorted(set(metric) - {"label", "value"})
+        if hidden:
+            raise SystemExit(f"Outline slide {index} metrics[{metric_index}] field(s) {', '.join(hidden)} are not rendered.")
     return metrics
 
 
@@ -412,8 +449,13 @@ def _require_media_items(values: object, index: int, field: str, count: int) -> 
         raise SystemExit(f"Outline slide {index} {field} requires exactly {count} media items.")
     for item_index, item in enumerate(values, start=1):
         path = _require_project_media_path(_media_item_path(item), index, f"{field}[{item_index}]")
-        if isinstance(item, dict) and item.get("caption") is not None and not _text(item.get("caption")):
-            raise SystemExit(f"Outline slide {index} {field}[{item_index}].caption must be non-empty when provided.")
+        if isinstance(item, dict):
+            hidden = sorted(set(item) - {"image", "caption", "label", "alt"})
+            if hidden:
+                raise SystemExit(f"Outline slide {index} {field}[{item_index}] field(s) {', '.join(hidden)} are not rendered.")
+            for copy_field in ("caption", "label", "alt"):
+                if item.get(copy_field) is not None and not _text(item.get(copy_field)):
+                    raise SystemExit(f"Outline slide {index} {field}[{item_index}].{copy_field} must be non-empty when provided.")
     return values
 
 
@@ -446,15 +488,18 @@ def _validate_media_contract(slide: dict, index: int) -> list[tuple[str, object]
     if slide.get("secondary_image") and not (template == "editorial-feature" and variant == "hero-collage"):
         raise SystemExit(f"Outline slide {index} secondary_image is only rendered by editorial-feature/hero-collage.")
 
-    if template == "comparison" and variant != "visual-evidence":
-        if any(isinstance(side, dict) and side.get("evidence") for side in _items(slide, "sides")):
-            raise SystemExit(f"Outline slide {index} comparison/{variant} does not render sides[].evidence.")
-    if template == "card-trio" and variant != "media-evidence":
-        if any(isinstance(card, dict) and card.get("images") for card in _items(slide, "cards")):
-            raise SystemExit(f"Outline slide {index} card-trio/{variant} does not render cards[].images.")
+    if template != "comparison" or variant != "visual-evidence":
+        if any(isinstance(side, dict) and side.get("evidence") is not None for side in _items(slide, "sides")):
+            raise SystemExit(f"Outline slide {index} {template}/{variant} does not render sides[].evidence.")
+    if template != "card-trio" or variant != "media-evidence":
+        if any(isinstance(card, dict) and card.get("images") is not None for card in _items(slide, "cards")):
+            raise SystemExit(f"Outline slide {index} {template}/{variant} does not render cards[].images.")
     if template != "sequence-gallery":
-        if any(isinstance(step, dict) and step.get("image") for step in _items(slide, "steps")):
-            raise SystemExit(f"Outline slide {index} {template}/{variant} does not render steps[].image.")
+        nested_media_fields = {"image", "image_alt", "media_question", "media_source"}
+        for step_index, step in enumerate(_items(slide, "steps"), start=1):
+            if isinstance(step, dict) and nested_media_fields.intersection(step):
+                fields = ", ".join(sorted(nested_media_fields.intersection(step)))
+                raise SystemExit(f"Outline slide {index} {template}/{variant} does not render steps[{step_index}] field(s) {fields}.")
 
     frame = slide.get("media_frame")
     if bindings and frame not in {"content", "self-framed"}:
@@ -478,12 +523,18 @@ def validate_slide_content(slide: dict, index: int) -> None:
     template = slide["template"]
     variant = slide["variant"]
     image = _text(slide.get("image") or slide.get("media") or slide.get("artifact_image"))
+    if _text(slide.get("content")) and _text(slide.get("note")):
+        raise SystemExit(f"Outline slide {index} accepts content or note as aliases, not both.")
 
     if template == "editorial-feature":
         _require_content(slide, index)
         if not image:
             raise SystemExit(f"Outline slide {index} template 'editorial-feature' requires an image path.")
         cards = _require_cards(slide, index, "cards", 3)
+        card_fields = {"label", "title", "body"}
+        if variant == "default":
+            card_fields.add("icon")
+        _reject_nested_fields(cards, index, "cards", card_fields, f"editorial-feature/{variant}")
         for item_index, item in enumerate(cards, start=1):
             if isinstance(item, dict):
                 _require_icon(item.get("icon"), index, f"cards[{item_index}].icon")
@@ -504,15 +555,19 @@ def validate_slide_content(slide: dict, index: int) -> None:
             raise SystemExit(f"Outline slide {index} template 'catalog-board' requires exactly 4 groups.")
         for group_index, group in enumerate(groups, start=1):
             items = group.get("items") if isinstance(group, dict) else None
-            if not _label(group) or not isinstance(items, list) or len(items) != 3:
-                raise SystemExit(f"Outline slide {index} groups[{group_index}] requires title and exactly 3 items.")
+            if not _label(group) or not isinstance(group, dict) or not _text(group.get("meta")) or not isinstance(items, list) or len(items) != 3:
+                raise SystemExit(f"Outline slide {index} groups[{group_index}] requires title, meta, and exactly 3 items.")
             _max_chars(_label(group), index, f"groups[{group_index}].title", 12)
             _max_chars(group.get("meta") if isinstance(group, dict) else "", index, f"groups[{group_index}].meta", 18)
             for item_index, item in enumerate(items, start=1):
                 if not isinstance(item, dict) or not _label(item) or not _body(item):
                     raise SystemExit(f"Outline slide {index} groups[{group_index}].items[{item_index}] requires title and body.")
+                hidden = sorted(set(item) - {"label", "title", "body"})
+                if hidden:
+                    raise SystemExit(f"Outline slide {index} groups[{group_index}].items[{item_index}] field(s) {', '.join(hidden)} are not rendered.")
                 _max_chars(_label(item), index, f"groups[{group_index}].items[{item_index}].title", 14)
                 _max_chars(_body(item), index, f"groups[{group_index}].items[{item_index}].body", 24)
+        _reject_nested_fields(groups, index, "groups", {"label", "title", "meta", "items"}, "catalog-board")
     elif template == "case-study-board":
         _reject_fields(slide, index, ("meta", "page_note"), "this component has no footer metadata slots")
         _require_content(slide, index)
@@ -520,6 +575,7 @@ def validate_slide_content(slide: dict, index: int) -> None:
         insight = slide.get("insight")
         if not isinstance(insight, dict) or not _label(insight) or not _body(insight):
             raise SystemExit(f"Outline slide {index} template 'case-study-board' requires insight.title and insight.body.")
+        _reject_object_fields(insight, index, "insight", {"label", "title", "body", "icon"}, "case-study-board")
         _require_icon(insight.get("icon"), index, "insight.icon")
         if variant == "evidence" and not image:
             raise SystemExit(f"Outline slide {index} case-study-board evidence variant requires an image path.")
@@ -530,6 +586,9 @@ def validate_slide_content(slide: dict, index: int) -> None:
             values = chart.get("values") if isinstance(chart, dict) else None
             if not isinstance(chart, dict) or not _text(chart.get("label")) or not isinstance(values, list) or not 3 <= len(values) <= 7:
                 raise SystemExit(f"Outline slide {index} case-study-board chart variant requires chart.label and 3–7 values.")
+            hidden = sorted(set(chart) - {"label", "values"})
+            if hidden:
+                raise SystemExit(f"Outline slide {index} chart field(s) {', '.join(hidden)} are not rendered.")
             if any(not isinstance(value, (int, float)) or value < 0 for value in values):
                 raise SystemExit(f"Outline slide {index} chart.values must contain non-negative numbers.")
     elif template == "annotated-showcase":
@@ -538,6 +597,7 @@ def validate_slide_content(slide: dict, index: int) -> None:
         if not image:
             raise SystemExit(f"Outline slide {index} template 'annotated-showcase' requires an image path.")
         annotations = _require_cards(slide, index, "annotations", 3)
+        _reject_nested_fields(annotations, index, "annotations", {"label", "title", "body"}, "annotated-showcase")
         for annotation_index, annotation in enumerate(annotations, start=1):
             _max_chars(_label(annotation), index, f"annotations[{annotation_index}].title", 16)
             _max_chars(_body(annotation), index, f"annotations[{annotation_index}].body", 48)
@@ -548,6 +608,7 @@ def validate_slide_content(slide: dict, index: int) -> None:
             if not _text(slide.get(field)):
                 raise SystemExit(f"Outline slide {index} template 'narrative-bento' requires {field}.")
         cards = _require_cards(slide, index, "cards", 2)
+        _reject_nested_fields(cards, index, "cards", {"label", "title", "body", "icon"}, "narrative-bento")
         for item_index, item in enumerate(cards, start=1):
             if isinstance(item, dict):
                 _require_icon(item.get("icon"), index, f"cards[{item_index}].icon")
@@ -559,6 +620,11 @@ def validate_slide_content(slide: dict, index: int) -> None:
         if not _text(slide.get("conclusion")):
             raise SystemExit(f"Outline slide {index} template 'sequence-gallery' requires conclusion.")
         steps = _require_cards(slide, index, "steps", 3)
+        _reject_nested_fields(
+            steps, index, "steps",
+            {"label", "title", "body", "image", "image_alt", "media_question", "media_source"},
+            "sequence-gallery",
+        )
         for step_index, step in enumerate(steps, start=1):
             if not isinstance(step, dict) or not _text(step.get("image")):
                 raise SystemExit(f"Outline slide {index} steps[{step_index}] requires a project-relative image.")
@@ -572,25 +638,50 @@ def validate_slide_content(slide: dict, index: int) -> None:
     elif template == "section":
         _require_content(slide, index)
     elif template == "end":
-        if variant == "line-note" and not _text(slide.get("aside") or slide.get("content")):
-            raise SystemExit(f"Outline slide {index} end variant 'line-note' requires aside/content text.")
+        if variant == "line":
+            _reject_fields(
+                slide, index,
+                ("content", "note", "meta", "aside", "aside_label", "artifact_title", "artifact_body"),
+                "line renders only the closing title",
+            )
+        if variant == "line-note":
+            copy_fields = [field for field in ("aside", "content", "note") if _text(slide.get(field))]
+            if len(copy_fields) != 1:
+                raise SystemExit(
+                    f"Outline slide {index} end variant 'line-note' requires exactly one of aside, content, or note."
+                )
+            _reject_fields(slide, index, ("meta", "artifact_title", "artifact_body"), "line-note has no artifact or meta slots")
         if variant == "line-artifact":
+            _reject_fields(slide, index, ("meta", "aside", "aside_label"), "line-artifact has no aside or meta slots")
+            if _text(slide.get("content")) and _text(slide.get("note")):
+                raise SystemExit(f"Outline slide {index} end variant 'line-artifact' accepts content or note, not both aliases.")
             if not image:
                 raise SystemExit(f"Outline slide {index} end variant 'line-artifact' requires an image path.")
             for field in ("artifact_title", "artifact_body"):
                 if not _text(slide.get(field)):
                     raise SystemExit(f"Outline slide {index} end variant 'line-artifact' requires {field}.")
     elif template == "three-steps":
-        _require_cards(slide, index, "steps", 3)
+        steps = _require_cards(slide, index, "steps", 3)
+        _reject_nested_fields(steps, index, "steps", {"label", "title", "body"}, "three-steps")
     elif template == "timeline":
-        _require_cards(slide, index, "steps", 4)
+        steps = _require_cards(slide, index, "steps", 4)
+        _reject_nested_fields(steps, index, "steps", {"label", "title", "body"}, "timeline")
     elif template == "process-rail":
         count = 6 if variant == "steps-6" else 8
-        _require_cards(slide, index, "steps", count, bodies=False)
+        steps = _require_cards(slide, index, "steps", count, bodies=variant == "steps-6")
+        allowed = {"label", "title", "body"} if variant == "steps-6" else {"label", "title"}
+        _reject_nested_fields(steps, index, "steps", allowed, f"process-rail/{variant}")
     elif template == "process-cards":
         _reject_fields(slide, index, ("meta", "page_note"), "this component has no footer metadata slots")
         _require_content(slide, index)
         steps = _require_cards(slide, index, "steps", 4)
+        _reject_nested_fields(
+            steps, index, "steps", {"label", "title", "body", "icon"},
+            f"process-cards/{variant}",
+        )
+        icon_count = sum(bool(isinstance(step, dict) and _text(step.get("icon"))) for step in steps)
+        if icon_count not in {0, 4}:
+            raise SystemExit(f"Outline slide {index} process-cards icons are all-or-none; found {icon_count}/4.")
         for step_index, step in enumerate(steps, start=1):
             if isinstance(step, dict):
                 _require_icon(step.get("icon"), index, f"steps[{step_index}].icon")
@@ -601,6 +692,10 @@ def validate_slide_content(slide: dict, index: int) -> None:
             )
         if measurements is not None:
             _require_metrics({**slide, "metrics": measurements}, index, 4)
+            if not _text(slide.get("measurement_note")) or not _text(slide.get("measurement_meta")):
+                raise SystemExit(
+                    f"Outline slide {index} measurements[4] require non-empty measurement_note and measurement_meta."
+                )
     elif template == "quote":
         if not _text(slide.get("quote")) or not _text(slide.get("source")):
             raise SystemExit(f"Outline slide {index} template 'quote' requires quote and source.")
@@ -612,17 +707,31 @@ def validate_slide_content(slide: dict, index: int) -> None:
             for card_index, card in enumerate(cards[:2], start=1):
                 if not isinstance(card, dict):
                     raise SystemExit(f"Outline slide {index} cards[{card_index}] must be an object for media-evidence.")
+                _reject_object_fields(
+                    card, index, f"cards[{card_index}]", {"label", "title", "body", "images"},
+                    "card-trio/media-evidence evidence card",
+                )
                 _require_media_items(card.get("images"), index, f"cards[{card_index}].images", 2)
-            if isinstance(cards[2], dict) and cards[2].get("images"):
-                raise SystemExit(f"Outline slide {index} cards[3] must be text-only for card-trio media-evidence.")
+            _reject_object_fields(
+                cards[2], index, "cards[3]", {"label", "title", "body", "backdrop"},
+                "card-trio/media-evidence decision card",
+            )
         else:
+            _reject_nested_fields(
+                cards, index, "cards", {"label", "title", "body"},
+                f"card-trio/{variant}",
+            )
             _reject_fields(slide, index, ("content", "note", "kicker", "meta", "page_note"), "feature variants show only the title and three cards")
     elif template == "recap":
         _require_content(slide, index)
-        _require_cards(slide, index, "cards", 3)
+        cards = _require_cards(slide, index, "cards", 3)
+        _reject_nested_fields(cards, index, "cards", {"label", "title", "body"}, "recap")
     elif template == "comparison":
         _require_sides(slide, index, 2)
+        sides = _items(slide, "sides")
         if variant == "visual-evidence":
+            _reject_nested_fields(sides, index, "sides", {"label", "title", "lead", "points", "evidence"}, "comparison/visual-evidence")
+            _reject_point_fields(sides, index, {"label", "title", "body"}, "comparison/visual-evidence")
             _reject_fields(slide, index, ("meta", "page_note"), "this component has no footer metadata slots")
             _require_content(slide, index)
             for side_index, side in enumerate(_items(slide, "sides"), start=1):
@@ -630,18 +739,27 @@ def validate_slide_content(slide: dict, index: int) -> None:
                     raise SystemExit(f"Outline slide {index} sides[{side_index}] must be an object for comparison visual-evidence.")
                 _require_media_items(side.get("evidence"), index, f"sides[{side_index}].evidence", 2)
         else:
+            _reject_nested_fields(sides, index, "sides", {"label", "title", "points"}, "comparison/default")
+            _reject_point_fields(sides, index, {"body"}, "comparison/default")
             _reject_fields(slide, index, ("content", "note", "kicker", "meta", "page_note"), "the default comparison hides its intro block")
     elif template == "comparison-list":
         _require_sides(slide, index, 3)
+        sides = _items(slide, "sides")
+        _reject_nested_fields(sides, index, "sides", {"label", "title", "points"}, "comparison-list")
+        _reject_point_fields(sides, index, {"body"}, "comparison-list")
     elif template == "tabs":
         sides = _items(slide, "sides")
         if len(sides) != 2 or any(not _label(side) or not _body(side) for side in sides):
             raise SystemExit(f"Outline slide {index} template 'tabs' requires 2 sides with title and body.")
+        _reject_nested_fields(sides, index, "sides", {"label", "title", "body"}, "tabs")
     elif template == "metric":
         _require_content(slide, index)
         metric = slide.get("metric")
         if not isinstance(metric, dict) or any(not _text(metric.get(key)) for key in ("value", "unit", "caption")):
             raise SystemExit(f"Outline slide {index} template 'metric' requires metric.value, metric.unit and metric.caption.")
+        hidden = sorted(set(metric) - {"value", "unit", "caption"})
+        if hidden:
+            raise SystemExit(f"Outline slide {index} metric field(s) {', '.join(hidden)} are not rendered.")
         _max_chars(metric.get("value"), index, "metric.value", 12)
         _max_chars(metric.get("unit"), index, "metric.unit", 8)
         _max_chars(metric.get("caption"), index, "metric.caption", 36)
@@ -649,10 +767,13 @@ def validate_slide_content(slide: dict, index: int) -> None:
         groups = _items(slide, "groups")
         if len(groups) != 2 or not _text(slide.get("outcome")):
             raise SystemExit(f"Outline slide {index} template 'converge' requires 2 groups and outcome.")
+        _reject_nested_fields(groups, index, "groups", {"label", "title", "items"}, "converge")
         for group_index, group in enumerate(groups, start=1):
             values = group.get("items") if isinstance(group, dict) else None
-            if not _label(group) or not isinstance(values, list) or len(values) != 2 or any(not _text(v) for v in values):
+            if not _label(group) or not isinstance(values, list) or len(values) != 2 or any(not isinstance(v, str) or not v.strip() for v in values):
                 raise SystemExit(f"Outline slide {index} groups[{group_index}] requires title and exactly 2 items.")
+
+
 def validate_outline(data: dict, templates_dir: Path) -> list[dict]:
     if not isinstance(data, dict):
         raise SystemExit("Outline JSON must contain an object at the top level.")

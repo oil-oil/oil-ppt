@@ -180,6 +180,13 @@ def browser_validate(path: Path) -> None:
                 f"Browser render validation found {len(invalid_bounds)} component(s) outside their container "
                 f"({details}); final file was not written."
             )
+        invalid_optional = report.get("invalidOptionalRegions") or []
+        if invalid_optional:
+            details = ", ".join(str(item.get("region") or "optional-region") for item in invalid_optional[:3])
+            raise SystemExit(
+                f"Browser render validation found {len(invalid_optional)} visible but empty optional region(s) "
+                f"({details}); final file was not written."
+            )
         raise SystemExit("Browser render validation did not complete; final file was not written.")
 
 

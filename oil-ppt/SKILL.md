@@ -74,7 +74,7 @@ scripts/oil-ppt contract --id <组件>
 scripts/oil-ppt plan <项目>
 ```
 
-`plan` 会按内容关系推荐普通或 compound 组件；图标容器、真实数据图表、局部几何和密集组件字号由模板与 runtime 生成。
+`plan` 会按内容关系推荐普通或 compound 组件，并拒绝组件不会显示的字段、不完整的可选字段组，以及不足的媒体与背景节奏；图标容器、真实数据图表、局部几何、空区域收合和密集组件字号由模板与 runtime 生成。
 
 媒体策略默认是 `required`。只有用户明确要求整套演示不使用图片时才选择 `text-only`，并在 `plan` 命令追加 `--user-confirmed-text-only`；不得替用户确认。
 

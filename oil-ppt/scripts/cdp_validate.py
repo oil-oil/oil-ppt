@@ -237,11 +237,30 @@ def validate_file(
               node:node.className || node.tagName.toLowerCase()
             }];
           });
+          const invalidOptionalRegions = [...document.querySelectorAll('[data-optional-region]')].flatMap(region => {
+            if (!region.getClientRects().length) return [];
+            const style = getComputedStyle(region);
+            if (region.hidden || region.getAttribute('aria-hidden') === 'true' || style.display === 'none') return [];
+            const hasText = (region.textContent || '').trim().length > 0;
+            const hasVisual = [...region.querySelectorAll('img,svg,canvas,video')].some(node => {
+              if (!node.getClientRects().length) return false;
+              if (node instanceof HTMLImageElement) return node.complete && node.naturalWidth > 0 && node.naturalHeight > 0;
+              const box = node.getBoundingClientRect();
+              return box.width > 1 && box.height > 1;
+            });
+            if (hasText || hasVisual) return [];
+            const slide = region.closest('.oil-slide');
+            return [{
+              slide:slide?.dataset.slideId || 'unknown',
+              reason:'empty-optional-region',
+              region:region.dataset.optionalRegion || region.className || region.tagName.toLowerCase()
+            }];
+          });
           const rootStyle = getComputedStyle(root);
           const stageRect = stage?.getBoundingClientRect();
           return {
           ready: document.readyState === 'complete' && (!document.fonts || document.fonts.status === 'loaded') && imagesReady,
-          status: brokenImages.length || invalidBleeds.length || invalidLayouts.length || invalidText.length || invalidBounds.length ? 'error' : (root.dataset.oilValidated === 'ok' && slides > 0 && !!stage ? 'ok' : 'pending'),
+          status: brokenImages.length || invalidBleeds.length || invalidLayouts.length || invalidText.length || invalidBounds.length || invalidOptionalRegions.length ? 'error' : (root.dataset.oilValidated === 'ok' && slides > 0 && !!stage ? 'ok' : 'pending'),
           slides,
           images: images.length,
           brokenImages: brokenImages.map(image => image.currentSrc || image.getAttribute('src') || ''),
@@ -249,6 +268,7 @@ def validate_file(
           invalidLayouts,
           invalidText,
           invalidBounds,
+          invalidOptionalRegions,
           viewport: {width:innerWidth, height:innerHeight},
           stage: stageRect ? {
             left:stageRect.left, top:stageRect.top, right:stageRect.right, bottom:stageRect.bottom,
