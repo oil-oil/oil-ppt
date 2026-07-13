@@ -12,6 +12,15 @@ from background_presets import effective_background
 from icon_registry import CONNECTOR_ICON, icon_svg_markup
 
 
+MEDIA_FIT_DEFAULTS = {
+    "cover": "contain",
+    "end": "contain",
+    "split-visual": "contain",
+    "browser-showcase": "contain",
+    "editorial-canvas": "contain",
+}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("project", type=Path)
@@ -39,6 +48,44 @@ def set_slot_text_force(fragment: str, slot: str, value: str | None) -> str:
         re.I | re.S,
     )
     return pattern.sub(rf"\g<1>{esc(value or '')}\3", fragment, count=1)
+
+
+def set_slot_html_force(fragment: str, slot: str, value: str | None) -> str:
+    pattern = re.compile(
+        rf'(data-slot="{re.escape(slot)}"[^>]*>)(.*?)(</)',
+        re.I | re.S,
+    )
+    return pattern.sub(lambda match: match.group(1) + str(value or "") + match.group(3), fragment, count=1)
+
+
+def fill_icon_slot(fragment: str, slot: str, name: object) -> str:
+    pattern = re.compile(
+        rf'<span\b(?=[^>]*data-slot="{re.escape(slot)}")[^>]*>.*?</span>',
+        re.I | re.S,
+    )
+    icon = icon_svg_markup(str(name or "").strip()) if name else ""
+    if not icon:
+        return pattern.sub("", fragment, count=1)
+    return pattern.sub(lambda match: re.sub(r">.*?</span>$", f">{icon}</span>", match.group(0), flags=re.I | re.S), fragment, count=1)
+
+
+def project_media_src(value: object) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    return raw if raw.startswith(("../", "data:", "#")) else f"../{raw.lstrip('./')}"
+
+
+def fill_common_slots(fragment: str, slide: dict) -> str:
+    values = {
+        "kicker": slide.get("kicker"),
+        "content": slide.get("content") or slide.get("note"),
+        "meta": slide.get("meta"),
+        "page-note": slide.get("page_note"),
+    }
+    for slot, value in values.items():
+        fragment = set_slot_text_force(fragment, slot, str(value or ""))
+    return fragment
 
 
 def replace_nth_h2(fragment: str, index: int, value: str) -> str:
@@ -86,6 +133,41 @@ def set_visual_image(fragment: str, src: str, alt: str = "") -> str:
             flags=re.I | re.S,
         )
     return fragment
+
+
+def inject_backdrop_text(fragment: str, slide: dict) -> str:
+    value = str(slide.get("backdrop_text") or "").strip()
+    if not value:
+        return fragment
+    markup = f'<div class="oil-backdrop-text" aria-hidden="true">{esc(value)}</div>'
+    return re.sub(r"(<section\b[^>]*>)", rf"\g<1>{markup}", fragment, count=1, flags=re.I)
+
+
+def apply_media_attributes(fragment: str, slide: dict) -> str:
+    if not (slide.get("image") or slide.get("media") or slide.get("artifact_image")):
+        return fragment
+    fit = str(slide.get("media_fit") or MEDIA_FIT_DEFAULTS.get(str(slide.get("template") or ""), "cover"))
+    position = str(slide.get("media_position") or "center")
+    treatment = str(slide.get("media_treatment") or "natural")
+    template = str(slide.get("template") or "")
+    variant = str(slide.get("variant") or "default")
+    match = re.search(r'<(?P<tag>[a-z][a-z0-9]*)\b(?P<attrs>[^>]*\bclass="[^"]*\boil-media\b[^"]*"[^>]*)>', fragment, re.I)
+    if not match:
+        raise SystemExit(f"Media template {slide.get('template')!r} has no standard oil-media container.")
+    attrs = match.group("attrs")
+    for name, value in (("data-media-fit", fit), ("data-media-position", position), ("data-media-treatment", treatment)):
+        if re.search(rf"\b{re.escape(name)}=", attrs, re.I):
+            attrs = re.sub(rf'({re.escape(name)}=["\'])[^"\']+(["\'])', rf'\g<1>{value}\g<2>', attrs, count=1, flags=re.I)
+        else:
+            attrs += f' {name}="{html.escape(value, quote=True)}"'
+    if template in {"bleed-split", "diagonal-split"}:
+        side = "left" if variant == "media-left" else "right"
+        if re.search(r"\bdata-side=", attrs, re.I):
+            attrs = re.sub(r'(data-side=["\'])[^"\']+(["\'])', rf'\g<1>{side}\g<2>', attrs, count=1, flags=re.I)
+        else:
+            attrs += f' data-side="{side}"'
+    replacement = f'<{match.group("tag")}{attrs}>'
+    return fragment[:match.start()] + replacement + fragment[match.end():]
 
 
 def fill_connectors(fragment: str) -> str:
@@ -137,6 +219,21 @@ def fill_process_rail(fragment: str, slide: dict) -> str:
                 fragment = replace_nth_h2(fragment, i, str(label))
     fragment = fill_connectors(fragment)
     return fragment
+
+
+def fill_quote(fragment: str, slide: dict) -> str:
+    fragment = replace_nth(
+        fragment,
+        r'(<p\b[^>]*class="[^"]*\bquote-text\b[^"]*"[^>]*>)(.*?)(</p>)',
+        0,
+        slide.get("quote", ""),
+    )
+    return replace_nth(
+        fragment,
+        r'(<cite\b[^>]*class="[^"]*\bsource\b[^"]*"[^>]*>)(.*?)(</cite>)',
+        0,
+        slide.get("source", ""),
+    )
 
 
 def fill_card_trio(fragment: str, slide: dict) -> str:
@@ -270,7 +367,6 @@ def fill_tabs(fragment: str, slide: dict) -> str:
         fragment = replace_nth(fragment, r'(<button\b[^>]*data-tab="[^"]+"[^>]*>)(.*?)(</button>)', index, title)
         fragment = replace_nth(fragment, r'(<h2\b[^>]*>)(.*?)(</h2>)', index, title)
         fragment = replace_nth(fragment, r'(<p\b[^>]*>)(.*?)(</p>)', index, body)
-        fragment = replace_nth(fragment, r'(<div\b[^>]*class="[^"]*\bsymbol\b[^"]*"[^>]*>)(.*?)(</div>)', index, str(title)[:1])
     return fragment
 
 
@@ -291,6 +387,117 @@ def fill_editorial(fragment: str, slide: dict) -> str:
     image = slide.get("image") or slide.get("media")
     if image:
         fragment = set_visual_image(fragment, str(image), str(slide.get("image_alt") or slide.get("title") or ""))
+    return fragment
+
+
+def fill_editorial_feature(fragment: str, slide: dict) -> str:
+    fragment = fill_common_slots(fragment, slide)
+    for index, item in enumerate((slide.get("cards") or [])[:3], start=1):
+        if not isinstance(item, dict):
+            continue
+        fragment = set_slot_text_force(fragment, f"card-title-{index}", str(item.get("title") or item.get("label") or ""))
+        fragment = set_slot_text_force(fragment, f"card-body-{index}", str(item.get("body") or item.get("text") or ""))
+        fragment = fill_icon_slot(fragment, f"icon-{index}", item.get("icon"))
+    image = slide.get("image") or slide.get("media")
+    if image:
+        fragment = set_visual_image(fragment, str(image), str(slide.get("image_alt") or slide.get("title") or ""))
+    return fragment
+
+
+def fill_catalog_board(fragment: str, slide: dict) -> str:
+    fragment = fill_common_slots(fragment, slide)
+    for index, metric in enumerate((slide.get("metrics") or [])[:3], start=1):
+        if not isinstance(metric, dict):
+            continue
+        fragment = set_slot_text_force(fragment, f"metric-value-{index}", str(metric.get("value") or ""))
+        fragment = set_slot_text_force(fragment, f"metric-label-{index}", str(metric.get("label") or ""))
+    for group_index, group in enumerate((slide.get("groups") or [])[:4], start=1):
+        if not isinstance(group, dict):
+            continue
+        fragment = set_slot_text_force(fragment, f"group-title-{group_index}", str(group.get("title") or group.get("label") or ""))
+        fragment = set_slot_text_force(fragment, f"group-meta-{group_index}", str(group.get("meta") or ""))
+        items = []
+        for item in (group.get("items") or [])[:3]:
+            if not isinstance(item, dict):
+                continue
+            title = esc(str(item.get("title") or item.get("label") or ""))
+            body = esc(str(item.get("body") or item.get("text") or ""))
+            items.append(f'<article class="item"><h3>{title}</h3><p>{body}</p></article>')
+        fragment = set_slot_html_force(fragment, f"group-items-{group_index}", "".join(items))
+    return fragment
+
+
+def fill_case_study_board(fragment: str, slide: dict) -> str:
+    fragment = fill_common_slots(fragment, slide)
+    for index, metric in enumerate((slide.get("metrics") or [])[:2], start=1):
+        if not isinstance(metric, dict):
+            continue
+        fragment = set_slot_text_force(fragment, f"metric-label-{index}", str(metric.get("label") or ""))
+        fragment = set_slot_text_force(fragment, f"metric-value-{index}", str(metric.get("value") or ""))
+    insight = slide.get("insight") or {}
+    fragment = set_slot_text_force(fragment, "insight-title", str(insight.get("title") or insight.get("label") or ""))
+    fragment = set_slot_text_force(fragment, "insight-body", str(insight.get("body") or insight.get("text") or ""))
+    fragment = fill_icon_slot(fragment, "insight-icon", insight.get("icon"))
+    chart = slide.get("chart") or {}
+    fragment = set_slot_text_force(fragment, "chart-label", str(chart.get("label") or ""))
+    values = chart.get("values") if isinstance(chart, dict) else []
+    if isinstance(values, list) and values:
+        peak = max(float(value) for value in values) or 1
+        bars = []
+        for value in values:
+            height = 22 + 78 * float(value) / peak
+            level = max(2, min(10, round(height / 10)))
+            focus = ' data-focus="true"' if float(value) == peak else ""
+            label = html.escape(str(value), quote=True)
+            bars.append(f'<i data-level="{level}" data-value="{label}" aria-label="{label}"{focus}></i>')
+        fragment = set_slot_html_force(fragment, "chart-bars", "".join(bars))
+    image = slide.get("image") or slide.get("media")
+    if image:
+        fragment = set_visual_image(fragment, str(image), str(slide.get("image_alt") or slide.get("title") or ""))
+    return fragment
+
+
+def fill_annotated_showcase(fragment: str, slide: dict) -> str:
+    fragment = fill_common_slots(fragment, slide)
+    for index, item in enumerate((slide.get("annotations") or [])[:3], start=1):
+        if not isinstance(item, dict):
+            continue
+        fragment = set_slot_text_force(fragment, f"annotation-title-{index}", str(item.get("title") or item.get("label") or ""))
+        fragment = set_slot_text_force(fragment, f"annotation-body-{index}", str(item.get("body") or item.get("text") or ""))
+    image = slide.get("image") or slide.get("media")
+    if image:
+        fragment = set_visual_image(fragment, str(image), str(slide.get("image_alt") or slide.get("title") or ""))
+    return fragment
+
+
+def fill_narrative_bento(fragment: str, slide: dict) -> str:
+    fragment = fill_common_slots(fragment, slide)
+    for slot in ("statement", "statement-body", "quote"):
+        key = slot.replace("-", "_")
+        fragment = set_slot_text_force(fragment, slot, str(slide.get(key) or ""))
+    fragment = fill_icon_slot(fragment, "statement-icon", slide.get("statement_icon"))
+    fragment = fill_icon_slot(fragment, "quote-icon", slide.get("quote_icon"))
+    for index, item in enumerate((slide.get("cards") or [])[:2], start=1):
+        if not isinstance(item, dict):
+            continue
+        fragment = set_slot_text_force(fragment, f"card-title-{index}", str(item.get("title") or item.get("label") or ""))
+        fragment = set_slot_text_force(fragment, f"card-body-{index}", str(item.get("body") or item.get("text") or ""))
+        fragment = fill_icon_slot(fragment, f"icon-{index}", item.get("icon"))
+    return fragment
+
+
+def fill_sequence_gallery(fragment: str, slide: dict) -> str:
+    fragment = fill_common_slots(fragment, slide)
+    fragment = set_slot_text_force(fragment, "conclusion", str(slide.get("conclusion") or ""))
+    for index, step in enumerate((slide.get("steps") or [])[:3], start=1):
+        if not isinstance(step, dict):
+            continue
+        fragment = set_slot_text_force(fragment, f"step-title-{index}", str(step.get("title") or step.get("label") or ""))
+        fragment = set_slot_text_force(fragment, f"step-body-{index}", str(step.get("body") or step.get("text") or ""))
+        src = project_media_src(step.get("image"))
+        alt = html.escape(str(step.get("image_alt") or step.get("title") or ""), quote=True)
+        image = f'<img src="{html.escape(src, quote=True)}" alt="{alt}">' if src else ""
+        fragment = set_slot_html_force(fragment, f"step-image-{index}", image)
     return fragment
 
 
@@ -315,6 +522,7 @@ FILLERS = {
     "three-steps": fill_three_steps,
     "timeline": fill_timeline,
     "process-rail": fill_process_rail,
+    "quote": fill_quote,
     "card-trio": fill_card_trio,
     "comparison": fill_comparison,
     "comparison-list": fill_comparison,
@@ -332,6 +540,12 @@ FILLERS = {
     "tabs": fill_tabs,
     "converge": fill_converge,
     "editorial-canvas": fill_editorial,
+    "editorial-feature": fill_editorial_feature,
+    "catalog-board": fill_catalog_board,
+    "case-study-board": fill_case_study_board,
+    "annotated-showcase": fill_annotated_showcase,
+    "narrative-bento": fill_narrative_bento,
+    "sequence-gallery": fill_sequence_gallery,
 }
 
 
@@ -357,6 +571,8 @@ def fill_slide_file(path: Path, slide: dict) -> bool:
     if filler is None:
         raise SystemExit(f"No content filler registered for template: {template}")
     fragment = filler(fragment, slide)
+    fragment = apply_media_attributes(fragment, slide)
+    fragment = inject_backdrop_text(fragment, slide)
     new_text = text[: match.start(1)] + fragment + text[match.end(1) :]
     if new_text != text:
         path.write_text(new_text, encoding="utf-8")
@@ -372,7 +588,7 @@ def main() -> None:
         raise SystemExit(f"Missing outline: {outline_path}")
     config_path = project / "deck.json"
     if not config_path.is_file():
-        raise SystemExit(f"Not an oil-slides project: {project}")
+        raise SystemExit(f"Not an oil-ppt project: {project}")
     outline = json.loads(outline_path.read_text(encoding="utf-8"))
     config = json.loads(config_path.read_text(encoding="utf-8"))
     by_id = {s["id"]: s for s in outline.get("slides", []) if isinstance(s, dict) and s.get("id")}

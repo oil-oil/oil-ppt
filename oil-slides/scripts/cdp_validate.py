@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stdlib-only Chrome DevTools client for oil-slides DOM validation."""
+"""Stdlib-only Chrome DevTools client for oil-ppt DOM validation."""
 from __future__ import annotations
 
 import base64
@@ -69,8 +69,11 @@ class WebSocket:
         self.sock.sendall(header + masked)
 
     def recv_json(self) -> dict:
+        message_opcode: int | None = None
+        chunks: list[bytes] = []
         while True:
             first, second = _recv_exact(self.sock, 2)
+            finished = bool(first & 0x80)
             opcode = first & 0x0F
             length = second & 0x7F
             if length == 126:
@@ -83,8 +86,15 @@ class WebSocket:
                 payload = bytes(byte ^ mask[i % 4] for i, byte in enumerate(payload))
             if opcode == 0x8:
                 raise RuntimeError("Chrome DevTools websocket closed before validation completed.")
-            if opcode == 0x1:
-                return json.loads(payload.decode("utf-8"))
+            if opcode in {0x1, 0x2}:
+                message_opcode = opcode
+                chunks = [payload]
+            elif opcode == 0x0 and message_opcode is not None:
+                chunks.append(payload)
+            else:
+                continue
+            if finished:
+                return json.loads(b"".join(chunks).decode("utf-8"))
 
 
 def _which(name: str) -> str | None:
@@ -115,8 +125,11 @@ def validate_file(chrome: str, html_file: Path, timeout: float = 15) -> dict:
     profile_ctx = tempfile.TemporaryDirectory(prefix="oil-slides-cdp-")
     profile = Path(profile_ctx.name)
     command = [
-        chrome, "--headless=new", "--disable-gpu", "--no-sandbox", "--allow-file-access-from-files",
-        "--disable-background-networking", "--disable-component-update", "--disable-default-apps", "--disable-sync",
+        chrome, "--headless", "--no-sandbox", "--allow-file-access-from-files",
+        "--disable-background-networking", "--disable-background-timer-throttling", "--disable-backgrounding-occluded-windows",
+        "--disable-component-update", "--disable-default-apps", "--disable-renderer-backgrounding", "--disable-sync",
+        "--disable-features=PaintHolding,RenderDocument", "--enable-features=CDPScreenshotNewSurface",
+        "--enable-unsafe-swiftshader", "--force-color-profile=srgb", "--hide-scrollbars",
         "--metrics-recording-only", "--no-first-run", f"--user-data-dir={profile}", "--remote-debugging-port=0",
         html_file.resolve().as_uri(),
     ]
@@ -142,15 +155,66 @@ def validate_file(chrome: str, html_file: Path, timeout: float = 15) -> dict:
         target_uri = html_file.resolve().as_uri()
         page = next((item for item in pages if item.get("url", "").startswith(target_uri)), pages[0])
         websocket = WebSocket(page["webSocketDebuggerUrl"])
+        websocket.sock.settimeout(timeout)
         expression = """(() => {
           const root = document.documentElement;
           if (!root) return {ready:false, status:'pending', slides:0};
           const slides = document.querySelectorAll('.oil-slide').length;
           const stage = document.querySelector('.deck-stage, .slide-preview-stage');
+          const images = [...document.images];
+          const imagesReady = images.every(image => image.complete);
+          const brokenImages = images.filter(image => image.complete && (!image.naturalWidth || !image.naturalHeight));
+          const invalidBleeds = [...document.querySelectorAll('[data-bleed]')].flatMap(bleed => {
+            const slide = bleed.closest('.oil-slide');
+            if (!slide) return [{slide:'unknown', reason:'missing-slide'}];
+            const style = getComputedStyle(bleed);
+            const side = bleed.dataset.side || 'right';
+            const bleedRect = bleed.getBoundingClientRect();
+            const slideRect = slide.getBoundingClientRect();
+            const touchesEdge = side === 'full'
+              ? Math.abs(bleedRect.left - slideRect.left) <= 2
+                && Math.abs(bleedRect.right - slideRect.right) <= 2
+                && Math.abs(bleedRect.top - slideRect.top) <= 2
+                && Math.abs(bleedRect.bottom - slideRect.bottom) <= 2
+              : side === 'left'
+                ? Math.abs(bleedRect.left - slideRect.left) <= 2
+                : Math.abs(bleedRect.right - slideRect.right) <= 2;
+            return style.position === 'absolute' && touchesEdge
+              ? []
+              : [{slide:slide.dataset.slideId || 'unknown', reason:`position=${style.position},side=${side},touches=${touchesEdge}`}];
+          });
+          const invalidLayouts = [...document.querySelectorAll('.slide-safe [data-layout]')].flatMap(layout => {
+            if (!layout.getClientRects().length || getComputedStyle(layout).display === 'none') return [];
+            const safe = layout.closest('.slide-safe');
+            const slide = layout.closest('.oil-slide');
+            if (!safe || !slide) return [{slide:'unknown', reason:'layout-missing-safe-area'}];
+            const box = layout.getBoundingClientRect();
+            const bounds = safe.getBoundingClientRect();
+            const inside = box.left >= bounds.left - 3 && box.right <= bounds.right + 3
+              && box.top >= bounds.top - 3 && box.bottom <= bounds.bottom + 3;
+            return inside ? [] : [{slide:slide.dataset.slideId || 'unknown', reason:'layout-outside-safe-area'}];
+          });
+          const invalidText = [...document.querySelectorAll('[data-fit]')].flatMap(text => {
+            if (!text.getClientRects().length || getComputedStyle(text).display === 'none') return [];
+            const slide = text.closest('.oil-slide');
+            const overflow = text.scrollWidth > text.clientWidth + 1 || text.scrollHeight > text.clientHeight + 1;
+            return overflow ? [{slide:slide?.dataset.slideId || 'unknown', reason:'text-overflow'}] : [];
+          });
+          const rootStyle = getComputedStyle(root);
           return {
-          ready: document.readyState === 'complete' && (!document.fonts || document.fonts.status === 'loaded'),
-          status: root.dataset.oilValidated === 'ok' && slides > 0 && !!stage ? 'ok' : 'pending',
-          slides
+          ready: document.readyState === 'complete' && (!document.fonts || document.fonts.status === 'loaded') && imagesReady,
+          status: brokenImages.length || invalidBleeds.length || invalidLayouts.length || invalidText.length ? 'error' : (root.dataset.oilValidated === 'ok' && slides > 0 && !!stage ? 'ok' : 'pending'),
+          slides,
+          images: images.length,
+          brokenImages: brokenImages.map(image => image.currentSrc || image.getAttribute('src') || ''),
+          invalidBleeds,
+          invalidLayouts,
+          invalidText,
+          tokens: {
+            accent: rootStyle.getPropertyValue('--accent').trim(),
+            surfaceRadius: rootStyle.getPropertyValue('--surface-radius').trim(),
+            fontZh: rootStyle.getPropertyValue('--font-zh').trim()
+          }
         };})()"""
         request_id = 0
         while time.monotonic() < deadline:

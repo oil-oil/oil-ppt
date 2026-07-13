@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Add a validated oil-slides page from a bundled layout template."""
+"""Add a validated oil-ppt page from a bundled layout template."""
 from __future__ import annotations
 
 import argparse
@@ -18,6 +18,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--id", dest="slide_id", required=True)
     parser.add_argument("--title", required=True)
     parser.add_argument("--highlight", help="one exact title phrase to render with the marker highlight")
+    parser.add_argument("--backdrop-text", help="short content keyword rendered as oversized background type")
     parser.add_argument("--background", choices=tuple(BACKGROUND_PRESETS), help="page background preset; defaults to the template value")
     parser.add_argument("--variant", required=True, help="template-owned composition variant")
     parser.add_argument("--decor", required=True, help="template-owned decoration preset")
@@ -93,6 +94,12 @@ def main() -> None:
         if needle not in text:
             raise SystemExit(f"Template {args.template} does not expose a standard h1 title slot.")
         text = text.replace(needle, f">{marked}</h1>", 1)
+    if args.backdrop_text:
+        value = args.backdrop_text.strip()
+        if not value or len(re.sub(r"\s+", "", value)) > 12:
+            raise SystemExit("--backdrop-text must contain 1–12 non-space characters.")
+        markup = f'<div class="oil-backdrop-text" aria-hidden="true">{html.escape(value)}</div>'
+        text = re.sub(r"(<section\b[^>]*>)", rf"\g<1>{markup}", text, count=1, flags=re.I)
     output.write_text(text, encoding="utf-8")
 
     if args.after:
@@ -108,6 +115,7 @@ def main() -> None:
     print(
         f"Added {filename} from template={args.template} variant={args.variant} decor={args.decor}"
         + (f" highlight={args.highlight}" if args.highlight else "")
+        + (f" backdrop_text={args.backdrop_text}" if args.backdrop_text else "")
         + (f" background={args.background}" if args.background else "")
     )
 

@@ -1,4 +1,4 @@
 interface:
-  display_name: "oil-slides"
+  display_name: "oil-ppt"
   short_description: "先确认 Markdown 大纲，再设计并构建 oil 风格演示"
-  default_prompt: "使用 $oil-slides。先问我是想通过对话共同梳理大纲，还是由你直接生成第一版；先完成并确认 outline.md，再规划素材、生成正式预览并等待我确认，最后构建演示。"
+  default_prompt: "使用 $oil-slides。先问我是想通过对话共同梳理大纲，还是由你直接生成第一版；初始化项目并完成 outline.md，用户确认后始终从 CLI status 返回的 next.command 继续，直到正式预览再次确认并构建演示。"

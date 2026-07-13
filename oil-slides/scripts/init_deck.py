@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create an editable one-HTML-per-slide oil-slides project."""
+"""Create an editable one-HTML-per-slide oil-ppt project."""
 from __future__ import annotations
 
 import argparse
@@ -34,9 +34,13 @@ def main() -> None:
     target = args.project_dir.expanduser().resolve()
     if target.exists() and any(target.iterdir()):
         existing = list(target.iterdir())
+        planning_files = {
+            "outline.md", "outline.json", "预览.html", ".oil-slides-state.json",
+            ".oil-slides-preview-outline.json", "media-plan.json", ".DS_Store",
+        }
         allowed_existing = all(
             (item.name == "assets" and item.is_dir())
-            or (item.name == "outline.md" and item.is_file())
+            or (item.name in planning_files and item.is_file())
             for item in existing
         )
         if not args.allow_existing_assets or not allowed_existing:
@@ -51,7 +55,7 @@ def main() -> None:
     (target / "assets").mkdir(exist_ok=True)
     icons_src = skill_root / "assets" / "icons"
     if icons_src.is_dir():
-        shutil.copytree(icons_src, target / "assets" / "icons", dirs_exist_ok=True)
+        shutil.copytree(icons_src, target / "assets" / "system-icons", dirs_exist_ok=True)
     config = json.loads((starter / "deck.json").read_text(encoding="utf-8"))
     config["title"] = args.title
     config["next_preview"] = not args.no_next_preview
@@ -71,7 +75,7 @@ def main() -> None:
     config["palette"] = palette
     (target / "deck.json").write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-    print(f"Created oil-slides project: {target}")
+    print(f"Created oil-ppt project: {target}")
     print(f"Edit one page at a time in: {target / 'slides'}")
 
 
