@@ -3,23 +3,8 @@
 </p>
 
 <p align="center">
-  <img src="./assets/readme/readme-section-showcase.svg" width="100%" alt="01 先看效果">
+  <img src="./assets/readme/readme-showcase.png" width="100%" alt="01 先看效果：oil-ppt 生成的四套不同配色演示文稿，共十五张页面">
 </p>
-
-<p align="center">
-  <img src="./assets/readme/showcase-mixed-square.png" width="900" alt="oil-ppt 生成的四套不同配色演示文稿，共十五张页面">
-</p>
-
-<table>
-  <tr>
-    <td width="50%"><img src="./assets/readme/showcase-oil-yellow.png" alt="oil-ppt 产品理念演示，黄色主题"></td>
-    <td width="50%"><img src="./assets/readme/showcase-jwst-cobalt.png" alt="詹姆斯·韦布空间望远镜演示，钴蓝主题"></td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="./assets/readme/showcase-highline-moss.png" alt="纽约高线公园演示，苔绿色主题"></td>
-    <td width="50%"><img src="./assets/readme/showcase-bauhaus-clay.png" alt="包豪斯设计方法演示，陶土色主题"></td>
-  </tr>
-</table>
 
 <p align="center">
   <img src="./assets/readme/readme-section-system.svg" width="100%" alt="02 oil-ppt 是什么">
@@ -39,7 +24,7 @@ oil-ppt 是一个给 Agent 使用的 PPT Skill。我们可以给它一个主题�
   <img src="./assets/readme/readme-section-model.svg" width="100%" alt="03 为什么性价比模型也能做好">
 </p>
 
-DeepSeek V3 这类模型已经能理解材料和整理结构。真正容易让它失手的，是要求它在同一时间记住几十条设计规则，还要把每个尺寸都执行正确。
+DeepSeek、混元 HY 等性价比模型已经能理解材料和整理结构。真正容易让它们失手的，是要求它们在同一时间记住几十条设计规则，还要把每个尺寸都执行正确。
 
 oil-ppt 把大任务拆成四个有限选择：
 
