@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Curated, bright restrained palette tokens for deterministic oil-slides output."""
+"""Curated, bright restrained palette tokens for deterministic oil-ppt output."""
 from __future__ import annotations
 
 import re
@@ -73,6 +73,45 @@ PALETTES = {
         "accent_soft": "#F9F7FF",
         "accent_strong": "#292929",
     },
+    "ocean-cobalt": {
+        "canvas": "#FCFDFF",
+        "ink": "#27313A",
+        "ink_2": "#5F6972",
+        "ink_3": "#98A2AA",
+        "border": "#DFE6EC",
+        "surface": "#F1F5F9",
+        "surface_2": "#F7FAFC",
+        "accent": "#5E82F6",
+        "accent_fill": "#CFDAFF",
+        "accent_soft": "#F0F4FF",
+        "accent_strong": "#243A72",
+    },
+    "sand-copper": {
+        "canvas": "#FFFDFC",
+        "ink": "#302D2A",
+        "ink_2": "#6B625B",
+        "ink_3": "#A79B91",
+        "border": "#ECE3DB",
+        "surface": "#F8F2ED",
+        "surface_2": "#FCF8F5",
+        "accent": "#E7A06F",
+        "accent_fill": "#F6D9C6",
+        "accent_soft": "#FFF5EE",
+        "accent_strong": "#66402D",
+    },
+    "glacier-teal": {
+        "canvas": "#FCFEFE",
+        "ink": "#263333",
+        "ink_2": "#5D6D6C",
+        "ink_3": "#97A7A5",
+        "border": "#DDE9E7",
+        "surface": "#EFF7F5",
+        "surface_2": "#F6FBFA",
+        "accent": "#63C9BE",
+        "accent_fill": "#CDEFEA",
+        "accent_soft": "#EFFAF8",
+        "accent_strong": "#245B57",
+    },
 }
 
 ALIASES = {
@@ -92,6 +131,11 @@ ALIASES = {
     "lavender": "dusty-plum",
     "violet": "dusty-plum",
     "purple": "dusty-plum",
+    "cobalt": "ocean-cobalt",
+    "deep-blue": "ocean-cobalt",
+    "copper": "sand-copper",
+    "sand": "sand-copper",
+    "teal": "glacier-teal",
 }
 
 TOKEN_KEYS = (

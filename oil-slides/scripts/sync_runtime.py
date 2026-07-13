@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sync the deterministic oil-slides runtime into an existing deck project."""
+"""Sync the deterministic oil-ppt runtime into an existing deck project."""
 from __future__ import annotations
 
 import argparse
@@ -16,7 +16,7 @@ def main() -> None:
 
     project = args.project_dir.expanduser().resolve()
     if not (project / "deck.json").is_file():
-        raise SystemExit(f"Not an oil-slides project (deck.json missing): {project}")
+        raise SystemExit(f"Not an oil-ppt project (deck.json missing): {project}")
 
     skill_root = Path(__file__).resolve().parent.parent
     source = skill_root / "assets" / "runtime"
@@ -27,7 +27,7 @@ def main() -> None:
         for name in names
     )
     icons_src = skill_root / "assets" / "icons"
-    icons_dst = project / "assets" / "icons"
+    icons_dst = project / "assets" / "system-icons"
     source_icons = sorted(path.name for path in icons_src.iterdir() if path.is_file())
     target_icons = sorted(path.name for path in icons_dst.iterdir() if path.is_file()) if icons_dst.is_dir() else []
     current = current and source_icons == target_icons and all(
@@ -46,7 +46,7 @@ def main() -> None:
         if icons_dst.exists():
             shutil.rmtree(icons_dst)
         shutil.copytree(icons_src, icons_dst)
-    print(f"Synced oil-slides runtime: {target}")
+    print(f"Synced oil-ppt runtime: {target}")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Merge, inline, route, and browser-validate an oil-slides project."""
+"""Merge, inline, route, and browser-validate an oil-ppt project."""
 from __future__ import annotations
 
 import argparse
@@ -14,6 +14,7 @@ import tempfile
 from pathlib import Path
 
 from cdp_validate import validate_file
+from media_assets import verify_outline_media
 from outline_schema import validate_outline
 from palette_tokens import TOKEN_KEYS, normalize_palette
 from profile_tokens import SHAPE_PROFILES, TYPE_PROFILES
@@ -156,6 +157,18 @@ def browser_validate(path: Path) -> None:
     except (OSError, RuntimeError) as error:
         raise SystemExit(f"Chromium DOM validation failed: {error}") from error
     if report.get("status") != "ok":
+        broken = report.get("brokenImages") or []
+        if broken:
+            raise SystemExit(f"Browser render validation found {len(broken)} undecodable image(s); final file was not written.")
+        invalid_bleeds = report.get("invalidBleeds") or []
+        if invalid_bleeds:
+            raise SystemExit(f"Browser render validation found {len(invalid_bleeds)} invalid full-bleed layer(s); final file was not written.")
+        invalid_layouts = report.get("invalidLayouts") or []
+        if invalid_layouts:
+            raise SystemExit(f"Browser render validation found {len(invalid_layouts)} layout(s) outside the safe area; final file was not written.")
+        invalid_text = report.get("invalidText") or []
+        if invalid_text:
+            raise SystemExit(f"Browser render validation found {len(invalid_text)} overflowing fitted text block(s); final file was not written.")
         raise SystemExit("Browser render validation did not complete; final file was not written.")
 
 
@@ -185,6 +198,7 @@ def build(project: Path) -> str:
         raise SystemExit("Missing outline.json. Build requires the confirmed project outline.")
     outline_data = json.loads(outline_path.read_text(encoding="utf-8"))
     outline_slides = validate_outline(outline_data, Path(__file__).resolve().parent.parent / "assets" / "templates")
+    verify_outline_media(outline_data, project)
     slide_paths = config.get("slides")
     if not isinstance(slide_paths, list) or not slide_paths:
         raise SystemExit("deck.json requires a non-empty slides list.")
@@ -296,11 +310,16 @@ def build(project: Path) -> str:
     preview = "" if not config.get("next_preview", True) else '<aside class="next-preview" aria-label="下一页提示"><span class="next-preview-label">下一页 →</span><span class="next-preview-title"></span></aside>'
     counter = '<div class="deck-counter" aria-live="polite"></div>' if config.get("show_counter", True) else ""
     progress = '<div class="progress-bar" aria-hidden="true"></div>' if config.get("show_progress", True) else ""
-    title = html.escape(str(config.get("title", "oil-slides")))
+    title = html.escape(str(config.get("title", "oil-ppt")))
     lang = html.escape(str(config.get("lang", "zh-CN")))
     click_navigation = "true" if config["click_navigation"] else "false"
     slides_html = "\n".join(fragments)
     slide_css = "\n".join(css_parts)
+    icon_license_path = Path(__file__).resolve().parent.parent / "assets" / "icons" / "LICENSE"
+    third_party = {
+        "Phosphor Icons": icon_license_path.read_text(encoding="utf-8") if icon_license_path.is_file() else ""
+    }
+    notices = json.dumps(third_party, ensure_ascii=False).replace("</", "<\\/")
     output = f"""<!doctype html>
 <html lang="{lang}" data-validation="pending">
 <head>
@@ -316,6 +335,7 @@ def build(project: Path) -> str:
 {progress}
 {counter}
 {preview}
+<script type="application/json" id="oil-third-party-notices">{notices}</script>
 <script>{runtime_js}</script>
 </body>
 </html>

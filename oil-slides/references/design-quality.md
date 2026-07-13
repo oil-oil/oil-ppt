@@ -42,14 +42,6 @@
 
 ## 预览前审计
 
-运行：
-
-```text
-scripts/oil-slides audit <项目/outline.json>
-```
-
-- `repeated-silhouette`、`missing-visual-anchor`、`media-coverage`、`missing-section-media`、`media-gap`、`missing-media-frame`、`double-frame-risk` 必须修复后再预览。
-- `surface-dominance`、`low-rhythm-variety` 是整套节奏警告；不要逐页遮盖提示，在 CLI 中调整 Outline。
-- 浏览器阶段只验证页面能完整加载、字体就绪、舞台与页面结构存在；不再用 DOM 几何阈值裁决版面，也不在预览中画红框。
+运行 `scripts/oil-slides check <项目>`。按返回的 error 修复后再预览；warning 用于整套节奏复核，不要用装饰逐页遮盖。具体阈值、候选页和修复提示以程序输出为准。
 
 新增模板前先确认缺的是新的信息关系或新的 silhouette，而不是因为现有页面没有被正确组合。

@@ -5,12 +5,25 @@
 .s-__ID__ .tabs { display:flex; gap:14px; margin-bottom:24px; }
 .s-__ID__ .panel { height:590px; padding:52px 58px; }
 .s-__ID__ .panel-grid { display:grid; grid-template-columns:.8fr 1.2fr; gap:56px; height:100%; align-items:center; }
-.s-__ID__ .symbol { position:relative; width:330px; height:330px; border-radius:50%; display:grid; place-items:center; background:var(--ink); color:var(--slide-bg); font:800 150px/1 var(--font-ui); }
-.s-__ID__ .symbol::after { content:""; position:absolute; left:50%; bottom:42px; width:58px; height:7px; border-radius:99px; transform:translateX(-50%); background:var(--accent-mark); }
+.s-__ID__ .symbol { position:relative; width:330px; height:330px; border-radius:50%; background:radial-gradient(circle at 50% 50%,var(--accent-soft) 0 42%,transparent 43%),linear-gradient(145deg,var(--surface),#fff); border:1px solid var(--border); }
+.s-__ID__ .symbol::before,.s-__ID__ .symbol::after { content:""; position:absolute; width:150px; height:184px; border-radius:26px; border:3px solid var(--ink); background:var(--slide-bg); }
+.s-__ID__ .symbol::before { left:64px; top:74px; transform:rotate(-8deg); }
+.s-__ID__ .symbol::after { right:56px; top:58px; transform:rotate(9deg); border-color:var(--accent-strong); background:var(--accent-fill); }
+.s-__ID__ [data-tab-panel="b"] .symbol::before { transform:rotate(8deg); }
+.s-__ID__ [data-tab-panel="b"] .symbol::after { transform:rotate(-9deg); }
 .s-__ID__ h2 { height:100px; margin:0 0 22px; font-size:52px; line-height:1.25; }
 .s-__ID__ p { height:160px; margin:0; font-size:30px; line-height:1.65; color:var(--ink-2); }
+@media print {
+  .s-__ID__ .wrap{inset:38px;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:146px 1fr;gap:24px 28px}
+  .s-__ID__ h1{grid-column:1/3;width:1500px;height:120px;margin:0}
+  .s-__ID__ .tabs{display:none}
+  .s-__ID__ [data-oil-tabs] [data-tab-panel],.s-__ID__ [data-oil-tabs] [data-tab-panel][hidden]{display:block!important;height:720px;padding:42px}
+  .s-__ID__ [data-tab-panel="a"]{grid-column:1;grid-row:2}.s-__ID__ [data-tab-panel="b"]{grid-column:2;grid-row:2}
+  .s-__ID__ .panel-grid{grid-template-columns:1fr;grid-template-rows:260px 1fr;gap:28px;align-items:start}
+  .s-__ID__ .symbol{width:220px;height:220px}.s-__ID__ .symbol::before,.s-__ID__ .symbol::after{width:100px;height:122px;border-radius:18px}.s-__ID__ .symbol::before{left:42px;top:52px}.s-__ID__ .symbol::after{right:36px;top:40px}
+}
 /* OIL-SLIDE-CSS:END */</style></head><body data-oil-mode="preview"><div class="slide-preview-viewport"><div class="slide-preview-shell"><div class="slide-preview-stage">
 <!-- OIL-SLIDE:START -->
-<section class="oil-slide s-__ID__" data-slide-id="__ID__" data-title="__TITLE__" data-variant="__VARIANT__" data-component-decor="__DECOR__" data-bg="grid-wide"><div class="slide-safe" data-layout-check="full"><div class="wrap" data-oil-tabs><h1 data-fit data-min-size="58" data-max-chars="22">__TITLE__</h1><div class="tabs"><button type="button" data-tab="a" aria-selected="true"></button><button type="button" data-tab="b" aria-selected="false"></button></div><div class="panel oil-surface" data-tone="neutral" data-decor="__DECOR__" data-tab-panel="a" data-layout><div class="panel-grid"><div class="symbol"></div><div><h2 data-fit data-min-size="38" data-max-chars="10"></h2><p data-sentence data-fit data-min-size="26" data-max-chars="36"></p></div></div></div><div class="panel oil-surface" data-tone="accent" data-decor="__DECOR__" data-tab-panel="b" data-layout hidden><div class="panel-grid"><div class="symbol"></div><div><h2 data-fit data-min-size="38" data-max-chars="10"></h2><p data-sentence data-fit data-min-size="26" data-max-chars="36"></p></div></div></div></div></div></section>
+<section class="oil-slide s-__ID__" data-slide-id="__ID__" data-title="__TITLE__" data-variant="__VARIANT__" data-component-decor="__DECOR__" data-bg="grid-wide"><div class="slide-safe" data-layout-check="full"><div class="wrap" data-oil-tabs><h1 data-fit data-min-size="58" data-max-chars="22">__TITLE__</h1><div class="tabs"><button type="button" data-tab="a" aria-selected="true"></button><button type="button" data-tab="b" aria-selected="false"></button></div><div class="panel oil-surface" data-tone="neutral" data-decor="__DECOR__" data-tab-panel="a" data-layout><div class="panel-grid"><div class="symbol"></div><div><h2 data-fit data-min-size="38" data-max-chars="10"></h2><p data-sentence data-fit data-min-size="32" data-max-chars="36"></p></div></div></div><div class="panel oil-surface" data-tone="accent" data-decor="__DECOR__" data-tab-panel="b" data-layout hidden><div class="panel-grid"><div class="symbol"></div><div><h2 data-fit data-min-size="38" data-max-chars="10"></h2><p data-sentence data-fit data-min-size="32" data-max-chars="36"></p></div></div></div></div></div></section>
 <!-- OIL-SLIDE:END -->
 </div></div></div><script src="../runtime/deck.js"></script></body></html>

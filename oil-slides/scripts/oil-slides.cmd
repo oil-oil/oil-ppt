@@ -9,5 +9,5 @@ if %errorlevel%==0 (
   python "%~dp0oil_slides.py" %*
   exit /b %errorlevel%
 )
-echo oil-slides requires Python 3.10 or newer. 1>&2
+echo oil-ppt requires Python 3.10 or newer. 1>&2
 exit /b 1

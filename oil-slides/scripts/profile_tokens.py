@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared typography and shape profiles for oil-slides."""
+"""Shared typography and shape profiles for oil-ppt."""
 from __future__ import annotations
 
 
