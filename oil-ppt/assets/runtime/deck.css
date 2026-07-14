@@ -32,9 +32,9 @@
   --slide-safe-y: 64px;
   --slide-grid-gap: 24px;
   --decor-line: 2px;
-  --icon-frame: 70px;
-  --icon-size: 38px;
-  --icon-radius: 22px;
+  --icon-frame: 78px;
+  --icon-size: 48px;
+  --icon-radius: 24px;
   --geo-size: 400px;
   --geo-cut: -140px;
   --geo-stroke: 8px;
@@ -74,13 +74,13 @@ body { font-family: var(--font-zh); color: var(--ink); }
 }
 .oil-icon-frame {
   width:var(--icon-frame);height:var(--icon-frame);display:inline-grid;place-items:center;flex:none;
-  border:1px solid color-mix(in srgb,var(--accent) 36%,var(--border));border-radius:var(--icon-radius);
+  border:0;border-radius:var(--icon-radius);
   background:var(--accent-soft);color:color-mix(in srgb,var(--accent) 56%,var(--ink));
 }
 .oil-icon-frame .oil-icon { width:var(--icon-size);height:var(--icon-size);opacity:1; }
-.oil-icon-frame[data-size="sm"] { --icon-frame:60px;--icon-size:36px;--icon-radius:18px; }
+.oil-icon-frame[data-size="sm"] { --icon-frame:66px;--icon-size:42px;--icon-radius:20px; }
 .oil-icon-frame[data-kind="connector"] { --icon-frame:52px;--icon-size:30px;--icon-radius:999px;background:var(--slide-bg); }
-.oil-surface[data-tone="ink"] .oil-icon-frame { border-color:rgba(255,255,255,.18);background:rgba(255,255,255,.09);color:var(--slide-bg); }
+.oil-surface[data-tone="ink"] .oil-icon-frame { background:rgba(255,255,255,.11);color:var(--slide-bg); }
 .deck-viewport, .slide-preview-viewport { position: fixed; inset: 0; overflow: hidden; background: var(--stage-bg); }
 .deck-stage-shell, .slide-preview-shell { position: relative; width: 100%; height: 100%; min-height: 1px; }
 .deck-stage, .slide-preview-stage {
@@ -188,6 +188,16 @@ body { font-family: var(--font-zh); color: var(--ink); }
 img, video, canvas, svg { max-width: 100%; max-height: 100%; }
 p, h1, h2, h3, li, [data-fit] { overflow-wrap: anywhere; }
 [data-fit] { overflow: clip; }
+/* Compact copy flow: short copy collapses to its real height; long copy keeps a
+   deterministic budget so the existing text fitter can still shrink it safely. */
+[data-copy-flow] > [data-copy-title],
+[data-copy-flow] > [data-copy-body] {
+  height:auto !important;
+  min-height:0;
+  flex:0 1 auto;
+}
+[data-copy-flow] > [data-copy-title] { max-height:var(--oil-copy-title-max,340px); padding-block:.16em; }
+[data-copy-flow] > [data-copy-body] { max-height:var(--oil-copy-body-max,180px); padding-block:.08em; }
 .hl { --highlight-color:color-mix(in srgb,var(--accent-mark) var(--highlight-opacity),transparent);background:linear-gradient(transparent 58%,var(--highlight-color) 58%,var(--highlight-color) 94%,transparent 94%);padding:0 .08em;-webkit-box-decoration-break:clone;box-decoration-break:clone; }
 .tag { display: flex; align-items: center; gap: 18px; font: 600 22px/1.2 var(--font-ui); letter-spacing: .14em; color: var(--ink-3); }
 .tag::before { content: ""; width: 42px; height: 8px; border-radius:999px; background: var(--accent); }
@@ -222,7 +232,7 @@ p, h1, h2, h3, li, [data-fit] { overflow-wrap: anywhere; }
   --decor-rotate: 0deg;
   --decor-density: 18px;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   isolation: isolate;
   border: 1px solid var(--border);
   border-radius: var(--surface-radius);
@@ -232,14 +242,16 @@ p, h1, h2, h3, li, [data-fit] { overflow-wrap: anywhere; }
 .oil-surface[data-tone="neutral"] { background: rgba(255,255,255,.94); }
 .oil-surface[data-tone="soft"] { background: var(--surface); }
 .oil-surface[data-tone="accent"] { background: linear-gradient(145deg, #fff 0%, var(--accent-soft) 155%); }
-.oil-surface[data-tone="alt"] { background: linear-gradient(145deg, #fff 0%, var(--accent-alt-soft) 155%); }
-.oil-surface[data-tone="warm"] { background: linear-gradient(145deg, #fff 0%, var(--accent-warm-soft) 155%); }
+.oil-surface[data-tone="soft"],
+.oil-surface[data-tone="accent"] { border-color:transparent; }
 .oil-surface[data-tone="ink"] { border-color:color-mix(in srgb,var(--ink) 88%,#fff); background:linear-gradient(145deg,color-mix(in srgb,var(--ink) 92%,#fff),var(--ink)); color:var(--slide-bg); }
+.oil-surface.oil-media { overflow:hidden; }
 .oil-surface[data-tone]::before {
   content: "";
   position: absolute;
   z-index: 0;
   pointer-events: none;
+  border-radius: inherit;
 }
 .oil-surface[data-tone="neutral"]::before {
   inset: 0;
@@ -247,10 +259,10 @@ p, h1, h2, h3, li, [data-fit] { overflow-wrap: anywhere; }
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.78' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 .oil-surface[data-tone="soft"]::before {
-  right: -34px;
-  bottom: -34px;
-  width: 240px;
-  height: 200px;
+  right: 0;
+  bottom: 0;
+  width: 210px;
+  height: 176px;
   opacity: .24;
   background-image: radial-gradient(circle, color-mix(in srgb, var(--ink) 12%, transparent) 1.5px, transparent 1.8px);
   background-size: 18px 18px;
@@ -258,36 +270,28 @@ p, h1, h2, h3, li, [data-fit] { overflow-wrap: anywhere; }
   mask-image: radial-gradient(circle at 100% 100%, #000 0 8%, transparent 72%);
 }
 .oil-surface[data-tone="accent"]::before {
-  right: -48px;
-  top: -48px;
-  width: 280px;
-  height: 240px;
-  opacity: .18;
-  background-image: repeating-linear-gradient(135deg, transparent 0 14px, color-mix(in srgb, var(--ink) 9%, transparent) 14px 15px);
-  -webkit-mask-image: radial-gradient(circle at 100% 0, #000 0 8%, transparent 72%);
-  mask-image: radial-gradient(circle at 100% 0, #000 0 8%, transparent 72%);
-}
-.oil-surface[data-tone="alt"]::before,
-.oil-surface[data-tone="warm"]::before {
-  right:-48px;
-  top:-48px;
-  width:280px;
-  height:240px;
-  opacity:.12;
-  background-image:radial-gradient(circle,color-mix(in srgb,var(--ink) 12%,transparent) 2px,transparent 2.4px);
-  background-size:22px 22px;
-  -webkit-mask-image:radial-gradient(circle at 100% 0,#000 0 8%,transparent 72%);
-  mask-image:radial-gradient(circle at 100% 0,#000 0 8%,transparent 72%);
+  right: 0;
+  top: 0;
+  width: 210px;
+  height: 210px;
+  opacity: 1;
+  border: 26px solid color-mix(in srgb,var(--ink) 6%,transparent);
+  border-radius: 50%;
+  background: none;
+  clip-path: inset(0 0 40% 40%);
 }
 .oil-surface[data-tone="ink"]::before {
+  display:none;
+}
+.oil-surface[data-motif]::before {
   display:none;
 }
 .oil-surface[data-tone="ink"]::after {
   content:none !important;
   display:none !important;
 }
-.oil-surface[data-decor-size="sm"] { --decor-size: 220px; }
-.oil-surface[data-decor-size="lg"] { --decor-size: 440px; }
+.oil-surface[data-decor-size="sm"] { --decor-size: 160px; }
+.oil-surface[data-decor-size="lg"] { --decor-size: 280px; }
 
 .oil-surface[data-decor]::after {
   content: "";
@@ -306,10 +310,10 @@ p, h1, h2, h3, li, [data-fit] { overflow-wrap: anywhere; }
   display: none;
 }
 .oil-surface[data-decor]:not([data-decor-pos]),
-.oil-surface[data-decor-pos="top-right"] { --decor-top: -72px; --decor-right: -72px; --decor-bottom: auto; --decor-left: auto; }
-.oil-surface[data-decor-pos="top-left"] { --decor-top: -72px; --decor-right: auto; --decor-bottom: auto; --decor-left: -72px; }
-.oil-surface[data-decor-pos="bottom-right"] { --decor-top: auto; --decor-right: -72px; --decor-bottom: -72px; --decor-left: auto; }
-.oil-surface[data-decor-pos="bottom-left"] { --decor-top: auto; --decor-right: auto; --decor-bottom: -72px; --decor-left: -72px; }
+.oil-surface[data-decor-pos="top-right"] { --decor-top: 0; --decor-right: 0; --decor-bottom: auto; --decor-left: auto; }
+.oil-surface[data-decor-pos="top-left"] { --decor-top: 0; --decor-right: auto; --decor-bottom: auto; --decor-left: 0; }
+.oil-surface[data-decor-pos="bottom-right"] { --decor-top: auto; --decor-right: 0; --decor-bottom: 0; --decor-left: auto; }
+.oil-surface[data-decor-pos="bottom-left"] { --decor-top: auto; --decor-right: auto; --decor-bottom: 0; --decor-left: 0; }
 .oil-surface[data-decor]::after {
   top: var(--decor-top); right: var(--decor-right); bottom: var(--decor-bottom); left: var(--decor-left);
 }
@@ -320,15 +324,6 @@ p, h1, h2, h3, li, [data-fit] { overflow-wrap: anywhere; }
   -webkit-mask-image: radial-gradient(circle at center, #000 10%, transparent 72%);
   mask-image: radial-gradient(circle at center, #000 10%, transparent 72%);
 }
-.oil-surface[data-decor="corner-grid"]::after {
-  --decor-base-opacity: .86;
-  background-image:
-    linear-gradient(color-mix(in srgb, var(--ink) 7%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--ink) 7%, transparent) 1px, transparent 1px);
-  background-size: calc(var(--decor-density) + var(--decor-density)) calc(var(--decor-density) + var(--decor-density));
-  -webkit-mask-image: radial-gradient(circle at center, #000 4%, transparent 72%);
-  mask-image: radial-gradient(circle at center, #000 4%, transparent 72%);
-}
 /* Template-owned vector motifs. They add craft without creating agent-facing CSS work. */
 .oil-surface[data-motif]::after {
   content:"";
@@ -337,29 +332,19 @@ p, h1, h2, h3, li, [data-fit] { overflow-wrap: anywhere; }
   pointer-events:none;
 }
 .oil-surface[data-motif="ring"]::after {
-  right:var(--geo-cut);bottom:var(--geo-cut);width:var(--geo-size);height:var(--geo-size);opacity:1;
-  border:var(--geo-stroke) solid color-mix(in srgb,var(--accent) 38%,transparent);border-radius:50%;
+  right:0;bottom:0;width:260px;height:260px;opacity:1;
+  border:32px solid color-mix(in srgb,var(--ink) 7%,transparent);border-radius:50%;
+  clip-path:inset(40% 0 0 40%);
 }
 .oil-surface[data-motif="triangle"]::after {
-  right:var(--geo-cut);top:var(--geo-cut);width:var(--geo-size);height:var(--geo-size);opacity:1;
-  background:color-mix(in srgb,var(--accent) 38%,transparent);transform:rotate(-6deg);
-  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 6L94 90H6Z' fill='none' stroke='black' stroke-width='3' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;
-  mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 6L94 90H6Z' fill='none' stroke='black' stroke-width='3' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;
+  right:0;top:0;width:240px;height:210px;opacity:1;
+  background:color-mix(in srgb,var(--ink) 6%,transparent);transform:rotate(-6deg);
+  clip-path:polygon(58% 0,100% 0,100% 100%,8% 100%);
 }
 .oil-surface[data-motif="slash"]::after {
-  right:-28px;top:-38px;width:270px;height:250px;opacity:.44;
-  background:repeating-linear-gradient(132deg,transparent 0 18px,color-mix(in srgb,var(--ink) 16%,transparent) 18px 20px,transparent 20px 34px);
-  -webkit-mask-image:linear-gradient(135deg,#000,transparent 78%);mask-image:linear-gradient(135deg,#000,transparent 78%);
-}
-.oil-surface[data-motif="plot"]::after {
-  right:-34px;bottom:-34px;width:270px;height:230px;opacity:.42;
-  background-image:
-    radial-gradient(circle at 32% 58%,color-mix(in srgb,var(--ink) 42%,transparent) 0 4px,transparent 5px),
-    radial-gradient(circle at 68% 34%,color-mix(in srgb,var(--accent-strong) 36%,transparent) 0 4px,transparent 5px),
-    linear-gradient(color-mix(in srgb,var(--ink) 8%,transparent) 1px,transparent 1px),
-    linear-gradient(90deg,color-mix(in srgb,var(--ink) 8%,transparent) 1px,transparent 1px);
-  background-size:auto,auto,28px 28px,28px 28px;
-  -webkit-mask-image:radial-gradient(circle at 100% 100%,#000 0 12%,transparent 76%);mask-image:radial-gradient(circle at 100% 100%,#000 0 12%,transparent 76%);
+  right:0;top:0;width:240px;height:190px;opacity:1;
+  background:color-mix(in srgb,var(--ink) 6%,transparent);
+  clip-path:polygon(34% 0,100% 0,66% 100%,0 100%);
 }
 .deck-counter {
   position: fixed; left: 18px; bottom: 18px; z-index: 1000; user-select: none;

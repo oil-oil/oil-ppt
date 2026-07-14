@@ -1,4 +1,4 @@
 interface:
   display_name: "oil-ppt"
   short_description: "先确认 Markdown 大纲，再设计并构建 oil 风格演示"
-  default_prompt: "使用 $oil-ppt。先问我是想通过对话共同梳理大纲，还是由你直接生成第一版；初始化项目并完成 outline.md。之后先读取 CLI status 的 next.action：需要确认时停止并询问用户，只有 action=run_command 时才执行 next.command，直到正式预览经用户确认后构建演示。"
+  default_prompt: "使用 $oil-ppt。先问我是想通过对话共同梳理大纲，还是由你直接生成第一版；初始化项目并完成 outline.md。之后只按 CLI status 的 next.action 前进：run_command 执行命令，edit/write 只改给定路径，ask_user 展示产物并在我明确确认后执行 command_on_confirm，start_editor 启动后交给我操作且不要等待服务退出。不要替我确认。"

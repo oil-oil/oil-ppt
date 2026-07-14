@@ -25,7 +25,15 @@ scripts/oil-ppt
 scripts/oil-ppt status <项目> --json
 ```
 
-先看 `next.action`：当它要求确认大纲或预览时，停止并向用户展示当前产物；只有 `action` 为 `run_command` 且 `next.command` 非空时才执行命令。不要替用户确认，也不要凭记忆拼接旧流程。
+只按 `next.action` 前进：
+
+- `run_command`：直接执行 `next.command`；它已是可从任意目录运行的绝对命令。
+- `edit_outline` / `write_visual_plan`：只编辑 `next.path`，完成后重新运行 `status`。
+- `ask_user_to_confirm_*`：展示 `next.artifact` 并停止；只有用户明确确认后才执行 `next.command_on_confirm`。
+- `start_editor`：启动 `next.command` 后立即把页面交给用户，不等待这个本地服务退出；用户点击“完成编辑”后重新运行 `status`。
+- `wait_for_editor` / `complete` / `choose_project_directory`：停止，不猜测下一命令。
+
+不要替用户确认，也不要凭记忆拼接旧流程。
 
 ## 新建流程
 
@@ -90,13 +98,15 @@ scripts/oil-ppt media plan <项目> --write
 
 只有需要获取外部素材时读取 `references/media.md`；生成概念插画时读取 `references/illustration.md`；用代码绘制 UI、流程、关系或图表时读取 `references/programmatic-visuals.md`。
 
-正式预览使用最终文案和素材：
+正式预览使用最终文案和素材，并默认打开可编辑预览：
 
 ```text
 scripts/oil-ppt preview <项目>
 ```
 
-生成后停止，等待用户确认。根据反馈修改 `outline.md`、`outline.json` 或素材后，重新按 `status` 返回的命令完成确认和预览。
+用户点击任意页面即可打开大图并直接校对文字。编辑器自动保存独立草稿；用户点击“完成编辑”后，程序写回结构化内容并重新生成正式预览。不要直接修改预览或最终 HTML。
+
+生成后停止，等待用户确认。根据反馈修改 `outline.md`、`outline.json`、素材或直接校对预览文字后，重新按 `status` 返回的命令完成确认和预览。
 
 ### 5. 确认并构建
 

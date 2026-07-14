@@ -21,6 +21,8 @@ MEDIA_FIT_DEFAULTS = {
     "editorial-canvas": "contain",
 }
 
+AUTO_BACKDROP_TEMPLATES = {"cover", "section", "end"}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -170,8 +172,21 @@ def set_visual_image(fragment: str, src: str, alt: str = "") -> str:
     return fragment
 
 
+def effective_backdrop_text(slide: dict) -> str:
+    """Return content-owned background type without adding a model decision."""
+    explicit = str(slide.get("backdrop_text") or "").strip()
+    if explicit:
+        return explicit
+    if str(slide.get("template") or "") not in AUTO_BACKDROP_TEMPLATES:
+        return ""
+    highlight = str(slide.get("highlight") or "").strip()
+    if not highlight or len(re.sub(r"\s+", "", highlight)) > 12:
+        return ""
+    return highlight
+
+
 def inject_backdrop_text(fragment: str, slide: dict) -> str:
-    value = str(slide.get("backdrop_text") or "").strip()
+    value = effective_backdrop_text(slide)
     if not value:
         return fragment
     markup = f'<div class="oil-backdrop-text" aria-hidden="true">{esc(value)}</div>'

@@ -123,17 +123,33 @@
     }
   }
 
+  function checkCopyFlow(flow) {
+    const title = [...flow.children].find(node => node.matches?.("[data-copy-title]"));
+    const body = [...flow.children].find(node => node.matches?.("[data-copy-body]"));
+    if (!title || !body || !title.textContent.trim() || !body.textContent.trim()) return;
+    if (body.previousElementSibling !== title) return;
+    if (!title.getClientRects().length || !body.getClientRects().length) return;
+    const gap = body.getBoundingClientRect().top - title.getBoundingClientRect().bottom;
+    if (gap > 72) {
+      flow.dataset.validationStatus = "warning";
+      flow.dataset.warningReason = "copy-gap";
+      flow.dataset.copyMetrics = `gap:${Math.round(gap)}`;
+    }
+  }
+
   function validateLayout() {
-    document.querySelectorAll("[data-validation-status], [data-warning-reason], [data-text-metrics], [data-space-metrics]").forEach(el => {
+    document.querySelectorAll("[data-validation-status], [data-warning-reason], [data-text-metrics], [data-space-metrics], [data-copy-metrics]").forEach(el => {
       delete el.dataset.validationStatus;
       delete el.dataset.warningReason;
       delete el.dataset.textMetrics;
       delete el.dataset.spaceMetrics;
+      delete el.dataset.copyMetrics;
     });
     document.querySelectorAll("h1,h2,h3,p,li,.tag,[data-readable]").forEach(applyPreferredTextSize);
     document.querySelectorAll("[data-fit]").forEach(fitText);
     document.querySelectorAll("[data-max-chars]").forEach(checkTextBudget);
     document.querySelectorAll("h1").forEach(checkTitleOrphan);
+    document.querySelectorAll("[data-copy-flow]").forEach(checkCopyFlow);
     document.querySelectorAll(".slide-safe").forEach(checkSpaceUse);
     document.documentElement.dataset.oilValidated = "ok";
     document.documentElement.dataset.oilWarnings = String(document.querySelectorAll('[data-validation-status="warning"]').length);

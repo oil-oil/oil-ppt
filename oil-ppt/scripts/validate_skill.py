@@ -7,8 +7,8 @@ import re
 from html.parser import HTMLParser
 from pathlib import Path
 
-from background_presets import ALL_BACKGROUNDS, BACKGROUND_PRESETS, template_background
-from capability_catalog import PROGRAM_OWNED_CAPABILITIES, TEMPLATE_DISCOVERY, VARIANT_HELP
+from background_presets import ALL_BACKGROUNDS, BACKGROUND_PRESETS, BACKGROUND_UI_LABELS, template_background
+from capability_catalog import DECOR_UI_LABELS, PROGRAM_OWNED_CAPABILITIES, TEMPLATE_DISCOVERY, VARIANT_HELP, VARIANT_UI_LABELS
 from component_contracts import COMPONENT_CONTRACTS, COMPONENT_QUALITY, VARIANT_QUALITY
 from fill_slots import FILLERS
 from icon_registry import ICON_CATALOG, verify_icons
@@ -19,6 +19,11 @@ from palette_tokens import PALETTES
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES = ROOT / "assets" / "templates"
 SKILL = ROOT / "SKILL.md"
+CLIPPABLE_TEMPLATE_SELECTORS = ("figure", "media", "visual", "photo", "canvas")
+ADAPTIVE_COPY_TEMPLATES = {
+    "bleed-split", "browser-showcase", "cover", "diagonal-split", "editorial-feature", "end",
+    "metric", "photo-gradient", "photo-split", "recap", "section", "split-visual",
+}
 
 
 class TemplateTextCollector(HTMLParser):
@@ -58,6 +63,7 @@ def validate_skill() -> None:
         "scripts/doctor.py",
         "scripts/cdp_validate.py",
         "scripts/design_quality.py",
+        "scripts/editor_bindings.py",
         "scripts/fill_slots.py",
         "scripts/media_assets.py",
         "scripts/media_frame.py",
@@ -65,6 +71,7 @@ def validate_skill() -> None:
         "scripts/render_programmatic_visual.py",
         "scripts/render_outline_review.py",
         "scripts/sync_runtime.py",
+        "scripts/text_editor.py",
         "scripts/icon_registry.py",
         "assets/runtime/deck.css",
         "assets/runtime/deck.js",
@@ -110,6 +117,20 @@ def validate_skill() -> None:
             errors.append(f"variant help references unknown template: {template}")
         elif set(help_by_variant) != set(COMPONENT_CONTRACTS[template]["variants"]):
             errors.append(f"variant help must cover every variant for {template}")
+    registered_variants = {variant for contract in COMPONENT_CONTRACTS.values() for variant in contract["variants"]}
+    registered_decorations = {decor for contract in COMPONENT_CONTRACTS.values() for decor in contract["decorations"]}
+    if set(VARIANT_UI_LABELS) != registered_variants:
+        missing = sorted(registered_variants - set(VARIANT_UI_LABELS))
+        extra = sorted(set(VARIANT_UI_LABELS) - registered_variants)
+        errors.append(f"variant UI labels mismatch; missing={missing}, extra={extra}")
+    if set(DECOR_UI_LABELS) != registered_decorations:
+        missing = sorted(registered_decorations - set(DECOR_UI_LABELS))
+        extra = sorted(set(DECOR_UI_LABELS) - registered_decorations)
+        errors.append(f"decoration UI labels mismatch; missing={missing}, extra={extra}")
+    if set(BACKGROUND_UI_LABELS) != set(ALL_BACKGROUNDS):
+        missing = sorted(set(ALL_BACKGROUNDS) - set(BACKGROUND_UI_LABELS))
+        extra = sorted(set(BACKGROUND_UI_LABELS) - set(ALL_BACKGROUNDS))
+        errors.append(f"background UI labels mismatch; missing={missing}, extra={extra}")
     for template, quality_by_variant in VARIANT_QUALITY.items():
         if template not in COMPONENT_CONTRACTS:
             errors.append(f"variant quality references unknown template: {template}")
@@ -128,6 +149,10 @@ def validate_skill() -> None:
     for path in sorted(TEMPLATES.glob("*.html")):
         text = path.read_text(encoding="utf-8")
         contract = COMPONENT_CONTRACTS.get(path.stem)
+        for match in re.finditer(r"([^{}]+)\{[^{}]*overflow\s*:\s*(?:hidden|clip)\b", text, re.I):
+            selector = " ".join(match.group(1).split())
+            if not any(token in selector.lower() for token in CLIPPABLE_TEMPLATE_SELECTORS):
+                errors.append(f"{path.name}: card/container clipping is forbidden; move it to a media wrapper: {selector}")
         if "placeholder" in text.lower():
             errors.append(f"{path.name}: bundled templates must not contain visible placeholder visuals")
         collector = TemplateTextCollector()
@@ -138,6 +163,13 @@ def validate_skill() -> None:
             errors.append(f"{path.name}: bundled template seeds visible content: {seeded_text[0]}")
         fragment_match = re.search(r"<!--\s*OIL-SLIDE:START\s*-->(.*?)<!--\s*OIL-SLIDE:END\s*-->", text, re.I | re.S)
         fragment = fragment_match.group(1) if fragment_match else ""
+        copy_flow_count = len(re.findall(r"<[^>]+\bdata-copy-flow\b[^>]*>", fragment, re.I))
+        copy_title_count = len(re.findall(r"<[^>]+\bdata-copy-title\b[^>]*>", fragment, re.I))
+        copy_body_count = len(re.findall(r"<[^>]+\bdata-copy-body\b[^>]*>", fragment, re.I))
+        if path.stem in ADAPTIVE_COPY_TEMPLATES and copy_flow_count != 1:
+            errors.append(f"{path.name}: focal title/body composition must use the adaptive copy flow")
+        if copy_flow_count and (copy_title_count != copy_flow_count or copy_body_count != copy_flow_count):
+            errors.append(f"{path.name}: every adaptive copy flow requires exactly one title and one body marker")
         for tag_name in ("h2", "p", "button"):
             for body in re.findall(rf"<{tag_name}\b[^>]*>(.*?)</{tag_name}>", fragment, re.I | re.S):
                 if re.sub(r"<[^>]+>", "", body).strip():
@@ -160,12 +192,14 @@ def validate_skill() -> None:
         surface_tags = re.findall(r'<[^>]+class="[^"]*\boil-surface\b[^"]*"[^>]*>', text, re.I)
         for tag in surface_tags:
             tone = re.search(r'data-tone=["\']([^"\']+)["\']', tag, re.I)
-            if not tone or tone.group(1) not in {"neutral", "soft", "accent", "alt", "warm", "ink"}:
+            if not tone or tone.group(1) not in {"neutral", "soft", "accent", "ink"}:
                 errors.append(f"{path.name}: every oil-surface container must choose a registered surface tone")
         if contract:
             if not isinstance(contract.get("use_when"), str) or not contract["use_when"].strip():
                 errors.append(f"{path.name}: contract requires use_when")
             if any(value != "none" for value in contract["decorations"]):
+                if "none" in contract["decorations"]:
+                    errors.append(f"{path.name}: decorated components must not expose a weaker none variant")
                 if 'data-decor="__DECOR__"' not in text:
                     errors.append(f"{path.name}: declares decorations but has no rendered data-decor slot")
             quality = COMPONENT_QUALITY.get(path.stem) or {}
@@ -175,6 +209,24 @@ def validate_skill() -> None:
                 errors.append(f"{path.name}: invalid or missing surface_density metadata")
             if quality.get("frame_owner") not in {"none", "media", "template"}:
                 errors.append(f"{path.name}: invalid or missing frame_owner metadata")
+            tones = [match for match in re.findall(r'data-tone=["\']([^"\']+)["\']', fragment, re.I)]
+            if set(tones).intersection({"alt", "warm"}) or "var(--accent-alt" in text or "var(--accent-warm" in text:
+                errors.append(f"{path.name}: ordinary components must stay inside the theme accent family")
+            if quality.get("surface_density") == "heavy":
+                carries_texture = (
+                    'data-decor="__DECOR__"' in fragment
+                    or 'data-decor="dots"' in fragment
+                    or 'data-motif=' in fragment
+                )
+                if len(set(tones)) < 2 and not carries_texture:
+                    errors.append(f"{path.name}: heavy component needs multiple surface tones or a declared texture")
+            if tones.count("ink") > 1:
+                errors.append(f"{path.name}: more than one ink surface weakens the single visual center")
+            if path.stem == "converge":
+                if "data-visual-edge" not in fragment:
+                    errors.append("converge.html: the merge relationship requires a visible program-owned edge")
+                if re.search(r"\.merge\s*\{[^}]*display\s*:\s*none", text, re.I | re.S):
+                    errors.append("converge.html: the merge relationship must not be hidden")
 
     process_rail = TEMPLATES / "process-rail.html"
     if process_rail.is_file():
@@ -203,7 +255,7 @@ def validate_skill() -> None:
     public_files = [*docs, ROOT / "agents" / "openai.yaml"]
     if repo_readme.is_file():
         public_files.append(repo_readme)
-    commands = r"(?:init|status|plan|check|doctor|audit|recommend|contract|preview|confirm|scaffold|build|list|add|remove|sync|media|icon)"
+    commands = r"(?:init|status|plan|check|doctor|audit|recommend|contract|preview|edit|confirm|scaffold|build|list|add|remove|sync|media|icon)"
     bare_cli = re.compile(rf"(?<![/\w-])oil-ppt\s+{commands}\b")
     hardcoded_install = re.compile(r"(?:\$HOME|~|/Users/[^/]+)/(?:\.codex|\.agents|\.claude|\.workbuddy)/.*?/oil-ppt")
     old_public_name = re.compile(r"\boil-slides\b|\$oil-slides")
@@ -225,7 +277,7 @@ def validate_skill() -> None:
     agent_file = ROOT / "agents" / "openai.yaml"
     if agent_file.is_file():
         agent_text = agent_file.read_text(encoding="utf-8")
-        for required in ('display_name: "oil-ppt"', "next.action", "action=run_command"):
+        for required in ('display_name: "oil-ppt"', "next.action", "command_on_confirm", "start_editor"):
             if required not in agent_text:
                 errors.append(f"agents/openai.yaml must include {required!r}")
     if in_source_repository and not repo_readme.is_file():
@@ -257,6 +309,9 @@ def validate_skill() -> None:
 
     runtime_css = (ROOT / "assets/runtime/deck.css").read_text(encoding="utf-8")
     compact_runtime = re.sub(r"\s+", "", runtime_css)
+    surface_rule = re.search(r"\.oil-surface\s*\{([^}]*)\}", runtime_css, re.S)
+    if not surface_rule or not re.search(r"overflow\s*:\s*visible", surface_rule.group(1)):
+        errors.append("runtime .oil-surface must keep overflow visible; clipping belongs to media wrappers")
     for obsolete in ("oil-bleed-art", "oil-browser-mock", "oil-photo-placeholder"):
         if obsolete in runtime_css:
             errors.append(f"runtime must not retain template stand-in visual: {obsolete}")
@@ -286,10 +341,21 @@ def validate_skill() -> None:
     for motif in PROGRAM_OWNED_CAPABILITIES["surface"]["automatic_motifs"]:
         if f'.oil-surface[data-motif="{motif}"]::after' not in runtime_css:
             errors.append(f"runtime surface motif {motif} is declared but missing")
-    if ".oil-icon-frame" not in runtime_css or "--icon-frame: 70px" not in runtime_css or "--icon-size: 38px" not in runtime_css:
+    if '.oil-surface[data-motif]::before' not in runtime_css:
+        errors.append("runtime must suppress tone texture when a template motif already owns the surface")
+    if ".oil-icon-frame" not in runtime_css or "--icon-frame: 78px" not in runtime_css or "--icon-size: 48px" not in runtime_css:
         errors.append("runtime must provide the enlarged, reduced-padding icon frame contract")
     if ".oil-chart-bars" not in runtime_css:
         errors.append("runtime must provide deterministic native chart bars")
+    for token in ("[data-copy-flow] > [data-copy-title]", "[data-copy-flow] > [data-copy-body]", "--oil-copy-title-max", "--oil-copy-body-max"):
+        if token not in runtime_css:
+            errors.append(f"runtime adaptive copy flow missing {token}")
+    runtime_js = (ROOT / "assets/runtime/deck.js").read_text(encoding="utf-8")
+    if "checkCopyFlow" not in runtime_js or 'warningReason = "copy-gap"' not in runtime_js:
+        errors.append("runtime must audit excessive title-to-body gaps in adaptive copy flows")
+    cdp_source = (ROOT / "scripts/cdp_validate.py").read_text(encoding="utf-8")
+    if "invalidCopyFlows" not in cdp_source or "reason:'copy-gap'" not in cdp_source:
+        errors.append("browser validation must reject excessive title-to-body gaps")
     for background_name in BACKGROUND_PRESETS:
         if f'data-bg="{background_name}"' not in runtime_css:
             errors.append(f"runtime background preset missing selector for {background_name}")

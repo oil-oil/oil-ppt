@@ -12,11 +12,11 @@ COMPONENT_CONTRACTS = {
     "bleed-split": {"use_when": "文字与一张可出血的主视觉共同表达判断；按主体位置选择左右出血。", "variants": ("media-right", "media-left"), "decorations": ("none",)},
     "browser-showcase": {"use_when": "真实界面截图或明确标注的 UI 演示是主要证据；按讲述顺序选择界面在左或右。", "variants": ("media-right", "media-left"), "decorations": ("none",)},
     "card-trio": {"use_when": "三个可独立拿走的信息单元共同支撑一个判断，并且有一主两辅；左右型强调纵向主卡，feature-top 先给总领再读两项支撑，media-evidence 用两组图片证据与一个文字决策块完成路由。", "variants": ("feature-left", "feature-right", "feature-top", "media-evidence"), "decorations": ("none",)},
-    "comparison": {"use_when": "两个对象需要以相同维度直接对照；有成组真实图片证据时使用 visual-evidence。", "variants": ("default", "visual-evidence"), "decorations": ("none", "dots", "corner-grid")},
+    "comparison": {"use_when": "两个对象需要以相同维度直接对照；有成组真实图片证据时使用 visual-evidence。", "variants": ("default", "visual-evidence"), "decorations": ("dots",)},
     "comparison-list": {
         "use_when": "两个责任域或方案需要逐项对齐比较。",
         "variants": ("focus-right", "focus-left", "balanced"),
-        "decorations": ("none", "dots", "corner-grid"),
+        "decorations": ("dots",),
     },
     "converge": {"use_when": "多个输入汇聚为一个结果或判断。", "variants": ("default",), "decorations": ("none",)},
     "cover": {
@@ -31,7 +31,7 @@ COMPONENT_CONTRACTS = {
         "variants": ("line", "line-note", "line-artifact"),
         "decorations": ("none",),
     },
-    "metric": {"use_when": "一个真实数字及其意义是页面焦点。", "variants": ("default",), "decorations": ("none", "dots", "corner-grid")},
+    "metric": {"use_when": "一个真实数字及其意义是页面焦点。", "variants": ("default",), "decorations": ("dots",)},
     "photo-gradient": {"use_when": "照片铺满页面并与少量文字自然融合；按主体空白选择文字落在左或右。", "variants": ("copy-left", "copy-right"), "decorations": ("none",)},
     "photo-split": {"use_when": "照片与解释文字权重接近；按阅读顺序选择媒体在左或右。", "variants": ("media-right", "media-left"), "decorations": ("none",)},
     "process-rail": {
@@ -48,15 +48,15 @@ COMPONENT_CONTRACTS = {
     "recap": {
         "use_when": "一句收束判断由三条原则支撑。",
         "variants": ("thesis-left", "thesis-right"),
-        "decorations": ("none", "dots", "corner-grid"),
+        "decorations": ("dots",),
     },
     "section": {"use_when": "内容确实进入一个新的章节。", "variants": ("default",), "decorations": ("none",)},
     "split-visual": {"use_when": "一张真实图片、插画或材料组合与正文并置；按信息权重选择均衡、视觉主导或文字主导。", "variants": ("media-dominant", "balanced", "copy-dominant"), "decorations": ("none",)},
-    "tabs": {"use_when": "同一对象的多个状态或视图需要切换式对照。", "variants": ("default",), "decorations": ("none", "corner-grid", "dots")},
+    "tabs": {"use_when": "同一对象的多个状态或视图需要切换式对照。", "variants": ("default",), "decorations": ("dots",)},
     "three-steps": {
         "use_when": "三个连续动作构成可读完的短流程。",
         "variants": ("linear", "focus-middle"),
-        "decorations": ("none", "corner-grid", "dots"),
+        "decorations": ("dots",),
     },
     "timeline": {"use_when": "四个阶段沿时间推进，且每个阶段都需要一句解释。", "variants": ("default",), "decorations": ("none",)},
     "editorial-feature": {"use_when": "一张主视觉与三个支撑信息共同解释一个核心判断；有第二张辅助图且需要更强编辑感时使用 hero-collage。", "variants": ("default", "hero-collage"), "decorations": ("none",)},

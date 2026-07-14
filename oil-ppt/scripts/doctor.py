@@ -2,6 +2,7 @@
 """Check required oil-ppt infrastructure without installing anything."""
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
@@ -19,7 +20,8 @@ from media_frame import frame_media
 from media_plan import build_media_plan
 from outline_schema import validate_outline
 from render_programmatic_visual import render_html_visual
-from render_outline_review import RUNTIME_CSS, RUNTIME_JS, prepared_slide, theme_css
+from render_outline_review import EDITOR_FRAME_CSS, PREVIEW_SHELL_CSS, RUNTIME_CSS, RUNTIME_JS, prepared_slide, render, theme_css
+from text_editor import EditorSession
 from validate_skill import validate_skill
 
 
@@ -62,15 +64,15 @@ def smoke_slides() -> list[dict]:
         {"id": "split", "title": "视觉与解释并置", "background": "soft-spotlight", "template": "split-visual", "variant": "media-dominant", "decor": "none", "content": "主视觉承担大部分信息", "image": image, "media_frame": "content"},
         {"id": "rail", "title": "六步完成流程", "template": "process-rail", "variant": "steps-6", "decor": "none", "steps": [{"label": f"动作{i}", "body": f"说明第{i}步如何推进"} for i in range(1, 7)]},
         {"id": "cards", "title": "三个并列要点", "template": "card-trio", "variant": "media-evidence", "decor": "none", "content": "两组可见证据最终收束为一个判断", "cards": [{**cards[0], "images": [image, image]}, {**cards[1], "images": [image, image]}, cards[2]], "media_frame": "content"},
-        {"id": "compare", "title": "两个方案直接对比", "content": "同一组标准需要放在两侧同时判断", "background": "block-field", "template": "comparison", "variant": "visual-evidence", "decor": "corner-grid", "sides": sides2, "media_frame": "content"},
-        {"id": "compare-list", "title": "两类产物逐项对齐", "template": "comparison-list", "variant": "balanced", "decor": "corner-grid", "sides": sides3},
+        {"id": "compare", "title": "两个方案直接对比", "content": "同一组标准需要放在两侧同时判断", "background": "block-field", "template": "comparison", "variant": "visual-evidence", "decor": "dots", "sides": sides2, "media_frame": "content"},
+        {"id": "compare-list", "title": "两类产物逐项对齐", "template": "comparison-list", "variant": "balanced", "decor": "dots", "sides": sides3},
         {"id": "browser", "title": "真实界面是证据", "template": "browser-showcase", "variant": "media-right", "decor": "none", "content": "在浏览器外壳中展示界面", "image": image, "media_frame": "content"},
         {"id": "bleed", "title": "主视觉打破页面边界", "template": "bleed-split", "variant": "media-right", "decor": "none", "content": "为演示带来一次节奏变化", "image": image, "media_frame": "content"},
         {"id": "section-media", "title": "进入媒体组件", "template": "section", "variant": "default", "decor": "none", "content": "分段检查不同媒体轮廓"},
         {"id": "diagonal", "title": "方向感强化冲突", "template": "diagonal-split", "variant": "media-right", "decor": "none", "content": "斜线用于章节转折", "image": image, "media_frame": "content"},
         {"id": "photo-gradient", "title": "照片与文字融合", "template": "photo-gradient", "variant": "copy-left", "decor": "none", "content": "渐变保证文字区域稳定可读", "image": image, "media_frame": "content"},
         {"id": "photo-split", "title": "照片与解释并重", "template": "photo-split", "variant": "media-right", "decor": "none", "content": "两侧信息权重保持接近", "image": image, "media_frame": "content"},
-        {"id": "metric", "title": "一个数字是页面焦点", "template": "metric", "variant": "default", "decor": "corner-grid", "content": "用一句话解释数字的意义", "metric": {"value": "86", "unit": "%", "caption": "样本范围与时间口径保持一致"}},
+        {"id": "metric", "title": "一个数字是页面焦点", "template": "metric", "variant": "default", "decor": "dots", "content": "用一句话解释数字的意义", "metric": {"value": "86", "unit": "%", "caption": "样本范围与时间口径保持一致"}},
         {"id": "recap", "title": "三条原则支撑一个结论", "template": "recap", "variant": "thesis-left", "decor": "dots", "content": "最后回到一个清楚的判断", "cards": cards},
         {"id": "tabs", "title": "同一对象的两个视角", "template": "tabs", "variant": "default", "decor": "dots", "sides": [{"title": "视角 A", "body": "从使用者任务理解界面"}, {"title": "视角 B", "body": "从系统实现理解界面"}]},
         {"id": "converge", "title": "两组输入汇聚为结果", "template": "converge", "variant": "default", "decor": "none", "groups": [{"title": "内容输入", "items": ["明确目标", "整理材料"]}, {"title": "设计输入", "items": ["选择组件", "准备视觉"]}], "outcome": "共同形成可交付的演示"},
@@ -216,7 +218,7 @@ def verify_optional_region_guard(root: Path, browser: str) -> None:
         raise RuntimeError(f"process-cards optional collapse did not survive browser validation: {positive_report}")
 
 
-def verify_specialized_capability_gate() -> None:
+def verify_specialized_capability_advice() -> None:
     summary = audit_summary({
         "media_policy": "text-only",
         "slides": [{
@@ -228,15 +230,56 @@ def verify_specialized_capability_gate() -> None:
             "steps": [{"label": f"动作{i}", "body": f"完成第{i}个动作"} for i in range(1, 5)],
         }],
     })
-    if summary.get("status") != "error" or not any(
-        item.get("code") == "specialized-capability-missed" and item.get("level") == "error"
+    if summary.get("status") != "warning" or not any(
+        item.get("code") == "specialized-capability-suggestion"
+        and item.get("level") == "warning"
+        and item.get("blocking") is False
         for item in summary.get("issues") or []
     ):
-        raise RuntimeError(f"high-confidence specialized capability did not block preview: {summary}")
+        raise RuntimeError(f"specialized capability advice did not remain non-blocking: {summary}")
 
 
 def verify_regression_guards(entry: Path) -> None:
     templates = Path(__file__).resolve().parent.parent / "assets" / "templates"
+    decorative_hairline = re.compile(
+        r"border-(?:top|right|bottom|left):\s*1px"
+        r"|(?:width|height):\s*(?:1|2)px;\s*background:\s*(?:var\(--border\)|color-mix\([^;}]*var\(--ink\))"
+    )
+    hairline_offenders = [
+        path.name for path in templates.glob("*.html")
+        if decorative_hairline.search(path.read_text(encoding="utf-8"))
+    ]
+    if hairline_offenders:
+        raise RuntimeError(
+            "block-first component templates reintroduced decorative gray hairlines: "
+            + ", ".join(sorted(hairline_offenders))
+        )
+    section_source = (templates / "section.html").read_text(encoding="utf-8")
+    if "repeating-linear-gradient" in section_source:
+        raise RuntimeError("section reintroduced thin striped decoration instead of a cropped block geometry")
+
+    rhythm_slide = {
+        "id": "auto-backdrop", "title": "把重点留给重点", "highlight": "重点",
+        "template": "section", "variant": "default", "decor": "none",
+        "content": "背景大字应复用标题高亮。",
+    }
+    _, rhythm_fragment = prepared_slide(rhythm_slide, 1)
+    if '<div class="oil-backdrop-text" aria-hidden="true">重点</div>' not in rhythm_fragment:
+        raise RuntimeError("rhythm pages did not derive background type from the existing highlight")
+
+    runtime_source = (Path(__file__).resolve().parent.parent / "assets" / "runtime" / "deck.css").read_text(encoding="utf-8")
+    filler_source = (Path(__file__).resolve().parent / "fill_slots.py").read_text(encoding="utf-8")
+    if "edge-slice" in runtime_source or "edge-slice" in filler_source:
+        raise RuntimeError("repetitive accent edge slices must not return to automatic container styling")
+    triangle_rule = re.search(r'\.oil-surface\[data-motif="triangle"\]::after\s*\{([^}]*)\}', runtime_source, re.S)
+    ring_rule = re.search(r'\.oil-surface\[data-motif="ring"\]::after\s*\{([^}]*)\}', runtime_source, re.S)
+    slash_rule = re.search(r'\.oil-surface\[data-motif="slash"\]::after\s*\{([^}]*)\}', runtime_source, re.S)
+    if not triangle_rule or "clip-path:polygon" not in triangle_rule.group(1) or "mask:" in triangle_rule.group(1):
+        raise RuntimeError("triangle motif must remain a quiet filled surface")
+    if not ring_rule or "var(--accent)" in ring_rule.group(1) or "border:32px" not in ring_rule.group(1):
+        raise RuntimeError("ring motif must remain thick and neutral")
+    if not slash_rule or "repeating-linear-gradient" in slash_rule.group(1) or "clip-path:polygon" not in slash_rule.group(1):
+        raise RuntimeError("slash motif must remain a single filled surface")
 
     def expect_outline_rejected(slide: dict, reason: str) -> None:
         deck = {
@@ -339,7 +382,7 @@ def verify_regression_guards(entry: Path) -> None:
 
     expect_outline_rejected(
         {
-            "id": "recap-hidden-media", "title": "总结", "template": "recap", "variant": "thesis-left", "decor": "none",
+            "id": "recap-hidden-media", "title": "总结", "template": "recap", "variant": "thesis-left", "decor": "dots",
             "content": "结论", "cards": [
                 {"title": "一", "body": "说明", "images": ["assets/smoke.svg"]},
                 {"title": "二", "body": "说明"}, {"title": "三", "body": "说明"},
@@ -349,7 +392,7 @@ def verify_regression_guards(entry: Path) -> None:
     )
     expect_outline_rejected(
         {
-            "id": "tabs-hidden-evidence", "title": "视角", "template": "tabs", "variant": "default", "decor": "none",
+            "id": "tabs-hidden-evidence", "title": "视角", "template": "tabs", "variant": "default", "decor": "dots",
             "sides": [
                 {"title": "一", "body": "说明", "evidence": ["assets/smoke.svg"]},
                 {"title": "二", "body": "说明"},
@@ -373,7 +416,7 @@ def verify_regression_guards(entry: Path) -> None:
     )
     expect_outline_rejected(
         {
-            "id": "tabs-alias", "title": "视角", "template": "tabs", "variant": "default", "decor": "none",
+            "id": "tabs-alias", "title": "视角", "template": "tabs", "variant": "default", "decor": "dots",
             "sides": [{"h2": "旧标题", "p": "旧正文"}, {"h2": "旧标题", "p": "旧正文"}],
         },
         "nested legacy aliases passed validation even though fillers use title/label/body",
@@ -387,7 +430,7 @@ def verify_regression_guards(entry: Path) -> None:
     invalid_metric = {
         "title": "metric guard", "palette": "oil-yellow", "typography": "clean", "shape": "soft",
         "click_navigation": False, "media_policy": "text-only", "slides": [{
-            "id": "metric", "title": "指标", "template": "metric", "variant": "default", "decor": "none",
+            "id": "metric", "title": "指标", "template": "metric", "variant": "default", "decor": "dots",
             "content": "说明", "metric": {"value": "1234567890123456789012345678901234567890", "unit": "%", "caption": "口径"},
         }],
     }
@@ -464,16 +507,21 @@ def verify_regression_guards(entry: Path) -> None:
     sparse_visual_slides = [
         {"id": "m1", "title": "媒体", "template": "split-visual", "variant": "balanced", "decor": "none", "image": "assets/smoke.svg", "media_frame": "content", "background": "soft-spotlight"},
         {"id": "m2", "title": "引用", "template": "quote", "variant": "default", "decor": "none", "background": "grid-wide"},
-        {"id": "m3", "title": "三步", "template": "three-steps", "variant": "linear", "decor": "none", "background": "block-field"},
-        {"id": "m4", "title": "对比", "template": "comparison", "variant": "default", "decor": "none", "background": "grid-fade"},
-        {"id": "m5", "title": "指标", "template": "metric", "variant": "default", "decor": "none", "background": "soft-spotlight"},
-        {"id": "m6", "title": "总结", "template": "recap", "variant": "thesis-left", "decor": "none", "background": "block-field"},
+        {"id": "m3", "title": "三步", "template": "three-steps", "variant": "linear", "decor": "dots", "background": "block-field"},
+        {"id": "m4", "title": "对比", "template": "comparison", "variant": "default", "decor": "dots", "background": "grid-fade"},
+        {"id": "m5", "title": "指标", "template": "metric", "variant": "default", "decor": "dots", "background": "soft-spotlight"},
+        {"id": "m6", "title": "总结", "template": "recap", "variant": "thesis-left", "decor": "dots", "background": "block-field"},
         {"id": "m7", "title": "时间", "template": "timeline", "variant": "default", "decor": "none", "background": "grid-wide"},
         {"id": "m8", "title": "叙事", "template": "narrative-bento", "variant": "default", "decor": "none", "background": "grid-fade"},
     ]
     sparse_media = audit_summary({"media_policy": "required", "slides": sparse_visual_slides})
-    if not any(item.get("code") == "media-coverage" for item in sparse_media.get("issues") or []):
-        raise RuntimeError("eight content slides still passed with only one media slide")
+    if not any(
+        item.get("code") == "media-coverage"
+        and item.get("level") == "warning"
+        and item.get("blocking") is False
+        for item in sparse_media.get("issues") or []
+    ):
+        raise RuntimeError("sparse media coverage did not remain visible as non-blocking advice")
 
     monotone_slides = json.loads(json.dumps(sparse_visual_slides, ensure_ascii=False))
     for slide in monotone_slides:
@@ -482,10 +530,12 @@ def verify_regression_guards(entry: Path) -> None:
         slide["background"] = "grid-fade"
     monotone = audit_summary({"media_policy": "text-only", "slides": monotone_slides})
     if not any(
-        item.get("code") in {"background-monotony", "background-class-monotony"} and item.get("level") == "error"
+        item.get("code") in {"background-monotony", "background-class-monotony"}
+        and item.get("level") == "warning"
+        and item.get("blocking") is False
         for item in monotone.get("issues") or []
     ):
-        raise RuntimeError("perceptually monotone backgrounds did not block the visual plan")
+        raise RuntimeError("perceptually monotone backgrounds did not remain non-blocking advice")
 
     same_class_slides = json.loads(json.dumps(monotone_slides, ensure_ascii=False))
     for index, slide in enumerate(same_class_slides):
@@ -514,6 +564,28 @@ def verify_regression_guards(entry: Path) -> None:
             [sys.executable, str(entry), "confirm", str(project), "--stage", "outline", "--user-confirmed"],
             check=True, capture_output=True, text=True,
         )
+        wrong_status = subprocess.run(
+            [sys.executable, str(entry), "status", project.name, "--json"],
+            cwd=project,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        wrong_payload = json.loads(wrong_status.stdout)
+        if (
+            wrong_payload.get("code") != "WRONG_PROJECT_PATH"
+            or str(project.resolve()) not in str((wrong_payload.get("next") or {}).get("command") or "")
+        ):
+            raise RuntimeError("status misreported a repeated relative project name as an uninitialized project")
+        wrong_build = subprocess.run(
+            [sys.executable, str(entry), "build", project.name],
+            cwd=project,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if wrong_build.returncode == 0 or "resolved to" not in wrong_build.stderr:
+            raise RuntimeError("build misreported a wrong project path as an outline confirmation failure")
         (project / "outline.json").write_text("[]\n", encoding="utf-8")
         bad_plan = subprocess.run(
             [sys.executable, str(entry), "plan", str(project)], check=False, capture_output=True, text=True,
@@ -669,7 +741,7 @@ def main() -> None:
     entry = Path(__file__).resolve().parent / "oil_ppt.py"
 
     validate_skill()
-    verify_specialized_capability_gate()
+    verify_specialized_capability_advice()
     verify_regression_guards(entry)
     verify_media_policy_interface(entry)
 
@@ -726,6 +798,9 @@ def main() -> None:
                 capture_output=True,
                 text=True,
             )
+            credits = project / "CREDITS.md"
+            credits_text = "# 素材来源\n\n这份附加说明不属于构建器，但必须被保留。\n"
+            credits.write_text(credits_text, encoding="utf-8")
             (assets / "smoke.svg").write_text(
                 '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600"><rect width="800" height="600" fill="#f7f7f8"/><circle cx="400" cy="300" r="170" fill="#ffd54a"/><path d="M220 420L400 150l180 270z" fill="#292929" opacity=".82"/></svg>',
                 encoding="utf-8",
@@ -832,6 +907,18 @@ def main() -> None:
                 capture_output=True,
                 text=True,
             )
+            planned_status = subprocess.run(
+                [sys.executable, str(entry), "status", str(project), "--json"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            planned_payload = json.loads(planned_status.stdout)
+            if (
+                planned_payload.get("phase") != "needs_preview"
+                or (planned_payload.get("next") or {}).get("action") != "start_editor"
+            ):
+                raise RuntimeError("the default preview workflow did not expose the editable preview as the next action")
             custom_preview = root / "review.html"
             subprocess.run(
                 [sys.executable, str(entry), "preview", str(project), "--out", str(custom_preview), "--no-open"],
@@ -858,7 +945,7 @@ def main() -> None:
                 capture_output=True,
                 text=True,
             )
-            if bypass.returncode == 0 or "project root only" not in bypass.stderr:
+            if bypass.returncode == 0 or "project root" not in bypass.stderr:
                 raise RuntimeError("preview accepted outline.json and bypassed the project confirmation boundary")
             outline_before_collision = outline.read_bytes()
             collision = subprocess.run(
@@ -877,19 +964,122 @@ def main() -> None:
             )
             preview_file = root / "预览.html"
             preview_text = preview_file.read_text(encoding="utf-8")
-            if preview_text.count("<iframe ") != len(smoke_slides()):
+            if preview_text.count('class="page-card"') != len(smoke_slides()):
                 raise RuntimeError("preview did not render every slide as a real template iframe")
+            if 'id="slide-lightbox"' not in preview_text or 'class="preview-open"' not in preview_text:
+                raise RuntimeError("preview did not expose the program-owned click-to-enlarge viewer")
             if 'class=&quot;hl&quot;' not in preview_text:
                 raise RuntimeError("preview did not render the exposed highlight field")
             if 'class="rhythm-panel"' not in preview_text:
                 raise RuntimeError("preview did not render the deck rhythm panel")
+            if '<span title="版式">封面</span>' not in preview_text or '<span title="背景">柔光聚焦</span>' not in preview_text:
+                raise RuntimeError("preview did not translate internal metadata into concise Chinese labels")
+            base_edit_rule = re.search(r"\[data-edit-path\]\{([^}]*)\}", EDITOR_FRAME_CSS)
+            hover_edit_rule = re.search(r'\[data-edit-path\]\[contenteditable="plaintext-only"\]:hover\{([^}]*)\}', EDITOR_FRAME_CSS)
+            focus_rule = re.search(r"\[data-edit-path\]:focus\{([^}]*)\}", EDITOR_FRAME_CSS)
+            if not focus_rule or "background" in focus_rule.group(1) or (hover_edit_rule and "background" in hover_edit_rule.group(1)):
+                raise RuntimeError("text editor interaction states may only draw restrained outlines")
+            if (
+                not base_edit_rule
+                or "dashed" not in base_edit_rule.group(1)
+                or "transparent" not in base_edit_rule.group(1)
+                or "box-shadow:none" not in base_edit_rule.group(1)
+                or not hover_edit_rule
+                or "var(--ink)" not in hover_edit_rule.group(1)
+                or "oil-editor-focus-in" not in EDITOR_FRAME_CSS
+            ):
+                raise RuntimeError("text editor must stay clean at idle, show a gray dashed hover boundary, and use a themed focus state")
+            if "oil-lightbox-in" not in PREVIEW_SHELL_CSS or "prefers-reduced-motion:reduce" not in PREVIEW_SHELL_CSS:
+                raise RuntimeError("enlarged editor must animate in smoothly and respect reduced motion")
             for background in ("soft-spotlight", "block-field", "grid-wide"):
                 if f'data-bg=&quot;{background}&quot;' not in preview_text:
                     raise RuntimeError(f"preview did not render background {background}")
             if any(seed in preview_text for seed in TEMPLATE_SEEDS):
                 raise RuntimeError("preview leaked bundled template example copy")
+            editor = EditorSession(project)
+            authoring_text = render(
+                editor.data,
+                authoring=True,
+                editor_token="doctor-token",
+                editor_recovery_id=editor.recovery_id,
+            )
+            if "放大编辑" in authoring_text:
+                raise RuntimeError("text editor still exposed the removed enlarge-edit button")
+            if authoring_text.count('class="preview-open"') != len(smoke_slides()):
+                raise RuntimeError("text editor did not make every thumbnail a click-to-open target")
+            if authoring_text.count('tabindex="-1" aria-hidden="true"') != len(smoke_slides()):
+                raise RuntimeError("text editor thumbnails remained keyboard-editable")
+            if (
+                "navigator.locks.request" not in authoring_text
+                or "setInterval(renewLease" in authoring_text
+                or "expires:Date.now" in authoring_text
+            ):
+                raise RuntimeError("text editor must use the browser-owned edit lock instead of a stale timeout lease")
+            dialog_match = re.search(r'<dialog id="slide-lightbox".*?</dialog>', authoring_text, re.S)
+            if not dialog_match or 'class="editor-toolbar"' not in dialog_match.group(0):
+                raise RuntimeError("text editor controls were not contained inside the enlarged editor")
+            try:
+                EditorSession(project)
+            except ValueError as error:
+                if "already open" not in str(error):
+                    raise RuntimeError(f"second text editor failed for the wrong reason: {error}") from error
+            else:
+                raise RuntimeError("a second text editor opened for the same project")
+            edited_copy = "接下来检查全部信息关系，并允许用户直接校对文字"
+            edit_state = editor.apply_edit("/slides/1/content", edited_copy)
+            if not edit_state.get("draft") or not edit_state.get("can_undo"):
+                raise RuntimeError("text editor did not persist an undoable draft")
+            editor_status = subprocess.run(
+                [sys.executable, str(entry), "status", str(project), "--json"],
+                check=True, capture_output=True, text=True,
+            )
+            editor_payload = json.loads(editor_status.stdout)
+            if editor_payload.get("phase") != "editing_in_progress" or (editor_payload.get("next") or {}).get("action") != "wait_for_editor":
+                raise RuntimeError("active text editor did not become the unique next workflow step")
+            draft_confirm = subprocess.run(
+                [sys.executable, str(entry), "confirm", str(project), "--stage", "preview", "--user-confirmed"],
+                check=False, capture_output=True, text=True,
+            )
+            if draft_confirm.returncode == 0 or "text-edit draft" not in draft_confirm.stderr:
+                raise RuntimeError("preview confirmation did not reject an active text-edit draft")
+            if editor.undo().get("draft"):
+                raise RuntimeError("undoing back to the original outline left a redundant draft")
+            if not editor.redo().get("draft"):
+                raise RuntimeError("redo did not restore the text-edit draft")
+            editor.discard()
+            if (project / ".oil-ppt-edit-draft.json").exists():
+                raise RuntimeError("discard did not remove the text-edit draft")
+            editor.apply_edit("/slides/1/content", edited_copy)
+            try:
+                editor.finish([{"path": "/slides/1/content", "reason": "text-overflow"}], report_complete=True)
+            except ValueError as error:
+                if "text overflow" not in str(error):
+                    raise RuntimeError(f"geometric text overflow failed for the wrong reason: {error}") from error
+            else:
+                raise RuntimeError("text editor accepted real geometric overflow")
+            finish_state = editor.finish([{"path": "/slides/1/content", "reason": "text-budget"}], report_complete=True)
+            if not finish_state.get("changed") or json.loads(outline.read_text(encoding="utf-8"))["slides"][1]["content"] != edited_copy:
+                raise RuntimeError("finishing text editing did not promote the draft into outline.json")
+            finished_status = subprocess.run(
+                [sys.executable, str(entry), "status", str(project), "--json"],
+                check=True, capture_output=True, text=True,
+            )
+            if json.loads(finished_status.stdout).get("phase") != "needs_preview_confirmation":
+                raise RuntimeError("finishing text editing did not regenerate an unconfirmed formal preview")
             preview_state = root / ".oil-ppt-preview-outline.json"
             renderer_state = json.loads(preview_state.read_text(encoding="utf-8"))
+            outside_contract = dict(renderer_state)
+            outside_contract["preview"] = str(outline)
+            outside_contract["preview_sha256"] = hashlib.sha256(outline.read_bytes()).hexdigest()
+            outside_contract["confirmed"] = True
+            preview_state.write_text(json.dumps(outside_contract), encoding="utf-8")
+            protected_status = subprocess.run(
+                [sys.executable, str(entry), "status", str(project), "--json"],
+                check=True, capture_output=True, text=True,
+            )
+            if json.loads(protected_status.stdout).get("phase") != "needs_preview":
+                raise RuntimeError("preview state accepted a protected non-HTML project file")
+            preview_state.write_text(json.dumps(renderer_state), encoding="utf-8")
             renderer_state["renderer_sha256"] = "retired-renderer"
             preview_state.write_text(json.dumps(renderer_state), encoding="utf-8")
             renderer_status = subprocess.run(
@@ -1011,6 +1201,8 @@ def main() -> None:
                 capture_output=True,
                 text=True,
             )
+            if not credits.is_file() or credits.read_text(encoding="utf-8") != credits_text:
+                raise RuntimeError("build removed or modified an unrelated project-side documentation file")
             final = project / "演示文稿.html"
             smoke_ok = final.is_file()
             if smoke_ok:

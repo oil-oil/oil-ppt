@@ -218,7 +218,25 @@ def validate_file(
             if (!text.getClientRects().length || getComputedStyle(text).display === 'none') return [];
             const slide = text.closest('.oil-slide');
             const overflow = text.scrollWidth > text.clientWidth + 1 || text.scrollHeight > text.clientHeight + 1;
-            return overflow ? [{slide:slide?.dataset.slideId || 'unknown', reason:'text-overflow'}] : [];
+            return overflow ? [{
+              slide:slide?.dataset.slideId || 'unknown', reason:'text-overflow',
+              node:text.tagName.toLowerCase(), className:text.className || '',
+              client:`${text.clientWidth}x${text.clientHeight}`, scroll:`${text.scrollWidth}x${text.scrollHeight}`,
+              fontSize:getComputedStyle(text).fontSize, maxHeight:getComputedStyle(text).maxHeight,
+            }] : [];
+          });
+          const invalidCopyFlows = [...document.querySelectorAll('[data-copy-flow]')].flatMap(flow => {
+            const title = [...flow.children].find(node => node.matches?.('[data-copy-title]'));
+            const body = [...flow.children].find(node => node.matches?.('[data-copy-body]'));
+            if (!title || !body || body.previousElementSibling !== title) return [];
+            if (!title.textContent.trim() || !body.textContent.trim()) return [];
+            if (!title.getClientRects().length || !body.getClientRects().length) return [];
+            const gap = body.getBoundingClientRect().top - title.getBoundingClientRect().bottom;
+            if (gap <= 72) return [];
+            return [{
+              slide:flow.closest('.oil-slide')?.dataset.slideId || 'unknown',
+              reason:'copy-gap', gap:Math.round(gap)
+            }];
           });
           const invalidBounds = [...document.querySelectorAll('.slide-safe [data-bound]')].flatMap(node => {
             if (!node.getClientRects().length) return [];
@@ -260,13 +278,14 @@ def validate_file(
           const stageRect = stage?.getBoundingClientRect();
           return {
           ready: document.readyState === 'complete' && (!document.fonts || document.fonts.status === 'loaded') && imagesReady,
-          status: brokenImages.length || invalidBleeds.length || invalidLayouts.length || invalidText.length || invalidBounds.length || invalidOptionalRegions.length ? 'error' : (root.dataset.oilValidated === 'ok' && slides > 0 && !!stage ? 'ok' : 'pending'),
+          status: brokenImages.length || invalidBleeds.length || invalidLayouts.length || invalidText.length || invalidCopyFlows.length || invalidBounds.length || invalidOptionalRegions.length ? 'error' : (root.dataset.oilValidated === 'ok' && slides > 0 && !!stage ? 'ok' : 'pending'),
           slides,
           images: images.length,
           brokenImages: brokenImages.map(image => image.currentSrc || image.getAttribute('src') || ''),
           invalidBleeds,
           invalidLayouts,
           invalidText,
+          invalidCopyFlows,
           invalidBounds,
           invalidOptionalRegions,
           viewport: {width:innerWidth, height:innerHeight},

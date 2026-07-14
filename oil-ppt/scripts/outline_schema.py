@@ -333,6 +333,28 @@ def _body(item: object) -> str:
     return ""
 
 
+def _reject_alias_conflicts(value: object, index: int, path: str) -> None:
+    """Reject ambiguous aliases before rendering or editor binding can diverge."""
+    if isinstance(value, dict):
+        for aliases in (("label", "title", "h2"), ("body", "text", "p")):
+            present = [key for key in aliases if key in value]
+            if len(present) > 1:
+                raise SystemExit(
+                    f"Outline slide {index} {path} provides conflicting aliases: {', '.join(present)}. Keep exactly one."
+                )
+        if "image" in value:
+            present = [key for key in ("caption", "label") if key in value]
+            if len(present) > 1:
+                raise SystemExit(
+                    f"Outline slide {index} {path} provides both caption and label for one image. Keep exactly one."
+                )
+        for key, item in value.items():
+            _reject_alias_conflicts(item, index, f"{path}.{key}")
+    elif isinstance(value, list):
+        for item_index, item in enumerate(value, start=1):
+            _reject_alias_conflicts(item, index, f"{path}[{item_index}]")
+
+
 def _max_chars(value: object, index: int, field: str, maximum: int) -> None:
     length = len(re.sub(r"\s+", "", _text(value)))
     if length > maximum:
@@ -522,6 +544,7 @@ def _validate_media_contract(slide: dict, index: int) -> list[tuple[str, object]
 def validate_slide_content(slide: dict, index: int) -> None:
     template = slide["template"]
     variant = slide["variant"]
+    _reject_alias_conflicts(slide, index, "slide")
     image = _text(slide.get("image") or slide.get("media") or slide.get("artifact_image"))
     if _text(slide.get("content")) and _text(slide.get("note")):
         raise SystemExit(f"Outline slide {index} accepts content or note as aliases, not both.")

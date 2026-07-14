@@ -7,9 +7,12 @@ import hashlib
 import json
 import os
 import re
+import shlex
+import socket
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from background_presets import BACKGROUND_PRESETS, INTERNAL_BACKGROUNDS, template_background
@@ -36,6 +39,8 @@ TEMPLATES = ROOT / "assets" / "templates"
 DEFAULT_FINAL_NAME = "演示文稿.html"
 PROJECT_STATE_NAME = ".oil-ppt-state.json"
 BUILD_STATE_NAME = ".oil-ppt-build.json"
+EDIT_DRAFT_NAME = ".oil-ppt-edit-draft.json"
+EDIT_LOCK_NAME = ".oil-ppt-edit.lock"
 LEGACY_STATE_NAMES = {
     ".oil-slides-state.json": PROJECT_STATE_NAME,
     ".oil-slides-preview-outline.json": ".oil-ppt-preview-outline.json",
@@ -46,8 +51,13 @@ SLIDE_TITLE = re.compile(r'data-title=["\']([^"\']+)["\']')
 
 
 def cli_display() -> str:
-    """Portable command path, interpreted relative to the selected SKILL.md."""
-    return "scripts/oil-ppt"
+    """Resolved executable used by machine-readable commands."""
+    return str((SCRIPTS / "oil-ppt").resolve())
+
+
+def cli_command(*arguments: object) -> str:
+    """Return one shell-safe command that works from any current directory."""
+    return shlex.join([cli_display(), *(str(argument) for argument in arguments)])
 
 
 def atomic_write_json(path: Path, data: dict) -> None:
@@ -79,6 +89,114 @@ def project_state_path(project: Path) -> Path:
     return project / PROJECT_STATE_NAME
 
 
+def enclosing_project(start: Path | None = None) -> Path | None:
+    current = (start or Path.cwd()).expanduser().resolve()
+    for candidate in (current, *current.parents):
+        if project_state_path(candidate).is_file():
+            return candidate
+    return None
+
+
+def require_initialized_project(project_arg: Path, action: str) -> Path:
+    """Resolve an existing project before reporting any downstream workflow error."""
+    requested = project_arg.expanduser()
+    project = requested.resolve()
+    if not project.is_dir():
+        raise SystemExit(
+            f"{action} requires an existing oil-ppt project root. "
+            f"The supplied path {str(project_arg)!r} resolved to {str(project)!r}, which is not a directory. "
+            "Run status from any directory and execute its absolute next.command exactly."
+        )
+    migrate_legacy_state_files(project)
+    if not project_state_path(project).is_file():
+        raise SystemExit(
+            f"{action} requires an initialized oil-ppt project root, but no {PROJECT_STATE_NAME} exists in {project}. "
+            "Do not point build or preview at an output subdirectory."
+        )
+    return project
+
+
+def edit_draft_path(project: Path) -> Path:
+    return project.expanduser().resolve() / EDIT_DRAFT_NAME
+
+
+def edit_lock_path(project: Path) -> Path:
+    return project.expanduser().resolve() / EDIT_LOCK_NAME
+
+
+def active_editor_pid(project: Path) -> int | None:
+    path = edit_lock_path(project)
+    if not path.is_file():
+        return None
+    try:
+        pid = int(path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        path.unlink(missing_ok=True)
+        return None
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        path.unlink(missing_ok=True)
+        return None
+    except PermissionError:
+        pass
+    return pid
+
+
+def launch_text_editor(project: Path, *, port: int = 0) -> dict:
+    """Start the authoring server in the background and return its stable local URL."""
+    project = require_initialized_project(project, "Preview editor")
+    existing = active_editor_pid(project)
+    if existing is not None:
+        raise SystemExit(
+            f"A preview editor is already open for {project} (pid {existing}). "
+            "Return to that browser tab or close it before starting another editor."
+        )
+    if port == 0:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = int(probe.getsockname()[1])
+    process = subprocess.Popen(
+        [sys.executable, str(SCRIPTS / "text_editor.py"), str(project), "--port", str(port)],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+        close_fds=True,
+    )
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        if active_editor_pid(project) == process.pid:
+            return {
+                "pid": process.pid,
+                "url": f"http://127.0.0.1:{port}/",
+            }
+        if process.poll() is not None:
+            break
+        time.sleep(.05)
+    if process.poll() is None:
+        process.terminate()
+    raise SystemExit(
+        f"Could not start the editable preview for {project}. "
+        f"Run {cli_command('edit', project)} to see the editor error directly."
+    )
+
+
+def require_no_edit_draft(project: Path, action: str) -> None:
+    draft = edit_draft_path(project)
+    if draft.is_file():
+        raise SystemExit(
+            f"{action} blocked while a text-edit draft exists: {draft}. "
+            f"Reopen {cli_command('edit', project)} and finish or explicitly discard the draft."
+        )
+    pid = active_editor_pid(project)
+    if pid is not None and pid != os.getpid():
+        raise SystemExit(
+            f"{action} blocked while the text editor is open for this project (pid {pid}). "
+            "Finish editing or close that editor process first."
+        )
+
+
 def migrate_legacy_state_files(project: Path) -> None:
     """Atomically adopt state written by the retired public command name."""
     if not project.is_dir():
@@ -107,7 +225,10 @@ def read_project_state(project: Path) -> dict:
 
 
 def run_script(name: str, arguments: list[str]) -> None:
-    proc = subprocess.run([sys.executable, str(SCRIPTS / name), *arguments], check=False)
+    try:
+        proc = subprocess.run([sys.executable, str(SCRIPTS / name), *arguments], check=False)
+    except KeyboardInterrupt:
+        raise SystemExit(130) from None
     if proc.returncode:
         raise SystemExit(proc.returncode)
 
@@ -157,7 +278,7 @@ def init_project(project_arg: Path) -> None:
         "phase": "needs_outline",
         "project": str(project),
         "created": [str(project / "outline.md"), str(project / "assets")],
-        "next": {"action": "edit_outline", "command": None},
+        "next": {"action": "edit_outline", "command": None, "path": str(project / "outline.md")},
     }, ensure_ascii=False, indent=2))
 
 
@@ -786,6 +907,8 @@ def contract_schema() -> dict:
 
 
 def confirm_outline(project: Path, user_confirmed: bool) -> None:
+    project = require_initialized_project(project, "Outline confirmation")
+    require_no_edit_draft(project, "Outline confirmation")
     if not user_confirmed:
         raise SystemExit("Outline confirmation requires --user-confirmed after explicit user approval.")
     markdown = project / "outline.md"
@@ -807,9 +930,10 @@ def confirm_outline(project: Path, user_confirmed: bool) -> None:
     }
     state.setdefault("history", []).append({"event": "outline_confirmed", "sha256": markdown_sha256})
     atomic_write_json(project_state_path(project), state)
+    workflow = status_payload(project)
     print(json.dumps({
-        "ok": True, "phase": "needs_plan", "project": str(project),
-        "next": {"action": "run_command", "command": f"{cli_display()} contract --example"},
+        "ok": True, "phase": workflow["phase"], "project": str(project),
+        "next": workflow["next"],
     }, ensure_ascii=False, indent=2))
 
 
@@ -866,12 +990,13 @@ def text_only_confirmation_message(project: Path) -> str:
     return (
         "media_policy='text-only' disables every image requirement and needs explicit user approval. "
         "Ask whether the entire deck should contain no images. If yes, run "
-        f"{cli_display()} plan {project} --user-confirmed-text-only; otherwise use media_policy='required'."
+        f"{cli_command('plan', project, '--user-confirmed-text-only')}; otherwise use media_policy='required'."
     )
 
 
 def plan_project(project_arg: Path, input_path: Path | None, user_confirmed_text_only: bool = False) -> None:
-    project = project_arg.expanduser().resolve()
+    project = require_initialized_project(project_arg, "Plan")
+    require_no_edit_draft(project, "Plan")
     if not outline_confirmation_valid(project):
         raise SystemExit(
             "The current outline.md is not confirmed. Show it to the user and record confirmation only after explicit approval."
@@ -880,7 +1005,7 @@ def plan_project(project_arg: Path, input_path: Path | None, user_confirmed_text
     source = input_path.expanduser().resolve() if input_path else target
     if not source.is_file():
         raise SystemExit(
-            f"Missing visual plan JSON: {source}. Use {cli_display()} contract --example, write {target}, then run plan again."
+            f"Missing visual plan JSON: {source}. Use {cli_command('contract', '--example')}, write {target}, then run plan again."
         )
     try:
         data = json.loads(source.read_text(encoding="utf-8"))
@@ -910,27 +1035,37 @@ def plan_project(project_arg: Path, input_path: Path | None, user_confirmed_text
     print(json.dumps({
         "ok": True, "phase": "needs_preview", "project": str(project), "outline": str(target),
         "slides": len(data["slides"]),
-        "next": {"action": "run_command", "command": f"{cli_display()} preview {project}"},
+        "next": {"action": "start_editor", "command": cli_command("preview", project)},
     }, ensure_ascii=False, indent=2))
 
 
 def check_project(target: Path) -> dict:
     outline = outline_from_target(target)
     if not outline.is_file():
-        raise SystemExit(f"Missing outline.json: {outline}. Next: {cli_display()} contract --example")
-    data = json.loads(outline.read_text(encoding="utf-8"))
+        raise SystemExit(f"Missing outline.json: {outline}. Next: {cli_command('contract', '--example')}")
+    try:
+        data = json.loads(outline.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise SystemExit(f"Invalid JSON in {outline}: {error}") from error
     validate_outline(data, TEMPLATES)
     audit = audit_summary(data)
-    if data.get("media_policy", "required") == "text-only" and not text_only_confirmation_valid(outline.parent, outline):
+    project = outline.parent
+
+    def add_gate_issue(code: str, message: str) -> None:
         audit["status"] = "error"
         audit.setdefault("issues", []).append({
-            "level": "error",
-            "code": "unconfirmed-text-only",
-            "message": text_only_confirmation_message(outline.parent),
-            "slides": [],
+            "level": "error", "blocking": True, "code": code, "message": message, "slides": [],
         })
         audit.setdefault("counts", {})["error"] = int(audit.get("counts", {}).get("error", 0)) + 1
+
+    if not outline_confirmation_valid(project):
+        add_gate_issue("unconfirmed-markdown", "当前 outline.md 尚未由用户确认，或确认后又发生变化。")
+    elif not visual_plan_valid(project, outline):
+        add_gate_issue("unbound-visual-plan", "outline.json 尚未通过 plan 绑定到当前已确认的 Markdown 大纲。")
+    if data.get("media_policy", "required") == "text-only" and not text_only_confirmation_valid(outline.parent, outline):
+        add_gate_issue("unconfirmed-text-only", text_only_confirmation_message(outline.parent))
     media = verify_outline_media(data, outline.parent)
+    workflow = status_payload(project)
     return {
         "schema_version": "oil-ppt.check/v1",
         "ok": audit["status"] != "error",
@@ -939,10 +1074,7 @@ def check_project(target: Path) -> dict:
         "slides": len(data["slides"]),
         "audit": audit,
         "media": {"count": len(media), "items": media},
-        "next": {
-            "action": "run_command" if audit["status"] != "error" else "fix_plan",
-            "command": f"{cli_display()} preview {outline.parent}" if audit["status"] != "error" else None,
-        },
+        "next": workflow["next"],
     }
 
 
@@ -1009,7 +1141,7 @@ def print_contract(
                     if TEMPLATE_FAMILIES[name] == family_id
                 ],
             },
-            "detail_command": f"{cli_display()} contract --id <template-name>",
+            "detail_command": cli_command("contract", "--id", "<template-name>"),
         }, ensure_ascii=False, indent=2))
         return
     if show_list:
@@ -1027,8 +1159,8 @@ def print_contract(
                 }
                 for family in FAMILY_GUIDANCE
             ],
-            "family_command": f"{cli_display()} contract --family <family>",
-            "detail_command": f"{cli_display()} contract --id <template-name>",
+            "family_command": cli_command("contract", "--family", "<family>"),
+            "detail_command": cli_command("contract", "--id", "<template-name>"),
         }, ensure_ascii=False, indent=2))
         return
     templates_by_family = {name: [] for name in FAMILY_GUIDANCE}
@@ -1066,7 +1198,7 @@ def print_contract(
         "schema_version": "oil-ppt.contract/v2",
         "track": "unified",
         "selection_order": list(SELECTION_ORDER),
-        "detail_command": f"{cli_display()} contract --id <template-name>",
+        "detail_command": cli_command("contract", "--id", "<template-name>"),
         "design": {
             "palettes": sorted(PALETTES),
             "typography": sorted(TYPE_PROFILES),
@@ -1102,7 +1234,7 @@ def print_contract(
             "base_fields": ["id", "title", "template", "variant", "decor"],
             "common_optional": ["highlight", "background", "backdrop_text"],
             "media_rule": "出现任何图片路径时设置 media_frame='content'；只有素材自带必须保留的外框时才用 self-framed。",
-            "full_schema_command": f"{cli_display()} contract --schema",
+            "full_schema_command": cli_command("contract", "--schema"),
         }
     print(json.dumps(payload, ensure_ascii=False, indent=2 if pretty else None, separators=None if pretty else (",", ":")))
 
@@ -1162,7 +1294,7 @@ def palette_for_project(project: Path, fallback: str = "oil-yellow") -> dict:
 def print_media_plan(target: Path, *, write: bool, output: Path | None) -> None:
     outline = outline_from_target(target)
     if not outline.is_file():
-        raise SystemExit(f"Missing outline.json: {outline}. Next: {cli_display()} plan {outline.parent}")
+        raise SystemExit(f"Missing outline.json: {outline}. Next: {cli_command('plan', outline.parent)}")
     data = json.loads(outline.read_text(encoding="utf-8"))
     validate_outline(data, TEMPLATES)
     plan = build_media_plan(data, outline.parent, cli=cli_display())
@@ -1295,6 +1427,10 @@ def preview_state_status(outline: Path) -> tuple[str, dict | None, str | None]:
     if state.get("renderer_sha256") != renderer_digest():
         return "stale", state, "oil-ppt renderer changed after preview"
     preview = Path(str(state.get("preview") or "")).expanduser().resolve()
+    try:
+        preview_output_path(outline, preview)
+    except SystemExit as error:
+        return "stale", state, str(error)
     if not preview.is_file():
         return "stale", state, "preview HTML is missing"
     if state.get("preview_sha256") != outline_digest(preview):
@@ -1309,29 +1445,77 @@ def preview_state_status(outline: Path) -> tuple[str, dict | None, str | None]:
 
 
 def status_payload(project_arg: Path) -> dict:
-    project = project_arg.expanduser().resolve()
+    requested = project_arg.expanduser()
+    project = requested.resolve()
+    if project.exists() and not project.is_dir():
+        return {
+            "schema_version": "oil-ppt.status/v1", "ok": False, "code": "INVALID_PROJECT",
+            "phase": "invalid_project", "project": str(project), "artifacts": {}, "confirmations": {},
+            "preview_status": "missing",
+            "blockers": [{"path": str(project), "message": "项目路径必须是目录"}],
+            "next": {"action": "choose_project_directory", "command": None},
+        }
+    if not project.exists() or not any(project.iterdir()):
+        parent_project = enclosing_project() if not requested.is_absolute() else None
+        if parent_project is not None and project != parent_project:
+            return {
+                "schema_version": "oil-ppt.status/v1", "ok": False, "code": "WRONG_PROJECT_PATH",
+                "phase": "wrong_project_path", "project": str(project), "artifacts": {}, "confirmations": {},
+                "preview_status": "missing",
+                "blockers": [{
+                    "path": str(project),
+                    "message": (
+                        f"相对路径 {str(project_arg)!r} 从当前目录解析到了 {project}，"
+                        f"但当前目录已经位于项目 {parent_project} 内；不要在项目内再次拼接项目名"
+                    ),
+                }],
+                "next": {
+                    "action": "run_command",
+                    "command": cli_command("status", parent_project, "--json"),
+                },
+            }
+        return {
+            "schema_version": "oil-ppt.status/v1", "ok": False, "code": "NEEDS_INIT",
+            "phase": "needs_init", "project": str(project), "artifacts": {}, "confirmations": {},
+            "preview_status": "missing", "blockers": [],
+            "next": {"action": "run_command", "command": cli_command("init", project)},
+        }
     migrate_legacy_state_files(project)
+    if not project_state_path(project).is_file():
+        return {
+            "schema_version": "oil-ppt.status/v1", "ok": False, "code": "INVALID_PROJECT",
+            "phase": "invalid_project", "project": str(project), "artifacts": {}, "confirmations": {},
+            "preview_status": "missing",
+            "blockers": [{"path": str(project), "message": "该非空目录没有 oil-ppt 项目标记；不要在其中创建或覆盖文件"}],
+            "next": {"action": "choose_project_directory", "command": None},
+        }
     markdown = project / "outline.md"
     outline = project / "outline.json"
     preview = project / "预览.html"
     final = project / DEFAULT_FINAL_NAME
+    edit_draft = edit_draft_path(project)
+    editor_pid = active_editor_pid(project)
     blockers: list[dict] = []
     next_action: str | None = None
     artifacts = {
         "outline_markdown": markdown.is_file(),
         "outline_json": outline.is_file(),
         "preview": preview.is_file(),
+        "edit_draft": edit_draft.is_file(),
+        "editor_open": editor_pid is not None,
         "deck_project": (project / "deck.json").is_file(),
         "final": final.is_file(),
     }
     outline_ok = outline_confirmation_valid(project)
     plan_ok = False
+    outline_structure_valid = False
     plan_error = None
     text_only_needs_confirmation = False
     if outline.is_file():
         try:
             data = json.loads(outline.read_text(encoding="utf-8"))
             validate_outline(data, TEMPLATES)
+            outline_structure_valid = True
             text_only_needs_confirmation = (
                 data.get("media_policy", "required") == "text-only"
                 and not text_only_confirmation_valid(project, outline)
@@ -1354,34 +1538,72 @@ def status_payload(project_arg: Path) -> dict:
         markdown.is_file()
         and markdown.read_text(encoding="utf-8").strip() == OUTLINE_MARKDOWN_TEMPLATE.strip()
     )
-    if not markdown.is_file() or markdown_is_starter:
+    if editor_pid is not None:
+        phase = "editing_in_progress"
+        blockers.append({"path": str(edit_lock_path(project)), "message": "文字编辑器正在运行；等待用户完成或关闭"})
+        next_command = None
+        next_action = "wait_for_editor"
+        next_details = {"pid": editor_pid, "long_running": True}
+    elif edit_draft.is_file():
+        phase = "needs_edit_completion"
+        blockers.append({"path": str(edit_draft), "message": "文字编辑草稿尚未完成或还原"})
+        next_command = cli_command("edit", project)
+        next_action = "start_editor"
+        next_details = {"long_running": True, "wait_for_exit": False}
+    elif not markdown.is_file() or markdown_is_starter:
         phase = "needs_outline"
         blockers.append({"path": str(markdown), "message": "Markdown 大纲尚未填写" if markdown_is_starter else "Markdown 大纲尚不存在"})
-        next_command = f"{cli_display()} init {project}" if not project.exists() or not any(project.iterdir()) else None
-        next_action = "run_command" if next_command else "edit_outline"
+        next_command = None
+        next_action = "edit_outline"
+        next_details = {"path": str(markdown)}
     elif not outline_ok:
         phase = "needs_outline_confirmation"
         blockers.append({"path": str(markdown), "message": "当前 Markdown 大纲尚未被用户确认，或确认后又发生变化"})
         next_command = None
         next_action = "ask_user_to_confirm_outline"
+        next_details = {
+            "artifact": str(markdown),
+            "command_on_confirm": cli_command("confirm", project, "--stage", "outline", "--user-confirmed"),
+        }
     elif not plan_ok:
         phase = "needs_plan"
         blockers.append({"path": str(outline), "message": plan_error or "outline.json 尚不存在"})
-        next_command = None if text_only_needs_confirmation else f"{cli_display()} contract --example"
+        next_command = None
+        next_details = {}
         if text_only_needs_confirmation:
             next_action = "ask_user_to_confirm_text_only"
+            next_details = {
+                "artifact": str(outline),
+                "command_on_confirm": cli_command("plan", project, "--user-confirmed-text-only"),
+            }
+        elif outline_structure_valid:
+            next_action = "run_command"
+            next_command = cli_command("plan", project)
+        else:
+            next_action = "write_visual_plan"
+            next_details = {
+                "path": str(outline),
+                "reference_command": cli_command("contract", "--example"),
+            }
     elif preview_status in {"missing", "stale"}:
         phase = "needs_preview"
         blockers.append({"path": str(preview), "message": stale_reason or "尚未生成当前计划对应的预览"})
-        next_command = f"{cli_display()} preview {project}"
+        next_command = cli_command("preview", project)
+        next_action = "start_editor"
+        next_details = {"wait_for_exit": False}
     elif preview_status == "awaiting-confirmation":
         phase = "needs_preview_confirmation"
         blockers.append({"path": str(preview), "message": "当前预览正在等待用户明确确认"})
         next_command = None
         next_action = "ask_user_to_confirm_preview"
+        next_details = {
+            "artifact": str(preview),
+            "command_on_confirm": cli_command("confirm", project, "--stage", "preview", "--user-confirmed"),
+        }
     elif not final.is_file():
         phase = "ready_to_build"
-        next_command = f"{cli_display()} build {project}"
+        next_command = cli_command("build", project)
+        next_details = {}
     else:
         build_state_path = project / BUILD_STATE_NAME
         stale_build = True
@@ -1399,11 +1621,13 @@ def status_payload(project_arg: Path) -> dict:
         if stale_build:
             phase = "needs_build"
             blockers.append({"path": str(final), "message": "最终文件存在，但构建证据缺失或输入已变化"})
-            next_command = f"{cli_display()} build {project}"
+            next_command = cli_command("build", project)
+            next_details = {}
         else:
             phase = "complete"
             next_command = None
             next_action = "complete"
+            next_details = {}
     if next_action is None:
         next_action = "run_command" if next_command else None
     return {
@@ -1419,7 +1643,7 @@ def status_payload(project_arg: Path) -> dict:
         },
         "preview_status": preview_status,
         "blockers": blockers,
-        "next": {"action": next_action, "command": next_command},
+        "next": {"action": next_action, "command": next_command, **next_details},
     }
 
 
@@ -1432,8 +1656,10 @@ def print_status(project: Path, *, as_json: bool) -> None:
     print(f"project: {payload['project']}")
     for blocker in payload["blockers"]:
         print(f"blocker: {blocker['message']} ({blocker['path']})")
-    if payload["next"].get("action") and not payload["next"].get("command"):
+    if payload["next"].get("action"):
         print(f"action: {payload['next']['action']}")
+    if payload["next"].get("command_on_confirm"):
+        print(f"after confirmation: {payload['next']['command_on_confirm']}")
     print(f"next: {payload['next']['command'] or '-'}")
 
 
@@ -1445,20 +1671,25 @@ def preview_output_path(outline: Path, output: Path | None) -> Path:
     reserved = {
         outline.resolve(), project / "outline.md", project_state_path(project), preview_state_path(outline),
         project / BUILD_STATE_NAME, project / "deck.json", project / "media-plan.json",
-        project / DEFAULT_FINAL_NAME,
+        project / DEFAULT_FINAL_NAME, edit_draft_path(project),
     }
     if target in {path.resolve() for path in reserved}:
         raise SystemExit(f"Preview output conflicts with a protected project file: {target.name}")
     return target
 
 
-def generate_preview(target_path: Path, output: Path | None, open_browser: bool) -> None:
-    project = target_path.expanduser().resolve()
-    if not project.is_dir():
-        raise SystemExit(f"Preview accepts the project root only. Use: {cli_display()} preview <project>")
+def generate_preview(
+    target_path: Path,
+    output: Path | None,
+    open_browser: bool,
+    *,
+    emit: bool = True,
+) -> dict:
+    project = require_initialized_project(target_path, "Preview")
+    require_no_edit_draft(project, "Preview")
     outline = project / "outline.json"
     if not outline.is_file():
-        raise SystemExit(f"Outline not found: {outline}. Next: {cli_display()} contract --example")
+        raise SystemExit(f"Outline not found: {outline}. Next: {cli_command('contract', '--example')}")
     if not outline_confirmation_valid(outline.parent):
         raise SystemExit(
             f"Preview blocked because the current outline.md is not confirmed. "
@@ -1513,22 +1744,29 @@ def generate_preview(target_path: Path, output: Path | None, open_browser: bool)
         "assets": asset_manifest(outline),
         "confirmed": False,
     })
-    print(json.dumps({
+    payload = {
         "ok": True,
         "phase": "needs_preview_confirmation",
         "project": str(outline.parent),
         "preview": str(target),
         "opened": open_browser,
-        "next": {"action": "ask_user_to_confirm_preview", "command": None},
-    }, ensure_ascii=False, indent=2))
+        "next": {
+            "action": "ask_user_to_confirm_preview",
+            "command": None,
+            "artifact": str(target),
+            "command_on_confirm": cli_command("confirm", outline.parent, "--stage", "preview", "--user-confirmed"),
+        },
+    }
+    if emit:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return payload
 
 
 def confirm_preview(target_path: Path, user_confirmed: bool) -> None:
     if not user_confirmed:
         raise SystemExit("Confirmation requires --user-confirmed after the user explicitly approves the preview.")
-    project = target_path.expanduser().resolve()
-    if not project.is_dir():
-        raise SystemExit(f"Preview confirmation accepts the project root only. Use: {cli_display()} confirm <project> --stage preview --user-confirmed")
+    project = require_initialized_project(target_path, "Preview confirmation")
+    require_no_edit_draft(project, "Preview confirmation")
     outline = project / "outline.json"
     if not outline_confirmation_valid(outline.parent):
         raise SystemExit("Preview confirmation requires the current outline.md to be explicitly confirmed first.")
@@ -1544,7 +1782,7 @@ def confirm_preview(target_path: Path, user_confirmed: bool) -> None:
     print(json.dumps({
         "ok": True, "phase": "ready_to_build", "project": str(outline.parent),
         "preview": str(preview),
-        "next": {"action": "run_command", "command": f"{cli_display()} build {outline.parent}"},
+        "next": {"action": "run_command", "command": cli_command("build", outline.parent)},
     }, ensure_ascii=False, indent=2))
 
 
@@ -1557,8 +1795,8 @@ def require_preview_confirmation(outline_path: Path) -> dict:
     status, state, reason = preview_state_status(outline)
     if status != "confirmed" or state is None:
         if status == "awaiting-confirmation":
-            raise SystemExit("Scaffold blocked: preview has not been confirmed by the user.")
-        raise SystemExit(f"Scaffold blocked: {reason or 'generate and confirm 预览.html first'}.")
+            raise SystemExit("Build blocked: preview has not been confirmed by the user.")
+        raise SystemExit(f"Build blocked: {reason or 'generate and confirm 预览.html first'}.")
     return state
 
 
@@ -1634,7 +1872,8 @@ def sync_project_configuration(project: Path) -> None:
 
 
 def build_project(project_arg: Path) -> None:
-    project = project_arg.expanduser().resolve()
+    project = require_initialized_project(project_arg, "Build")
+    require_no_edit_draft(project, "Build")
     outline = project / "outline.json"
     if not outline_confirmation_valid(project):
         raise SystemExit("Build blocked: the current outline.md is missing or no longer confirmed.")
@@ -1667,31 +1906,17 @@ def build_project(project_arg: Path) -> None:
 
 
 def scaffold(project: Path, outline_path: Path) -> None:
-    project = project.expanduser().resolve()
+    project = require_initialized_project(project, "Scaffold")
+    require_no_edit_draft(project, "Scaffold")
     outline_path = outline_path.expanduser().resolve()
     if project != outline_path.parent:
         raise SystemExit("Scaffold project and outline.json must share the same project root.")
     if not outline_confirmation_valid(project):
         raise SystemExit("Scaffold blocked: the current outline.md is missing or no longer confirmed.")
-    preview_state = require_preview_confirmation(outline_path)
+    require_preview_confirmation(outline_path)
     outline_text = outline_path.read_text(encoding="utf-8")
     data = json.loads(outline_text)
     slides = validate_outline(data, TEMPLATES)
-    if project.exists():
-        existing = list(project.iterdir())
-        state_path = preview_state_path(outline_path)
-        preview_path = Path(preview_state["preview"]).expanduser().resolve()
-        markdown_outline = project / "outline.md"
-        allowed_paths = {
-            outline_path, state_path, markdown_outline, project / "assets", project / ".DS_Store",
-            project_state_path(project), project / "media-plan.json",
-        }
-        if preview_path.parent == project:
-            allowed_paths.add(preview_path)
-        allowed = [item for item in existing if item.resolve() in allowed_paths]
-        unexpected = [item for item in existing if item.resolve() not in allowed_paths]
-        if unexpected:
-            raise SystemExit(f"Refusing to overwrite non-empty directory: {project}")
     arguments = [str(project), "--title", str(data.get("title") or slides[0]["title"]), "--allow-existing-assets"]
     palette = data["palette"]
     if isinstance(palette, dict):
@@ -1743,15 +1968,15 @@ def parse_args() -> argparse.Namespace:
         prog="oil-ppt",
         description="Create and validate an oil-ppt project through one stateful CLI.",
         epilog=(
-            "Workflow: init PROJECT → edit and confirm outline.md → plan PROJECT → "
-            "preview PROJECT → confirm preview → build PROJECT. Run `status PROJECT --json` at any time."
+            "Workflow: init PROJECT → write and confirm outline.md → plan PROJECT → preview PROJECT → "
+            "optionally edit text → confirm preview → build PROJECT. Run `status PROJECT --json` at any time."
         ),
     )
-    public_commands = ("init", "status", "plan", "check", "doctor", "contract", "preview", "confirm", "build", "media", "icon")
+    public_commands = ("init", "status", "plan", "check", "doctor", "contract", "preview", "edit", "confirm", "build", "media", "icon")
     sub = parser.add_subparsers(dest="command", metavar="{" + ",".join(public_commands) + "}")
     init_parser = sub.add_parser("init", help="initialize outline.md, assets, and project state")
     init_parser.add_argument("project", type=Path, help="one project root directory")
-    status_parser = sub.add_parser("status", help="show the current phase, blockers, and exactly one next command")
+    status_parser = sub.add_parser("status", help="show the current phase and one explicit next action")
     status_parser.add_argument("project", type=Path, help="project root")
     status_parser.add_argument("--json", action="store_true", help="emit a stable machine-readable envelope")
     plan_parser = sub.add_parser("plan", help="validate and install the visual outline.json after Markdown approval")
@@ -1784,11 +2009,16 @@ def parse_args() -> argparse.Namespace:
     contract_selector.add_argument("--example", action="store_true", help="print a minimal valid outline.json")
     contract_parser.add_argument("--pretty", action="store_true", help=argparse.SUPPRESS)
     contract_parser.add_argument("--compact", action="store_true", help="emit compact JSON")
-    preview_parser = sub.add_parser("preview", help="run checks and create the final-material HTML preview")
+    preview_parser = sub.add_parser("preview", help="create and open the editable final-material preview")
     preview_parser.add_argument("outline", type=Path, help="project root")
     preview_parser.add_argument("--out", type=Path)
-    preview_parser.add_argument("--open", action="store_true", help="open the preview in a browser; default is headless")
+    preview_parser.add_argument("--open", action="store_true", help=argparse.SUPPRESS)
     preview_parser.add_argument("--no-open", action="store_true", help=argparse.SUPPRESS)
+    edit_parser = sub.add_parser("edit", help="open the local draft-safe text editor for the current preview")
+    edit_parser.add_argument("project", type=Path, help="project root")
+    edit_parser.add_argument("--port", type=int, default=0, help="local loopback port; 0 chooses an available port")
+    edit_parser.add_argument("--no-open", action="store_true", help="do not open the browser automatically")
+    edit_parser.add_argument("--discard-draft", action="store_true", help="explicitly delete an existing text-edit draft")
     confirm_parser = sub.add_parser("confirm", help="record explicit user approval for outline or preview")
     confirm_parser.add_argument("outline", type=Path, help="project root")
     confirm_parser.add_argument("--stage", choices=("outline", "preview"), help="defaults to preview for compatibility")
@@ -1813,14 +2043,14 @@ def parse_args() -> argparse.Namespace:
     media_sub = media_parser.add_subparsers(
         dest="media_command",
         required=True,
-        metavar="{plan,frame}",
+        metavar="{sources,plan,verify,frame,render-html}",
     )
-    media_sub.add_parser("sources")
+    media_sub.add_parser("sources", help="show machine-readable source and delivery policy")
     media_plan_parser = media_sub.add_parser("plan", help="compile slide media into roles, fidelity, ratios, and commands")
     media_plan_parser.add_argument("target", type=Path, help="project root or outline.json")
     media_plan_parser.add_argument("--write", action="store_true", help="also write media-plan.json in the project")
     media_plan_parser.add_argument("--out", type=Path, help="override the media plan output path")
-    media_verify = media_sub.add_parser("verify")
+    media_verify = media_sub.add_parser("verify", help="verify every bound media file and source record")
     media_verify.add_argument("outline", type=Path, help="project root or outline.json")
     media_frame_parser = media_sub.add_parser("frame", help="preserve a screenshot on a slot-matched block background")
     media_frame_parser.add_argument("source", type=Path)
@@ -1831,7 +2061,7 @@ def parse_args() -> argparse.Namespace:
     media_frame_parser.add_argument("--padding", choices=("compact", "standard", "spacious"), default="standard")
     media_frame_parser.add_argument("--align", choices=("center", "left", "right", "top", "bottom", "top-left", "top-right", "bottom-left", "bottom-right"), default="center")
     media_frame_parser.add_argument("--fit", choices=("contain", "cover"), default="contain")
-    media_render = media_sub.add_parser("render-html")
+    media_render = media_sub.add_parser("render-html", help="render an authoring HTML visual into a local PNG")
     media_render.add_argument("source", type=Path)
     media_render.add_argument("output", type=Path)
     media_render.add_argument("--width", type=int, default=1600)
@@ -1882,7 +2112,24 @@ def main() -> None:
             family_id=getattr(args, "family", None),
         )
     elif args.command == "preview":
-        generate_preview(args.outline, args.out, bool(args.open) and not bool(args.no_open))
+        interactive = not bool(args.no_open)
+        payload = generate_preview(args.outline, args.out, False, emit=not interactive)
+        if interactive:
+            editor = launch_text_editor(Path(payload["project"]))
+            print(json.dumps({
+                **payload,
+                "phase": "editing_in_progress",
+                "opened": True,
+                "editor": editor,
+                "next": {"action": "wait_for_editor", "command": None},
+            }, ensure_ascii=False, indent=2))
+    elif args.command == "edit":
+        command = [str(args.project), "--port", str(args.port)]
+        if args.no_open:
+            command.append("--no-open")
+        if args.discard_draft:
+            command.append("--discard-draft")
+        run_script("text_editor.py", command)
     elif args.command == "confirm":
         stage = args.stage or "preview"
         if stage == "outline":
@@ -1895,6 +2142,7 @@ def main() -> None:
         list_project(args.project)
     elif args.command == "add":
         project, _ = read_config(args.project)
+        require_no_edit_draft(project, "Add slide")
         outline_path, outline = read_outline(project)
         slide_path = args.slide_json.expanduser().resolve()
         if not slide_path.is_file():
@@ -1924,6 +2172,7 @@ def main() -> None:
         run_script("fill_slots.py", [str(project), "--outline", str(outline_path)])
         list_project(args.project)
     elif args.command == "remove":
+        require_no_edit_draft(args.project, "Remove slide")
         remove_slide(args.project, args.slide_id)
         list_project(args.project)
     elif args.command == "build":

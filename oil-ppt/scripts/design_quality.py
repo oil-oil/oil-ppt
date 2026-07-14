@@ -35,8 +35,16 @@ def issue(
     message: str,
     slide_ids: list[str] | None = None,
     suggestion: dict | None = None,
+    *,
+    blocking: bool = False,
 ) -> dict:
-    result = {"level": level, "code": code, "message": message, "slides": slide_ids or []}
+    result = {
+        "level": level,
+        "blocking": blocking,
+        "code": code,
+        "message": message,
+        "slides": slide_ids or [],
+    }
     if suggestion:
         result["suggestion"] = suggestion
     return result
@@ -134,6 +142,7 @@ def audit_outline(data: dict) -> list[dict]:
                 "error", "missing-media-frame",
                 "Image slides must declare media_frame as 'content' or 'self-framed'.",
                 [slide["id"]],
+                blocking=True,
             ))
             continue
         owner = slide_quality(slide)["frame_owner"]
@@ -142,6 +151,7 @@ def audit_outline(data: dict) -> list[dict]:
                 "error", "double-frame-risk",
                 f"Template {slide['template']!r} owns the outer frame; its media must be frameless content.",
                 [slide["id"]],
+                blocking=True,
             ))
     require_media = data.get("media_policy", "required") != "text-only"
     media_slides = [slide for slide in content if has_media(slide)]
@@ -150,6 +160,7 @@ def audit_outline(data: dict) -> list[dict]:
             "error", "media-required",
             "media_policy='required' needs at least one visible media slide in the content deck; use a real local asset or explicitly confirm text-only.",
             [slide["id"] for slide in content],
+            blocking=True,
         ))
     if not content:
         return results
@@ -160,11 +171,11 @@ def audit_outline(data: dict) -> list[dict]:
             continue
         candidates = [item["template"] for item in review["candidates"]]
         results.append(issue(
-            "error", "specialized-capability-missed",
-            f"Slide {review['id']!r} contains a high-confidence specialized intent but selected {review['selected']!r}.",
+            "warning", "specialized-capability-suggestion",
+            f"Slide {review['id']!r} may also fit a specialized component; the selected component remains valid when it satisfies its contract.",
             [review["id"]],
             {
-                "action": "choose one specialized candidate before preview",
+                "action": "consider a specialized candidate only when it expresses the content relation more clearly",
                 "templates": candidates,
                 "candidates": [item["choice_patch"] for item in review["candidates"]],
                 "candidate_slides": [review["id"]],
@@ -176,7 +187,7 @@ def audit_outline(data: dict) -> list[dict]:
         if len(media_slides) < minimum:
             missing_media = [slide for slide in content if not has_media(slide)]
             results.append(issue(
-                "error", "media-coverage",
+                "warning", "media-coverage",
                 f"The content deck needs at least one real visual every five slides; found {len(media_slides)}/{len(content)}, need {minimum}.",
                 [slide["id"] for slide in missing_media],
             ))
@@ -283,7 +294,7 @@ def audit_outline(data: dict) -> list[dict]:
             candidates = candidates[:3]
             changes = {slide["id"]: suggested_background(slide, dominant) for slide in candidates}
             results.append(issue(
-                "error", "background-monotony",
+                "warning", "background-monotony",
                 f"Background {dominant!r} appears on {dominant_count}/{len(content)} content slides; introduce a small number of deliberate background changes.",
                 [slide["id"] for slide in dominant_slides],
                 {"set_background": changes},
@@ -296,7 +307,7 @@ def audit_outline(data: dict) -> list[dict]:
             candidates = same_class[2::4][:3] or same_class[:1]
             changes = {slide["id"]: suggested_background(slide, effective_background(slide)) for slide in candidates}
             results.append(issue(
-                "error", "background-class-monotony",
+                "warning", "background-class-monotony",
                 f"Perceptually similar {dominant_class!r} backgrounds appear on {dominant_class_count}/{len(content)} content slides, even though preset names differ.",
                 [slide["id"] for slide in same_class],
                 {"set_background": changes},
@@ -364,7 +375,7 @@ def audit_outline(data: dict) -> list[dict]:
             if end - start >= 3:
                 run = segment[start:end]
                 results.append(issue(
-                    "error", "repeated-silhouette",
+                    "warning", "repeated-silhouette",
                     f"Section {segment_index} repeats silhouette {silhouettes[start]!r} for {len(run)} consecutive slides.",
                     [slide["id"] for slide in run],
                 ))
@@ -398,7 +409,7 @@ def audit_outline(data: dict) -> list[dict]:
         anchors = [slide for slide in segment if slide_quality(slide)["visual_energy"] == "anchor"]
         if len(segment) >= 5 and not anchors:
             results.append(issue(
-                "error", "missing-visual-anchor",
+                "warning", "missing-visual-anchor",
                 f"Section {segment_index} has {len(segment)} content slides but no visual anchor.",
                 [slide["id"] for slide in segment],
             ))
@@ -408,7 +419,7 @@ def audit_outline(data: dict) -> list[dict]:
             minimum = (len(segment) + 4) // 5
             if len(segment_media) < minimum:
                 results.append(issue(
-                    "error", "missing-section-media",
+                    "warning", "missing-section-media",
                     f"Section {segment_index} has {len(segment)} content slides but only {len(segment_media)} media slide(s); need {minimum}.",
                     [slide["id"] for slide in segment],
                 ))
@@ -420,7 +431,7 @@ def audit_outline(data: dict) -> list[dict]:
                         continue
                     if len(run) >= 5:
                         results.append(issue(
-                            "error", "media-gap",
+                            "warning", "media-gap",
                             f"Section {segment_index} has {len(run)} consecutive content slides without media.",
                             [item["id"] for item in run],
                         ))
@@ -434,7 +445,7 @@ def audit_summary(data: dict) -> dict:
     review = recommend_outline(data)
     return {
         "status": (
-            "error" if any(item["level"] == "error" for item in results)
+            "error" if any(item["blocking"] for item in results)
             else "warning" if any(item["level"] == "warning" for item in results)
             else "ok"
         ),
@@ -455,7 +466,7 @@ def enforce_outline_quality(data: dict) -> list[dict]:
             suffix = f" Slides: {', '.join(item['slides'])}." if item["slides"] else ""
             suggestion = f" Suggestion: {json.dumps(item['suggestion'], ensure_ascii=False)}" if item.get("suggestion") else ""
             print(f"[WARN] {item['code']}: {item['message']}{suffix}{suggestion}")
-    errors = [item for item in results if item["level"] == "error"]
+    errors = [item for item in results if item["blocking"]]
     if errors:
         lines = []
         for item in errors:

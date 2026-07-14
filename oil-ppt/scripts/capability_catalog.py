@@ -96,10 +96,72 @@ VARIANT_HELP = {
 }
 
 
+# Compact labels are owned by the preview UI. Internal identifiers stay stable
+# for JSON and CLI contracts, while users only see readable Chinese names.
+VARIANT_UI_LABELS = {
+    "balanced": "均衡",
+    "chart": "原生图表",
+    "copy-dominant": "文字主导",
+    "copy-left": "文字在左",
+    "copy-right": "文字在右",
+    "default": "默认",
+    "evidence": "真实证据",
+    "feature-left": "左侧主卡",
+    "feature-right": "右侧主卡",
+    "feature-top": "上方主卡",
+    "focus-left": "左侧重点",
+    "focus-middle": "中间重点",
+    "focus-right": "右侧重点",
+    "hero-collage": "主副图拼贴",
+    "line": "单句收束",
+    "line-artifact": "单句加物件",
+    "line-note": "单句加注",
+    "linear": "线性推进",
+    "media": "图文开场",
+    "media-dominant": "视觉主导",
+    "media-evidence": "图片证据",
+    "media-left": "视觉在左",
+    "media-right": "视觉在右",
+    "statement": "纯文字",
+    "steps-6": "六步流程",
+    "steps-8": "八步流程",
+    "terminal-focus": "结果收束",
+    "thesis-left": "结论在左",
+    "thesis-right": "结论在右",
+    "visual-evidence": "图片证据",
+}
+
+
+DECOR_UI_LABELS = {
+    "none": "无装饰",
+    "dots": "点阵",
+}
+
+
+def template_ui_label(template: str) -> str:
+    try:
+        return str(TEMPLATE_DISCOVERY[template]["aliases"][0])
+    except (KeyError, IndexError, TypeError) as error:
+        raise ValueError(f"Missing Chinese UI label for template {template!r}.") from error
+
+
+def variant_ui_label(variant: str) -> str:
+    try:
+        return VARIANT_UI_LABELS[variant]
+    except KeyError as error:
+        raise ValueError(f"Missing Chinese UI label for variant {variant!r}.") from error
+
+
+def decor_ui_label(decor: str) -> str:
+    try:
+        return DECOR_UI_LABELS[decor]
+    except KeyError as error:
+        raise ValueError(f"Missing Chinese UI label for decoration {decor!r}.") from error
+
+
 DECOR_GUIDANCE = {
     "none": "关系和素材已经足够时使用",
     "dots": "开放区域需要轻微节奏点阵",
-    "corner-grid": "结构页需要局部网格坐标感",
 }
 
 
@@ -112,14 +174,15 @@ PROGRAM_OWNED_CAPABILITIES = {
         "fit": "标题和正文的受控适配",
     },
     "surface": {
-        "tones": ["neutral", "soft", "accent", "alt", "warm", "ink"],
-        "automatic": "容器底色、细纹理、矢量 motif、边框与圆角由模板/runtime 组合；Agent 不写 CSS。",
-        "automatic_motifs": ["ring", "triangle", "slash", "plot"],
+        "tones": ["neutral", "soft", "accent", "ink"],
+        "automatic": "容器底色、低对比灰色几何、局部纹理、圆角与图标容器由模板/runtime 组合；Agent 不写 CSS。",
+        "detail_budget": "每页只保留一个主要装饰家族；主题色用于信息强调，装饰几何保持灰色、粗或面性。",
+        "automatic_motifs": ["ring", "triangle", "slash"],
         "decorations": DECOR_GUIDANCE,
     },
     "page_atmosphere": {
         "backgrounds": ["grid-fade", "grid-wide", "soft-spotlight", "block-field"],
-        "content_accents": ["highlight", "backdrop_text", "quote"],
+        "content_accents": ["highlight", "由节奏页 highlight 自动生成的背景大字", "quote"],
     },
     "media": {
         "compositions": [
@@ -154,5 +217,5 @@ SELECTION_ORDER = (
     "先按内容关系选择 family，不按外观挑模板。",
     "再看整套 silhouette 节奏；有真实素材时必须同时考虑 split 与 bleed 两类。",
     "最后选择 variant、decor、background 和可选强调字段；程序校验所有组合。",
-    "生成 outline.json 后运行 recommend 与 audit；高置信专用能力和整套节奏都在程序必经路径复核。",
+    "生成 outline.json 后运行 plan；推荐、节奏与专用能力门禁由程序统一完成。",
 )

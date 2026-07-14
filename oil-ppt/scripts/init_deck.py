@@ -33,17 +33,7 @@ def main() -> None:
     args = parse_args()
     target = args.project_dir.expanduser().resolve()
     if target.exists() and any(target.iterdir()):
-        existing = list(target.iterdir())
-        planning_files = {
-            "outline.md", "outline.json", "预览.html", ".oil-ppt-state.json",
-            ".oil-ppt-preview-outline.json", "media-plan.json", ".DS_Store",
-        }
-        allowed_existing = all(
-            (item.name == "assets" and item.is_dir())
-            or (item.name in planning_files and item.is_file())
-            for item in existing
-        )
-        if not args.allow_existing_assets or not allowed_existing:
+        if not args.allow_existing_assets:
             raise SystemExit(f"Refusing to overwrite non-empty directory: {target}")
 
     skill_root = Path(__file__).resolve().parent.parent
