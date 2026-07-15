@@ -272,8 +272,8 @@ SHARED_SLIDE_FIELDS = {
         "type": "string",
         "required": False,
         "allowed": ["component", "page-blend"],
-        "use_when": "split-visual 或 editorial-feature 中，概念插画需要直接融入页面而不是进入通用卡片外框",
-        "rule": "截图、界面和文档使用 component；概念插画使用 page-blend；省略时程序按 media_fidelity 与 media_role 推断",
+        "use_when": "split-visual 或 editorial-feature 中，概念插画或自带完整边界的素材需要直接融入页面",
+        "rule": "概念插画使用 page-blend；普通截图、界面和文档使用 component；声明 media_frame=self-framed 时自动使用 page-blend，避免双重外框",
     },
     "media_position": {
         "type": "string",

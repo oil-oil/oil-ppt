@@ -235,6 +235,8 @@ def effective_media_surface(slide: dict) -> str:
     template = str(slide.get("template") or "")
     if template not in PAGE_BLEND_TEMPLATES:
         return "component"
+    if str(slide.get("media_frame") or "").strip() == "self-framed":
+        return "page-blend"
     fidelity = str(slide.get("media_fidelity") or "").lower()
     role = str(slide.get("media_role") or "").lower()
     if fidelity == "illustrative" or any(token in role for token in PAGE_BLEND_ROLE_TOKENS):

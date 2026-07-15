@@ -189,7 +189,7 @@ PROGRAM_OWNED_CAPABILITIES = {
             "inset split", "balanced photo split", "browser frame", "editorial canvas",
             "edge bleed", "diagonal bleed", "full-photo gradient",
         ],
-        "automatic": "程序按真实版位比例规划素材：照片默认 cover 铺满，UI/文档 strict 素材用 contain 保真，概念插画可 page-blend 融入页面；裁切、遮罩、渐变和 frame ownership 统一管理，避免通用灰框与双重外壳。Agent 只提供素材角色和它回答的问题。",
+        "automatic": "程序按真实版位比例规划素材：照片默认 cover 铺满，UI/文档 strict 素材用 contain 保真，概念插画和 self-framed 证据可 page-blend 融入页面；裁切、遮罩、渐变和 frame ownership 统一管理，避免通用灰框与双重外壳。Agent 只提供素材角色和它回答的问题。",
         "source_command": "scripts/oil-ppt media sources",
         "plan_command": "scripts/oil-ppt media plan <项目> --write",
         "frame_command": "scripts/oil-ppt media frame <截图> <输出.png> --project <项目> --ratio <ratio>",

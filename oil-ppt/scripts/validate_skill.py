@@ -309,6 +309,10 @@ def validate_skill() -> None:
         errors.append(f"media_surface exposure mismatch; expected={sorted(PAGE_BLEND_TEMPLATES)}, actual={sorted(surface_templates)}")
     if effective_media_surface({"template": "split-visual", "media_fidelity": "illustrative"}) != "page-blend":
         errors.append("illustrative split media must infer page-blend")
+    if effective_media_surface({"template": "split-visual", "media_fidelity": "strict", "media_frame": "self-framed"}) != "page-blend":
+        errors.append("self-framed split evidence must infer page-blend instead of receiving a second shell")
+    if effective_media_fit({"template": "split-visual", "media_fidelity": "strict", "media_frame": "self-framed"}) != "contain":
+        errors.append("self-framed strict evidence must remain uncropped while blending into the page")
     if effective_media_fit({"template": "split-visual", "media_fidelity": "illustrative"}) != "contain":
         errors.append("page-blend illustration must preserve its full subject with contain")
     if MEDIA_FIT_DEFAULTS.get("cover") != "cover" or MEDIA_SLOTS.get("cover", {}).get("ratio") != "4:5":

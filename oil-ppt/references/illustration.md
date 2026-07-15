@@ -49,5 +49,5 @@ no code, no interface, no speech bubble, and no fake UI.
 - 概念插画优先使用 `split-visual` 或 `editorial-feature` 的 `media_surface: page-blend`，让透明素材或与页面同底色的画面直接融入版式；不要默认套浅灰圆角卡片。
 - 只有色块本身表达边界、状态或层级时，才使用 `media_surface: component`。浏览器壳、设备壳与文档框只服务真实证据，不用来包装普通插画。
 - 照片和有边到边背景的插画默认使用 `cover` 铺满版位；UI、文档、图表等不可裁切素材使用 `contain`。若 `cover`，用 `media_position` 保护偏离中心的主体。
-- 同一页只允许一个主要外框；素材已经自带必须保留的外框时声明 `media_frame: self-framed`，模板不再增加第二层阴影与边框。
+- 同一页只允许一个主要外框；素材已经自带必须保留的外框时声明 `media_frame: self-framed`。在 `split-visual` / `editorial-feature` 中，程序会自动切到 `page-blend`，保留完整素材并移除外层底色、阴影与边框。
 - 角色视线和动作朝向正文或页面中心，避免把观众注意力带出画面。
