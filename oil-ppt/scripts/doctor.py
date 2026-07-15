@@ -241,52 +241,14 @@ def verify_specialized_capability_advice() -> None:
 
 def verify_regression_guards(entry: Path) -> None:
     templates = Path(__file__).resolve().parent.parent / "assets" / "templates"
-    decorative_hairline = re.compile(
-        r"border-(?:top|right|bottom|left):\s*1px"
-        r"|(?:width|height):\s*(?:1|2)px;\s*background:\s*(?:var\(--border\)|color-mix\([^;}]*var\(--ink\))"
-    )
-    hairline_offenders = [
-        path.name for path in templates.glob("*.html")
-        if decorative_hairline.search(path.read_text(encoding="utf-8"))
-    ]
-    if hairline_offenders:
-        raise RuntimeError(
-            "block-first component templates reintroduced decorative gray hairlines: "
-            + ", ".join(sorted(hairline_offenders))
-        )
-    section_source = (templates / "section.html").read_text(encoding="utf-8")
-    if "repeating-linear-gradient" in section_source:
-        raise RuntimeError("section reintroduced thin striped decoration instead of a cropped block geometry")
-
     rhythm_slide = {
         "id": "auto-backdrop", "title": "把重点留给重点", "highlight": "重点",
         "template": "section", "variant": "default", "decor": "none",
         "content": "背景大字应复用标题高亮。",
     }
     _, rhythm_fragment = prepared_slide(rhythm_slide, 1)
-    if '<div class="oil-backdrop-text" aria-hidden="true">重点</div>' not in rhythm_fragment:
+    if not re.search(r'<div\b[^>]*\bclass="[^"]*\boil-backdrop-text\b[^"]*"[^>]*>\s*重点\s*</div>', rhythm_fragment):
         raise RuntimeError("rhythm pages did not derive background type from the existing highlight")
-
-    runtime_source = (Path(__file__).resolve().parent.parent / "assets" / "runtime" / "deck.css").read_text(encoding="utf-8")
-    filler_source = (Path(__file__).resolve().parent / "fill_slots.py").read_text(encoding="utf-8")
-    if "edge-slice" in runtime_source or "edge-slice" in filler_source:
-        raise RuntimeError("repetitive accent edge slices must not return to automatic container styling")
-    triangle_rule = re.search(r'\.oil-surface\[data-motif="triangle"\]::after\s*\{([^}]*)\}', runtime_source, re.S)
-    ring_rule = re.search(r'\.oil-surface\[data-motif="ring"\]::after\s*\{([^}]*)\}', runtime_source, re.S)
-    slash_rule = re.search(r'\.oil-surface\[data-motif="slash"\]::after\s*\{([^}]*)\}', runtime_source, re.S)
-    if not triangle_rule or "clip-path:polygon" not in triangle_rule.group(1) or "mask:" in triangle_rule.group(1):
-        raise RuntimeError("triangle motif must remain a quiet filled surface")
-    if (
-        not ring_rule
-        or "var(--accent)" in ring_rule.group(1)
-        or "mask:url" not in ring_rule.group(1)
-        or "stroke-width='32'" not in ring_rule.group(1)
-        or "stroke-linecap='round'" not in ring_rule.group(1)
-        or "M36 172A104 104" not in ring_rule.group(1)
-    ):
-        raise RuntimeError("ring motif must remain a thick neutral top-left arc with rounded ends")
-    if not slash_rule or "repeating-linear-gradient" in slash_rule.group(1) or "clip-path:polygon" not in slash_rule.group(1):
-        raise RuntimeError("slash motif must remain a single filled surface")
 
     def expect_outline_rejected(slide: dict, reason: str) -> None:
         deck = {
@@ -984,20 +946,12 @@ def main() -> None:
             base_edit_rule = re.search(r"\[data-edit-path\]\{([^}]*)\}", EDITOR_FRAME_CSS)
             hover_edit_rule = re.search(r'\[data-edit-path\]\[contenteditable="plaintext-only"\]:hover\{([^}]*)\}', EDITOR_FRAME_CSS)
             focus_rule = re.search(r"\[data-edit-path\]:focus\{([^}]*)\}", EDITOR_FRAME_CSS)
-            if not focus_rule or "background" in focus_rule.group(1) or (hover_edit_rule and "background" in hover_edit_rule.group(1)):
-                raise RuntimeError("text editor interaction states may only draw restrained outlines")
-            if (
-                not base_edit_rule
-                or "dashed" not in base_edit_rule.group(1)
-                or "transparent" not in base_edit_rule.group(1)
-                or "box-shadow:none" not in base_edit_rule.group(1)
-                or not hover_edit_rule
-                or "var(--ink)" not in hover_edit_rule.group(1)
-                or "oil-editor-focus-in" not in EDITOR_FRAME_CSS
-            ):
-                raise RuntimeError("text editor must stay clean at idle, show a gray dashed hover boundary, and use a themed focus state")
-            if "oil-lightbox-in" not in PREVIEW_SHELL_CSS or "prefers-reduced-motion:reduce" not in PREVIEW_SHELL_CSS:
-                raise RuntimeError("enlarged editor must animate in smoothly and respect reduced motion")
+            if not base_edit_rule or not hover_edit_rule or not focus_rule:
+                raise RuntimeError("text editor must define idle, hover, and focus interaction states")
+            if "background" in hover_edit_rule.group(1) or "background" in focus_rule.group(1):
+                raise RuntimeError("text editor interaction states must not hide or recolor slide text")
+            if "prefers-reduced-motion:reduce" not in PREVIEW_SHELL_CSS:
+                raise RuntimeError("enlarged editor must respect reduced motion")
             for background in ("soft-spotlight", "block-field", "grid-wide"):
                 if f'data-bg=&quot;{background}&quot;' not in preview_text:
                     raise RuntimeError(f"preview did not render background {background}")

@@ -270,21 +270,31 @@ p, h1, h2, h3, li, [data-fit] { overflow-wrap: anywhere; }
   mask-image: radial-gradient(circle at 100% 100%, #000 0 8%, transparent 72%);
 }
 .oil-surface[data-tone="accent"]::before {
-  right: 0;
+  --oil-ring-inner: 108px;
+  --oil-ring-outer: 140px;
+  left: 0;
   top: 0;
-  width: 210px;
-  height: 210px;
-  opacity: 1;
-  border: 26px solid color-mix(in srgb,var(--ink) 6%,transparent);
-  border-radius: 50%;
-  background: none;
-  clip-path: inset(0 0 40% 40%);
+  width: 172px;
+  height: 172px;
+  opacity: .84;
 }
 .oil-surface[data-tone="ink"]::before {
   display:none;
 }
 .oil-surface[data-motif]::before {
   display:none;
+}
+.oil-surface[data-tone="accent"]::before,
+.oil-surface[data-motif="ring"]::after {
+  border:0;
+  border-radius:0;
+  background:radial-gradient(circle at 0 0,
+    transparent 0 calc(var(--oil-ring-inner) - 1px),
+    color-mix(in srgb,var(--ink) 4%,transparent) var(--oil-ring-inner) var(--oil-ring-outer),
+    transparent calc(var(--oil-ring-outer) + 1px));
+  -webkit-mask:none;
+  mask:none;
+  clip-path:none;
 }
 .oil-surface[data-tone="ink"]::after {
   content:none !important;
@@ -332,12 +342,8 @@ p, h1, h2, h3, li, [data-fit] { overflow-wrap: anywhere; }
   pointer-events:none;
 }
 .oil-surface[data-motif="ring"]::after {
-  right:-72px;bottom:-72px;width:260px;height:260px;opacity:.92;
-  border:0;border-radius:0;
-  background:color-mix(in srgb,var(--ink) 7%,transparent);
-  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 260 260'%3E%3Cpath d='M36 172A104 104 0 0 1 172 36' fill='none' stroke='white' stroke-width='32' stroke-linecap='round'/%3E%3C/svg%3E") center/contain no-repeat;
-  mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 260 260'%3E%3Cpath d='M36 172A104 104 0 0 1 172 36' fill='none' stroke='white' stroke-width='32' stroke-linecap='round'/%3E%3C/svg%3E") center/contain no-repeat;
-  clip-path:none;
+  --oil-ring-inner:150px;--oil-ring-outer:190px;
+  left:0;top:0;width:226px;height:226px;opacity:.84;
 }
 .oil-surface[data-motif="triangle"]::after {
   right:0;top:0;width:240px;height:210px;opacity:1;

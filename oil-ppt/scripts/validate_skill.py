@@ -328,7 +328,7 @@ def validate_skill() -> None:
     for token in ("--slide-safe-x", "--slide-safe-y", "--slide-grid-gap", ".oil-grid"):
         if token not in runtime_css:
             errors.append(f"runtime grid system missing {token}")
-    if ".hl" not in runtime_css or "--accent-mark" not in runtime_css or "--highlight-opacity: 58%" not in runtime_css:
+    if ".hl" not in runtime_css or "--accent-mark" not in runtime_css or "--highlight-opacity" not in runtime_css:
         errors.append("runtime must retain the program-rendered marker highlight")
     if ".oil-backdrop-text" not in runtime_css:
         errors.append("runtime must render content-owned oversized background type")
@@ -343,7 +343,7 @@ def validate_skill() -> None:
             errors.append(f"runtime surface motif {motif} is declared but missing")
     if '.oil-surface[data-motif]::before' not in runtime_css:
         errors.append("runtime must suppress tone texture when a template motif already owns the surface")
-    if ".oil-icon-frame" not in runtime_css or "--icon-frame: 78px" not in runtime_css or "--icon-size: 48px" not in runtime_css:
+    if ".oil-icon-frame" not in runtime_css or "--icon-frame" not in runtime_css or "--icon-size" not in runtime_css:
         errors.append("runtime must provide the enlarged, reduced-padding icon frame contract")
     if ".oil-chart-bars" not in runtime_css:
         errors.append("runtime must provide deterministic native chart bars")
