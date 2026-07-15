@@ -511,8 +511,10 @@ def prepared_slide(slide: dict, index: int, *, authoring: bool = False) -> tuple
         phrase = html.escape(slide["highlight"], quote=True)
         marked = title.replace(phrase, f'<span class="hl">{phrase}</span>', 1)
         fragment = fragment.replace(f">{title}</h1>", f">{marked}</h1>", 1)
-    if authoring:
-        fragment = annotate_editable_fragment(fragment, slide, index - 1)
+    # Stable outline paths are useful to validators as well as the editor.  Keep
+    # them in every preview so a render error can point back to outline.json
+    # without asking the model to reverse-engineer template DOM.
+    fragment = annotate_editable_fragment(fragment, slide, index - 1)
     return css, fragment
 
 

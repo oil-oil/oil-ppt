@@ -163,17 +163,22 @@ def validate_file(
         websocket = WebSocket(page["webSocketDebuggerUrl"])
         websocket.sock.settimeout(timeout)
         expression = """(() => {
-          const root = document.documentElement;
-          if (!root) return {ready:false, status:'pending', slides:0};
-          const slides = document.querySelectorAll('.oil-slide').length;
-          const stage = document.querySelector('.deck-stage, .slide-preview-stage');
-          const images = [...document.images];
+          const documents = [document, ...[...document.querySelectorAll('iframe')]
+            .map(frame => { try { return frame.contentDocument; } catch (_) { return null; } })
+            .filter(Boolean)];
+          const slideDocuments = documents.filter(doc => doc.querySelector('.oil-slide'));
+          const all = selector => documents.flatMap(doc => [...doc.querySelectorAll(selector)]);
+          const styleOf = node => node.ownerDocument.defaultView.getComputedStyle(node);
+          const slidesNodes = all('.oil-slide');
+          const slides = slidesNodes.length;
+          const stage = all('.deck-stage, .slide-preview-stage')[0] || null;
+          const images = documents.flatMap(doc => [...doc.images]);
           const imagesReady = images.every(image => image.complete);
           const brokenImages = images.filter(image => image.complete && (!image.naturalWidth || !image.naturalHeight));
-          const invalidBleeds = [...document.querySelectorAll('[data-bleed]')].flatMap(bleed => {
+          const invalidBleeds = all('[data-bleed]').flatMap(bleed => {
             const slide = bleed.closest('.oil-slide');
             if (!slide) return [{slide:'unknown', reason:'missing-slide'}];
-            const style = getComputedStyle(bleed);
+            const style = styleOf(bleed);
             const side = bleed.dataset.side || 'right';
             const bleedRect = bleed.getBoundingClientRect();
             const slideRect = slide.getBoundingClientRect();
@@ -189,8 +194,8 @@ def validate_file(
               ? []
               : [{slide:slide.dataset.slideId || 'unknown', reason:`position=${style.position},side=${side},touches=${touchesEdge}`}];
           });
-          const invalidLayouts = [...document.querySelectorAll('.slide-safe [data-layout]')].flatMap(layout => {
-            if (!layout.getClientRects().length || getComputedStyle(layout).display === 'none') return [];
+          const invalidLayouts = all('.slide-safe [data-layout]').flatMap(layout => {
+            if (!layout.getClientRects().length || styleOf(layout).display === 'none') return [];
             const safe = layout.closest('.slide-safe');
             const slide = layout.closest('.oil-slide');
             if (!safe || !slide) return [{slide:'unknown', reason:'layout-missing-safe-area'}];
@@ -201,7 +206,7 @@ def validate_file(
             if (!inside) return [{slide:slide.dataset.slideId || 'unknown', reason:'layout-outside-safe-area'}];
             const outsideChild = [...layout.children].find(child => {
               if (!child.getClientRects().length) return false;
-              const childStyle = getComputedStyle(child);
+              const childStyle = styleOf(child);
               if (childStyle.display === 'none' || childStyle.visibility === 'hidden'
                 || childStyle.position === 'absolute' || childStyle.position === 'fixed') return false;
               const childBox = child.getBoundingClientRect();
@@ -214,18 +219,22 @@ def validate_file(
               child:outsideChild.className || outsideChild.tagName.toLowerCase()
             }] : [];
           });
-          const invalidText = [...document.querySelectorAll('[data-fit]')].flatMap(text => {
-            if (!text.getClientRects().length || getComputedStyle(text).display === 'none') return [];
+          const invalidText = all('[data-fit]').flatMap(text => {
+            if (!text.getClientRects().length || styleOf(text).display === 'none') return [];
             const slide = text.closest('.oil-slide');
             const overflow = text.scrollWidth > text.clientWidth + 1 || text.scrollHeight > text.clientHeight + 1;
             return overflow ? [{
               slide:slide?.dataset.slideId || 'unknown', reason:'text-overflow',
               node:text.tagName.toLowerCase(), className:text.className || '',
+              path:text.dataset.editPath || '',
+              text:(text.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 120),
               client:`${text.clientWidth}x${text.clientHeight}`, scroll:`${text.scrollWidth}x${text.scrollHeight}`,
-              fontSize:getComputedStyle(text).fontSize, maxHeight:getComputedStyle(text).maxHeight,
+              overflowWidth:Math.max(0, text.scrollWidth - text.clientWidth),
+              overflowHeight:Math.max(0, text.scrollHeight - text.clientHeight),
+              fontSize:styleOf(text).fontSize, minSize:text.dataset.minSize || '', maxHeight:styleOf(text).maxHeight,
             }] : [];
           });
-          const invalidCopyFlows = [...document.querySelectorAll('[data-copy-flow]')].flatMap(flow => {
+          const invalidCopyFlows = all('[data-copy-flow]').flatMap(flow => {
             const title = [...flow.children].find(node => node.matches?.('[data-copy-title]'));
             const body = [...flow.children].find(node => node.matches?.('[data-copy-body]'));
             if (!title || !body || body.previousElementSibling !== title) return [];
@@ -238,9 +247,9 @@ def validate_file(
               reason:'copy-gap', gap:Math.round(gap)
             }];
           });
-          const invalidBounds = [...document.querySelectorAll('.slide-safe [data-bound]')].flatMap(node => {
+          const invalidBounds = all('.slide-safe [data-bound]').flatMap(node => {
             if (!node.getClientRects().length) return [];
-            const style = getComputedStyle(node);
+            const style = styleOf(node);
             if (style.display === 'none' || style.visibility === 'hidden') return [];
             const parent = node.parentElement?.closest('[data-bound], .slide-safe');
             const slide = node.closest('.oil-slide');
@@ -255,14 +264,14 @@ def validate_file(
               node:node.className || node.tagName.toLowerCase()
             }];
           });
-          const invalidOptionalRegions = [...document.querySelectorAll('[data-optional-region]')].flatMap(region => {
+          const invalidOptionalRegions = all('[data-optional-region]').flatMap(region => {
             if (!region.getClientRects().length) return [];
-            const style = getComputedStyle(region);
+            const style = styleOf(region);
             if (region.hidden || region.getAttribute('aria-hidden') === 'true' || style.display === 'none') return [];
             const hasText = (region.textContent || '').trim().length > 0;
             const hasVisual = [...region.querySelectorAll('img,svg,canvas,video')].some(node => {
               if (!node.getClientRects().length) return false;
-              if (node instanceof HTMLImageElement) return node.complete && node.naturalWidth > 0 && node.naturalHeight > 0;
+              if (node.tagName === 'IMG') return node.complete && node.naturalWidth > 0 && node.naturalHeight > 0;
               const box = node.getBoundingClientRect();
               return box.width > 1 && box.height > 1;
             });
@@ -274,11 +283,14 @@ def validate_file(
               region:region.dataset.optionalRegion || region.className || region.tagName.toLowerCase()
             }];
           });
-          const rootStyle = getComputedStyle(root);
+          const tokenRoot = slideDocuments[0]?.documentElement || document.documentElement;
+          const rootStyle = tokenRoot ? tokenRoot.ownerDocument.defaultView.getComputedStyle(tokenRoot) : null;
           const stageRect = stage?.getBoundingClientRect();
+          const documentsReady = documents.every(doc => doc.readyState === 'complete' && (!doc.fonts || doc.fonts.status === 'loaded'));
+          const validated = slideDocuments.length > 0 && slideDocuments.every(doc => doc.documentElement?.dataset.oilValidated === 'ok');
           return {
-          ready: document.readyState === 'complete' && (!document.fonts || document.fonts.status === 'loaded') && imagesReady,
-          status: brokenImages.length || invalidBleeds.length || invalidLayouts.length || invalidText.length || invalidCopyFlows.length || invalidBounds.length || invalidOptionalRegions.length ? 'error' : (root.dataset.oilValidated === 'ok' && slides > 0 && !!stage ? 'ok' : 'pending'),
+          ready: documentsReady && imagesReady,
+          status: brokenImages.length || invalidBleeds.length || invalidLayouts.length || invalidText.length || invalidCopyFlows.length || invalidBounds.length || invalidOptionalRegions.length ? 'error' : (validated && slides > 0 && !!stage ? 'ok' : 'pending'),
           slides,
           images: images.length,
           brokenImages: brokenImages.map(image => image.currentSrc || image.getAttribute('src') || ''),
@@ -295,9 +307,9 @@ def validate_file(
             scale:Number(stage.dataset.scale || 0)
           } : null,
           tokens: {
-            accent: rootStyle.getPropertyValue('--accent').trim(),
-            surfaceRadius: rootStyle.getPropertyValue('--surface-radius').trim(),
-            fontZh: rootStyle.getPropertyValue('--font-zh').trim()
+            accent: rootStyle?.getPropertyValue('--accent').trim() || '',
+            surfaceRadius: rootStyle?.getPropertyValue('--surface-radius').trim() || '',
+            fontZh: rootStyle?.getPropertyValue('--font-zh').trim() || ''
           }
         };})()"""
         request_id = 0

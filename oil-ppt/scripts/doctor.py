@@ -276,8 +276,15 @@ def verify_regression_guards(entry: Path) -> None:
     slash_rule = re.search(r'\.oil-surface\[data-motif="slash"\]::after\s*\{([^}]*)\}', runtime_source, re.S)
     if not triangle_rule or "clip-path:polygon" not in triangle_rule.group(1) or "mask:" in triangle_rule.group(1):
         raise RuntimeError("triangle motif must remain a quiet filled surface")
-    if not ring_rule or "var(--accent)" in ring_rule.group(1) or "border:32px" not in ring_rule.group(1):
-        raise RuntimeError("ring motif must remain thick and neutral")
+    if (
+        not ring_rule
+        or "var(--accent)" in ring_rule.group(1)
+        or "mask:url" not in ring_rule.group(1)
+        or "stroke-width='32'" not in ring_rule.group(1)
+        or "stroke-linecap='round'" not in ring_rule.group(1)
+        or "M36 172A104 104" not in ring_rule.group(1)
+    ):
+        raise RuntimeError("ring motif must remain a thick neutral top-left arc with rounded ends")
     if not slash_rule or "repeating-linear-gradient" in slash_rule.group(1) or "clip-path:polygon" not in slash_rule.group(1):
         raise RuntimeError("slash motif must remain a single filled surface")
 
@@ -996,6 +1003,54 @@ def main() -> None:
                     raise RuntimeError(f"preview did not render background {background}")
             if any(seed in preview_text for seed in TEMPLATE_SEEDS):
                 raise RuntimeError("preview leaked bundled template example copy")
+            # A weak model must receive the exact outline field, not a count-only
+            # render failure.  Preview is the first gate; status must remember the
+            # same structured issue until a relevant input changes.
+            valid_outline = json.loads(outline.read_text(encoding="utf-8"))
+            overflowing_outline = json.loads(json.dumps(valid_outline, ensure_ascii=False))
+            overflowing_outline["slides"][0]["title"] = "稳定构建验证用于精确字段定位" * 30
+            outline.write_text(json.dumps(overflowing_outline, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            subprocess.run(
+                [sys.executable, str(entry), "plan", str(project)],
+                check=True, capture_output=True, text=True,
+            )
+            overflowing_preview = subprocess.run(
+                [sys.executable, str(entry), "preview", str(project), "--no-open"],
+                check=False, capture_output=True, text=True,
+            )
+            if overflowing_preview.returncode == 0 or '"code": "TEXT_OVERFLOW"' not in overflowing_preview.stdout:
+                raise RuntimeError(f"preview did not block real browser text overflow: {overflowing_preview.stdout}")
+            if '"path": "/slides/0/title"' not in overflowing_preview.stdout:
+                raise RuntimeError("preview text overflow did not expose the exact outline JSON path")
+            if '"input_manifest"' in overflowing_preview.stdout:
+                raise RuntimeError("preview leaked the internal validation manifest into the public error")
+            overflow_status = subprocess.run(
+                [sys.executable, str(entry), "status", str(project), "--json"],
+                check=True, capture_output=True, text=True,
+            )
+            overflow_payload = json.loads(overflow_status.stdout)
+            overflow_issues = (overflow_payload.get("next") or {}).get("issues") or []
+            if (
+                overflow_payload.get("phase") != "needs_render_fix"
+                or (overflow_payload.get("next") or {}).get("action") != "edit_outline"
+                or not any(item.get("path") == "/slides/0/title" for item in overflow_issues)
+            ):
+                raise RuntimeError(f"status lost the structured preview failure: {overflow_payload}")
+            outline.write_text(json.dumps(valid_outline, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            subprocess.run(
+                [sys.executable, str(entry), "plan", str(project)],
+                check=True, capture_output=True, text=True,
+            )
+            corrected_status = subprocess.run(
+                [sys.executable, str(entry), "status", str(project), "--json"],
+                check=True, capture_output=True, text=True,
+            )
+            if json.loads(corrected_status.stdout).get("phase") != "needs_preview":
+                raise RuntimeError("changing the overflowing field did not release the stale render failure")
+            subprocess.run(
+                [sys.executable, str(entry), "preview", str(project), "--no-open"],
+                check=True, capture_output=True, text=True,
+            )
             editor = EditorSession(project)
             authoring_text = render(
                 editor.data,

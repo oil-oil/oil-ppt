@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import html
 import json
 import mimetypes
 import os
 import re
+import shlex
 import shutil
 import tempfile
 from pathlib import Path
@@ -26,6 +28,7 @@ SLIDE_ID = re.compile(r"data-slide-id=[\"']([a-z0-9][a-z0-9-]*)[\"']")
 SLIDE_TITLE = re.compile(r"data-title=[\"']([^\"']+)[\"']")
 SLIDE_VARIANT = re.compile(r"data-variant=[\"']([^\"']+)[\"']")
 SLIDE_DECOR = re.compile(r"data-component-decor=[\"']([^\"']+)[\"']")
+VALIDATION_STATE_NAME = ".oil-ppt-validation.json"
 LOCAL_PATHS = [
     re.compile(r"file://", re.I),
     re.compile(r"/(?:Users|home)/[^/\s<>'\"]+", re.I),
@@ -148,7 +151,131 @@ def chrome_binary() -> str | None:
     return next((item for item in candidates if item and Path(item).exists()), None)
 
 
-def browser_validate(path: Path) -> None:
+def validation_state_path(project: Path) -> Path:
+    return project.expanduser().resolve() / VALIDATION_STATE_NAME
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def validation_input_manifest(project: Path) -> dict[str, str]:
+    """Fingerprint only inputs that can change the rendered slide geometry."""
+    project = project.expanduser().resolve()
+    paths: set[Path] = set()
+    for name in ("outline.json", "deck.json", "media-plan.json"):
+        path = project / name
+        if path.is_file():
+            paths.add(path)
+    for name in ("assets", "slides", "runtime"):
+        root = project / name
+        if root.is_dir():
+            paths.update(path for path in root.rglob("*") if path.is_file())
+    return {
+        path.relative_to(project).as_posix(): _sha256(path)
+        for path in sorted(paths, key=lambda item: item.relative_to(project).as_posix())
+    }
+
+
+def _write_json_atomic(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            json.dump(data, stream, ensure_ascii=False, indent=2)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def clear_validation_state(project: Path) -> None:
+    validation_state_path(project).unlink(missing_ok=True)
+
+
+def current_validation_failure(project: Path) -> dict | None:
+    path = validation_state_path(project)
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict) or data.get("ok") is not False:
+        return None
+    return data if data.get("input_manifest") == validation_input_manifest(project) else None
+
+
+def _validation_issues(report: dict, project: Path) -> list[dict]:
+    groups = (
+        ("text-overflow", "invalidText"),
+        ("broken-image", "brokenImages"),
+        ("invalid-bleed", "invalidBleeds"),
+        ("invalid-layout", "invalidLayouts"),
+        ("copy-gap", "invalidCopyFlows"),
+        ("out-of-bounds", "invalidBounds"),
+        ("empty-optional-region", "invalidOptionalRegions"),
+    )
+    outline_path = project / "outline.json"
+    slide_indexes: dict[str, int] = {}
+    if outline_path.is_file():
+        try:
+            outline = json.loads(outline_path.read_text(encoding="utf-8"))
+            slide_indexes = {
+                str(slide.get("id")): index
+                for index, slide in enumerate(outline.get("slides") or [])
+                if isinstance(slide, dict) and slide.get("id")
+            }
+        except json.JSONDecodeError:
+            pass
+    issues: list[dict] = []
+    for kind, key in groups:
+        for raw in report.get(key) or []:
+            item = dict(raw) if isinstance(raw, dict) else {"value": raw}
+            item["kind"] = kind
+            slide_id = str(item.get("slide") or "unknown")
+            index = slide_indexes.get(slide_id)
+            if index is not None:
+                item.setdefault("page", index + 1)
+                item.setdefault("path", f"/slides/{index}")
+            issues.append(item)
+    return issues
+
+
+def validation_failure_payload(report: dict, *, project: Path, stage: str) -> dict:
+    issues = _validation_issues(report, project)
+    text_issues = [item for item in issues if item.get("kind") == "text-overflow"]
+    code = "TEXT_OVERFLOW" if text_issues else "RENDER_VALIDATION_FAILED"
+    if text_issues:
+        message = (
+            f"真实浏览器检测到 {len(text_issues)} 个文字块溢出；"
+            "请按 issues[].path 修改 outline.json。字符预算只是建议，不会单独阻止构建。"
+        )
+    else:
+        message = f"真实浏览器检测到 {len(issues)} 个渲染问题；请按 issues 中的位置和原因修复。"
+    cli = Path(__file__).resolve().parent / "oil-ppt"
+    return {
+        "schema_version": "oil-ppt.validation/v1",
+        "ok": False,
+        "code": code,
+        "stage": stage,
+        "project": str(project),
+        "message": message,
+        "issues": issues,
+        "input_manifest": validation_input_manifest(project),
+        "next": {
+            "action": "edit_outline",
+            "path": str(project / "outline.json"),
+            "rerun": shlex.join([str(cli), "status", str(project), "--json"]),
+        },
+    }
+
+
+def browser_validate(path: Path, *, project: Path, stage: str) -> dict:
+    project = project.expanduser().resolve()
     chrome = chrome_binary()
     if not chrome:
         raise SystemExit("No Chromium browser found. Install Chrome/Chromium/Edge/Brave or set CHROME_BIN; browser loading and structure validation is required for delivery.")
@@ -157,37 +284,13 @@ def browser_validate(path: Path) -> None:
     except (OSError, RuntimeError) as error:
         raise SystemExit(f"Chromium DOM validation failed: {error}") from error
     if report.get("status") != "ok":
-        broken = report.get("brokenImages") or []
-        if broken:
-            raise SystemExit(f"Browser render validation found {len(broken)} undecodable image(s); final file was not written.")
-        invalid_bleeds = report.get("invalidBleeds") or []
-        if invalid_bleeds:
-            raise SystemExit(f"Browser render validation found {len(invalid_bleeds)} invalid full-bleed layer(s); final file was not written.")
-        invalid_layouts = report.get("invalidLayouts") or []
-        if invalid_layouts:
-            details = ", ".join(str(item.get("reason") or "invalid-layout") for item in invalid_layouts[:3])
-            raise SystemExit(
-                f"Browser render validation found {len(invalid_layouts)} invalid layout(s) "
-                f"({details}); final file was not written."
-            )
-        invalid_text = report.get("invalidText") or []
-        if invalid_text:
-            raise SystemExit(f"Browser render validation found {len(invalid_text)} overflowing fitted text block(s); final file was not written.")
-        invalid_bounds = report.get("invalidBounds") or []
-        if invalid_bounds:
-            details = ", ".join(str(item.get("node") or item.get("reason") or "invalid-bound") for item in invalid_bounds[:3])
-            raise SystemExit(
-                f"Browser render validation found {len(invalid_bounds)} component(s) outside their container "
-                f"({details}); final file was not written."
-            )
-        invalid_optional = report.get("invalidOptionalRegions") or []
-        if invalid_optional:
-            details = ", ".join(str(item.get("region") or "optional-region") for item in invalid_optional[:3])
-            raise SystemExit(
-                f"Browser render validation found {len(invalid_optional)} visible but empty optional region(s) "
-                f"({details}); final file was not written."
-            )
-        raise SystemExit("Browser render validation did not complete; final file was not written.")
+        payload = validation_failure_payload(report, project=project, stage=stage)
+        _write_json_atomic(validation_state_path(project), payload)
+        public_payload = {key: value for key, value in payload.items() if key != "input_manifest"}
+        print(json.dumps(public_payload, ensure_ascii=False, indent=2))
+        raise SystemExit(1)
+    clear_validation_state(project)
+    return report
 
 
 def build(project: Path) -> str:
@@ -380,7 +483,7 @@ def main() -> None:
         handle.write(content)
         temp = Path(handle.name)
     try:
-        browser_validate(temp)
+        browser_validate(temp, project=project, stage="build")
         verified = temp.read_text(encoding="utf-8").replace('data-validation="pending"', 'data-validation="browser"', 1)
         temp.write_text(verified, encoding="utf-8")
         os.replace(temp, out)

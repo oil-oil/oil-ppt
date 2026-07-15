@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 
 from background_presets import effective_background
+from editor_bindings import annotate_editable_fragment
 from icon_registry import CONNECTOR_ICON, icon_svg_markup
 from media_assets import outline_media_bindings
 
@@ -733,7 +734,7 @@ FILLERS = {
 }
 
 
-def fill_slide_file(path: Path, slide: dict) -> bool:
+def fill_slide_file(path: Path, slide: dict, slide_index: int) -> bool:
     template = slide.get("template")
     if not template:
         raise SystemExit(f"Slide {slide.get('id')!r} is missing template.")
@@ -757,6 +758,7 @@ def fill_slide_file(path: Path, slide: dict) -> bool:
     fragment = filler(fragment, slide)
     fragment = apply_media_attributes(fragment, slide)
     fragment = inject_backdrop_text(fragment, slide)
+    fragment = annotate_editable_fragment(fragment, slide, slide_index)
     new_text = text[: match.start(1)] + fragment + text[match.end(1) :]
     if new_text != text:
         path.write_text(new_text, encoding="utf-8")
@@ -775,7 +777,11 @@ def main() -> None:
         raise SystemExit(f"Not an oil-ppt project: {project}")
     outline = json.loads(outline_path.read_text(encoding="utf-8"))
     config = json.loads(config_path.read_text(encoding="utf-8"))
-    by_id = {s["id"]: s for s in outline.get("slides", []) if isinstance(s, dict) and s.get("id")}
+    by_id = {
+        slide["id"]: (index, slide)
+        for index, slide in enumerate(outline.get("slides", []))
+        if isinstance(slide, dict) and slide.get("id")
+    }
     filled = 0
     for relative in config.get("slides", []):
         path = project / relative
@@ -785,10 +791,11 @@ def main() -> None:
         id_match = re.search(r'data-slide-id=["\']([^"\']+)["\']', text)
         if not id_match:
             raise SystemExit(f"Slide file is missing data-slide-id: {path}")
-        slide = by_id.get(id_match.group(1))
-        if not slide:
+        indexed_slide = by_id.get(id_match.group(1))
+        if not indexed_slide:
             raise SystemExit(f"Slide {id_match.group(1)!r} is missing from outline.json")
-        if fill_slide_file(path, slide):
+        slide_index, slide = indexed_slide
+        if fill_slide_file(path, slide, slide_index):
             filled += 1
     print(json.dumps({"project": str(project), "filled": filled}, ensure_ascii=False))
 

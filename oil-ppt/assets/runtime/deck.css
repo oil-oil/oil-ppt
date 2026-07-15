@@ -332,9 +332,12 @@ p, h1, h2, h3, li, [data-fit] { overflow-wrap: anywhere; }
   pointer-events:none;
 }
 .oil-surface[data-motif="ring"]::after {
-  right:0;bottom:0;width:260px;height:260px;opacity:1;
-  border:32px solid color-mix(in srgb,var(--ink) 7%,transparent);border-radius:50%;
-  clip-path:inset(40% 0 0 40%);
+  right:-72px;bottom:-72px;width:260px;height:260px;opacity:.92;
+  border:0;border-radius:0;
+  background:color-mix(in srgb,var(--ink) 7%,transparent);
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 260 260'%3E%3Cpath d='M36 172A104 104 0 0 1 172 36' fill='none' stroke='white' stroke-width='32' stroke-linecap='round'/%3E%3C/svg%3E") center/contain no-repeat;
+  mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 260 260'%3E%3Cpath d='M36 172A104 104 0 0 1 172 36' fill='none' stroke='white' stroke-width='32' stroke-linecap='round'/%3E%3C/svg%3E") center/contain no-repeat;
+  clip-path:none;
 }
 .oil-surface[data-motif="triangle"]::after {
   right:0;top:0;width:240px;height:210px;opacity:1;

@@ -13,9 +13,11 @@ import subprocess
 import sys
 import tempfile
 import time
+import webbrowser
 from pathlib import Path
 
 from background_presets import BACKGROUND_PRESETS, INTERNAL_BACKGROUNDS, template_background
+from build_deck import VALIDATION_STATE_NAME, browser_validate, current_validation_failure, validation_state_path
 from capability_catalog import (
     FAMILY_GUIDANCE, PROGRAM_OWNED_CAPABILITIES, SELECTION_ORDER,
     TEMPLATE_DISCOVERY, VARIANT_HELP,
@@ -1305,6 +1307,7 @@ def print_media_plan(target: Path, *, write: bool, output: Path | None) -> None:
         protected = {
             outline.resolve(), project_state_path(outline.parent).resolve(), preview_state_path(outline).resolve(),
             (outline.parent / BUILD_STATE_NAME).resolve(), (outline.parent / "deck.json").resolve(),
+            validation_state_path(outline.parent).resolve(),
         }
         if destination in protected:
             raise SystemExit(f"Media plan output conflicts with a protected project file: {destination.name}")
@@ -1529,6 +1532,7 @@ def status_payload(project_arg: Path) -> dict:
         except (json.JSONDecodeError, SystemExit) as error:
             plan_error = str(error)
     preview_status, preview_state, stale_reason = preview_state_status(outline)
+    validation_failure = current_validation_failure(project)
     if isinstance(preview_state, dict) and preview_state.get("preview"):
         candidate = Path(str(preview_state["preview"])).expanduser().resolve()
         if candidate.parent == project:
@@ -1585,6 +1589,19 @@ def status_payload(project_arg: Path) -> dict:
                 "path": str(outline),
                 "reference_command": cli_command("contract", "--example"),
             }
+    elif validation_failure:
+        phase = "needs_render_fix"
+        blockers.append({
+            "path": str(validation_state_path(project)),
+            "message": str(validation_failure.get("message") or "真实浏览器检测到渲染问题"),
+        })
+        next_command = None
+        next_action = str((validation_failure.get("next") or {}).get("action") or "edit_outline")
+        next_details = {
+            "path": str((validation_failure.get("next") or {}).get("path") or outline),
+            "issues": validation_failure.get("issues") or [],
+            "rerun": str((validation_failure.get("next") or {}).get("rerun") or cli_command("status", project, "--json")),
+        }
     elif preview_status in {"missing", "stale"}:
         phase = "needs_preview"
         blockers.append({"path": str(preview), "message": stale_reason or "尚未生成当前计划对应的预览"})
@@ -1671,7 +1688,7 @@ def preview_output_path(outline: Path, output: Path | None) -> Path:
     reserved = {
         outline.resolve(), project / "outline.md", project_state_path(project), preview_state_path(outline),
         project / BUILD_STATE_NAME, project / "deck.json", project / "media-plan.json",
-        project / DEFAULT_FINAL_NAME, edit_draft_path(project),
+        project / DEFAULT_FINAL_NAME, edit_draft_path(project), project / VALIDATION_STATE_NAME,
     }
     if target in {path.resolve() for path in reserved}:
         raise SystemExit(f"Preview output conflicts with a protected project file: {target.name}")
@@ -1728,10 +1745,11 @@ def generate_preview(
                     previous_preview = candidate
         except json.JSONDecodeError:
             previous_preview = None
-    command = [str(outline), "--out", str(target)]
-    if not open_browser:
-        command.append("--no-open")
+    # Render first, validate the actual thumbnail iframes, and only then open it.
+    # This keeps the public preview command as the single render-quality gate.
+    command = [str(outline), "--out", str(target), "--no-open"]
     run_script("render_outline_review.py", command)
+    browser_validate(target, project=project, stage="preview")
     if previous_preview and previous_preview != target:
         previous_preview.unlink(missing_ok=True)
     atomic_write_json(state_path, {
@@ -1744,6 +1762,8 @@ def generate_preview(
         "assets": asset_manifest(outline),
         "confirmed": False,
     })
+    if open_browser:
+        webbrowser.open(target.as_uri())
     payload = {
         "ok": True,
         "phase": "needs_preview_confirmation",
