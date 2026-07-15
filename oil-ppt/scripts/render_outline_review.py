@@ -608,6 +608,9 @@ def rhythm_panel(data: dict, slides: list[dict]) -> str:
 
     def issue_hint(item: dict) -> str:
         suggestion = item.get("suggestion") or {}
+        signals = suggestion.get("signals") or []
+        if signals:
+            return "信号：" + "、".join(str(signal.get("code") or "") for signal in signals)
         changes = suggestion.get("set_background") or {}
         if changes:
             return "建议：" + "，".join(f"{slide_id} → {background}" for slide_id, background in changes.items())
@@ -623,6 +626,7 @@ def rhythm_panel(data: dict, slides: list[dict]) -> str:
 
     summary = audit_summary(data)
     aesthetic_codes = {
+        "layout-rhythm", "media-rhythm", "media-composition", "background-rhythm", "emphasis-rhythm",
         "background-monotony", "background-class-monotony", "background-run", "highlight-absence", "highlight-saturation",
         "backdrop-saturation", "component-dominance", "missing-focal-beat",
         "missing-cinematic-beat", "media-energy-concentration", "media-shape-monotony", "inset-media-run", "specialized-capability-suggestion",

@@ -19,7 +19,15 @@ scripts/oil-ppt
 
 执行前解析成绝对路径，不依赖当前工作目录，也不直接调用内部脚本。
 
-项目建立后，任何阶段都先运行：
+处理现有项目、批量验收或最终交付时，默认运行：
+
+```text
+scripts/oil-ppt batch <项目或父目录> [更多项目或父目录]
+```
+
+`batch` 自动发现项目，集中完成可确定的 `plan`、无界面 `preview` 与已确认项目的 `build`，一次返回所有素材、审计和浏览器渲染阻塞；不会打开编辑器，也不会替用户确认。用户明确确认全部待确认预览后，执行返回的 `next.command`，即追加 `--user-confirmed-preview` 的同一批处理命令。
+
+新建单个演示、需要进入可视化文字编辑，或批处理返回单项目阻塞时，再运行：
 
 ```text
 scripts/oil-ppt status <项目> --json
@@ -33,7 +41,7 @@ scripts/oil-ppt status <项目> --json
 - `start_editor`：启动 `next.command` 后立即把页面交给用户，不等待这个本地服务退出；用户点击“完成编辑”后重新运行 `status`。
 - `wait_for_editor` / `complete` / `choose_project_directory`：停止，不猜测下一命令。
 
-不要替用户确认，也不要凭记忆拼接旧流程。
+不要替用户确认，也不要凭记忆拼接旧流程；多个项目不得逐套手工重复这些命令。
 
 ## 新建流程
 
@@ -121,7 +129,7 @@ scripts/oil-ppt build <项目>
 
 ## 修改与交付
 
-修改现有项目时只读取用户明确指定的项目，并先运行 `status --json`。内容结构变化先同步 `outline.md`；所有输入变化都服从状态机重新确认。
+修改现有项目时只读取用户明确指定的项目或父目录，并先运行 `batch`；只有返回单项目阻塞、需要编辑文字或继续新建交互时才查看该项目的 `status --json`。内容结构变化先同步 `outline.md`；所有输入变化都服从状态机重新确认。
 
 最终入口固定为项目根目录的 `演示文稿.html`。故障时读取 `references/troubleshooting.md`。
 

@@ -17,6 +17,11 @@ import urllib.request
 from pathlib import Path
 
 
+VISUAL_FINDING_CATEGORIES = frozenset({
+    "content-bounds", "surface-clipping", "decoration", "ring-geometry", "surface-paint", "line-density",
+})
+
+
 def _recv_exact(sock: socket.socket, size: int) -> bytes:
     chunks: list[bytes] = []
     while size:
@@ -168,7 +173,7 @@ def validate_file(
             .filter(Boolean)];
           const slideDocuments = documents.filter(doc => doc.querySelector('.oil-slide'));
           const all = selector => documents.flatMap(doc => [...doc.querySelectorAll(selector)]);
-          const styleOf = node => node.ownerDocument.defaultView.getComputedStyle(node);
+          const styleOf = (node, pseudo=null) => node.ownerDocument.defaultView.getComputedStyle(node, pseudo);
           const slidesNodes = all('.oil-slide');
           const slides = slidesNodes.length;
           const stage = all('.deck-stage, .slide-preview-stage')[0] || null;
@@ -283,6 +288,183 @@ def validate_file(
               region:region.dataset.optionalRegion || region.className || region.tagName.toLowerCase()
             }];
           });
+          const visible = node => {
+            if (!node?.getClientRects().length) return false;
+            const style = styleOf(node);
+            return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || 1) > .001;
+          };
+          const insideRect = (box, bounds, tolerance=3) => box.left >= bounds.left - tolerance
+            && box.right <= bounds.right + tolerance && box.top >= bounds.top - tolerance
+            && box.bottom <= bounds.bottom + tolerance;
+          const invalidContentBounds = all('.slide-safe [data-fit], .slide-safe img, .slide-safe video, .slide-safe canvas, .slide-safe svg').flatMap(node => {
+            if (!visible(node) || node.closest('[data-bleed]')) return [];
+            const owner = node.parentElement?.closest('[data-bound], [data-layout], .oil-surface, .oil-media, .oil-browser');
+            if (!owner || owner === node || !visible(owner)) return [];
+            const box = node.getBoundingClientRect();
+            const bounds = owner.getBoundingClientRect();
+            if (insideRect(box, bounds)) return [];
+            return [{
+              slide:node.closest('.oil-slide')?.dataset.slideId || 'unknown',
+              reason:'content-outside-semantic-container',
+              node:node.className?.baseVal || node.className || node.tagName.toLowerCase(),
+              owner:owner.className || owner.tagName.toLowerCase()
+            }];
+          });
+          const clipOwners = '.oil-media, .oil-browser, [data-clip="media"], [data-clip="browser"], [data-clip="shape"]';
+          const invalidSurfaceClips = all('.oil-surface').flatMap(surface => {
+            if (!visible(surface)) return [];
+            const style = styleOf(surface);
+            const clips = ['hidden', 'clip'].includes(style.overflowX) || ['hidden', 'clip'].includes(style.overflowY);
+            if (!clips || surface.matches(clipOwners)) return [];
+            return [{
+              slide:surface.closest('.oil-slide')?.dataset.slideId || 'unknown',
+              reason:'surface-clips-content',
+              node:surface.className || surface.tagName.toLowerCase(),
+              overflow:`${style.overflowX}/${style.overflowY}`
+            }];
+          });
+          const px = value => {
+            const parsed = Number.parseFloat(value);
+            return Number.isFinite(parsed) ? parsed : null;
+          };
+          const pseudoRect = (owner, style) => {
+            const bounds = owner.getBoundingClientRect();
+            const scaleX = owner.offsetWidth ? bounds.width / owner.offsetWidth : 1;
+            const scaleY = owner.offsetHeight ? bounds.height / owner.offsetHeight : 1;
+            const rawWidth = px(style.width), rawHeight = px(style.height);
+            const width = rawWidth === null ? null : rawWidth * scaleX;
+            const height = rawHeight === null ? null : rawHeight * scaleY;
+            if (width === null || height === null) return null;
+            const left = px(style.left), right = px(style.right), top = px(style.top), bottom = px(style.bottom);
+            const x = left !== null ? bounds.left + left * scaleX : right !== null ? bounds.right - right * scaleX - width : null;
+            const y = top !== null ? bounds.top + top * scaleY : bottom !== null ? bounds.bottom - bottom * scaleY - height : null;
+            return x === null || y === null ? null : {left:x, top:y, right:x + width, bottom:y + height, width, height};
+          };
+          const pseudoVisible = style => style.content !== 'none' && style.display !== 'none'
+            && style.visibility !== 'hidden' && Number(style.opacity || 1) > .001;
+          const insetClipRect = (box, clipPath) => {
+            const match = clipPath.match(/^inset\\(([^)]*)\\)/);
+            if (!box || !match) return box;
+            const values = [...match[1].split(/\\bround\\b/)[0].matchAll(/(-?[\\d.]+)(%)/g)]
+              .map(item => Number(item[1]) / 100);
+            if (!values.length) return box;
+            const [top, right, bottom, left] = values.length === 1
+              ? [values[0], values[0], values[0], values[0]]
+              : values.length === 2 ? [values[0], values[1], values[0], values[1]]
+              : values.length === 3 ? [values[0], values[1], values[2], values[1]] : values;
+            return {
+              left:box.left + box.width * left, right:box.right - box.width * right,
+              top:box.top + box.height * top, bottom:box.bottom - box.height * bottom,
+            };
+          };
+          const invalidDecorations = all('.oil-surface[data-decor]').flatMap(surface => {
+            if (!visible(surface) || surface.dataset.decor === 'none' || surface.dataset.decor === '') return [];
+            const style = styleOf(surface);
+            if (style.getPropertyValue('--decor-opacity').trim() === '0') return [];
+            const pseudo = styleOf(surface, '::after');
+            if (!pseudoVisible(pseudo)) return [];
+            const position = surface.dataset.decorPos || 'top-right';
+            const [vertical, horizontal] = position.split('-');
+            const box = pseudoRect(surface, pseudo);
+            const bounds = surface.getBoundingClientRect();
+            const scaleX = surface.offsetWidth ? bounds.width / surface.offsetWidth : 1;
+            const scaleY = surface.offsetHeight ? bounds.height / surface.offsetHeight : 1;
+            const horizontalInset = px(style.getPropertyValue(`--decor-${horizontal}`));
+            const verticalInset = px(style.getPropertyValue(`--decor-${vertical}`));
+            const expectedLeft = box && horizontalInset !== null
+              ? (horizontal === 'left' ? bounds.left + horizontalInset * scaleX : bounds.right - horizontalInset * scaleX - box.width) : null;
+            const expectedTop = box && verticalInset !== null
+              ? (vertical === 'top' ? bounds.top + verticalInset * scaleY : bounds.bottom - verticalInset * scaleY - box.height) : null;
+            const wrongAnchor = !box || expectedLeft === null || expectedTop === null
+              || Math.abs(box.left - expectedLeft) > 3 || Math.abs(box.top - expectedTop) > 3;
+            const slide = surface.closest('.oil-slide');
+            const outsideSlide = box && slide && pseudo.clipPath === 'none'
+              && !insideRect(box, slide.getBoundingClientRect(), 3);
+            return [
+              ...(wrongAnchor ? [{
+                slide:slide?.dataset.slideId || 'unknown', reason:'decoration-anchor-mismatch',
+                decoration:surface.dataset.motif || surface.dataset.decor || 'unknown', expected:position
+              }] : []),
+              ...(outsideSlide ? [{
+                slide:slide?.dataset.slideId || 'unknown', reason:'decoration-outside-slide',
+                decoration:surface.dataset.motif || surface.dataset.decor || 'unknown'
+              }] : [])
+            ];
+          });
+          const invalidMotifBounds = all('.oil-surface[data-motif]').flatMap(surface => {
+            if (!visible(surface)) return [];
+            const pseudo = styleOf(surface, '::after');
+            if (!pseudoVisible(pseudo)) return [];
+            const box = insetClipRect(pseudoRect(surface, pseudo), pseudo.clipPath);
+            const slide = surface.closest('.oil-slide');
+            return box && slide && !insideRect(box, slide.getBoundingClientRect(), 3) ? [{
+              slide:slide.dataset.slideId || 'unknown', reason:'decoration-outside-slide',
+              decoration:surface.dataset.motif || 'unknown'
+            }] : [];
+          });
+          const invalidRingGeometry = all('.oil-surface[data-motif="ring"]').flatMap(surface => {
+            if (!visible(surface) || styleOf(surface).getPropertyValue('--decor-opacity').trim() === '0') return [];
+            const pseudo = styleOf(surface, '::after');
+            if (!pseudoVisible(pseudo)) return [];
+            const box = pseudoRect(surface, pseudo);
+            const borders = [pseudo.borderTopWidth, pseudo.borderRightWidth, pseudo.borderBottomWidth, pseudo.borderLeftWidth].map(px);
+            const uniformBorder = borders.every(value => value !== null && value >= 3)
+              && Math.max(...borders) - Math.min(...borders) <= 1;
+            const radius = px(pseudo.borderTopLeftRadius);
+            const clippedQuadrant = /^inset\\(/.test(pseudo.clipPath)
+              && (pseudo.clipPath.match(/(?:[3-9]\\d|100)(?:\\.\\d+)?%/g) || []).length >= 2;
+            const borderCircle = box && Math.abs(box.width - box.height) <= Math.max(2, box.width * .04)
+              && uniformBorder && radius !== null && radius >= Math.min(box.width, box.height) * .45;
+            const inner = px(pseudo.getPropertyValue('--oil-ring-inner'));
+            const outer = px(pseudo.getPropertyValue('--oil-ring-outer'));
+            const radialCircle = box && Math.abs(box.width - box.height) <= Math.max(2, box.width * .04)
+              && pseudo.backgroundImage.includes('radial-gradient')
+              && inner !== null && outer !== null && outer - inner >= 6;
+            if (clippedQuadrant && (borderCircle || radialCircle)) return [];
+            return [{
+              slide:surface.closest('.oil-slide')?.dataset.slideId || 'unknown',
+              reason:'ring-is-not-circular', node:surface.className || surface.tagName.toLowerCase()
+            }];
+          });
+          const gradientCount = value => (value.match(/(?:repeating-)?(?:linear|radial|conic)-gradient\\(/g) || []).length;
+          const invalidPaint = all('.oil-surface:not(.oil-media)').flatMap(surface => {
+            if (!visible(surface)) return [];
+            const layers = [styleOf(surface), styleOf(surface, '::before'), styleOf(surface, '::after')]
+              .map(style => gradientCount(`${style.backgroundImage} ${style.maskImage}`));
+            const excessive = layers.findIndex(count => count > 2);
+            return excessive < 0 ? [] : [{
+              slide:surface.closest('.oil-slide')?.dataset.slideId || 'unknown',
+              reason:'excessive-gradient-layers', layer:['element', 'before', 'after'][excessive], count:layers[excessive]
+            }];
+          });
+          const paintedLine = (style, width, height) => {
+            const short = Math.min(width, height), long = Math.max(width, height);
+            if (!(short > 0 && short <= 2.5 && long >= 48 && long / short >= 12)) return false;
+            const hasBackground = style.backgroundColor !== 'transparent' && style.backgroundColor !== 'rgba(0, 0, 0, 0)';
+            const border = [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth]
+              .map(px).some(value => value !== null && value > 0);
+            return hasBackground || style.backgroundImage !== 'none' || border;
+          };
+          const excessiveHairlines = slidesNodes.flatMap(slide => {
+            const lines = [];
+            for (const node of [slide, ...slide.querySelectorAll('*')]) {
+              if (!visible(node) || node.closest('[data-visual-edge]') || node.matches('.oil-browser, .oil-browser *')) continue;
+              const box = node.getBoundingClientRect();
+              if (paintedLine(styleOf(node), box.width, box.height)) lines.push(node.className || node.tagName.toLowerCase());
+              for (const pseudoName of ['::before', '::after']) {
+                const pseudo = styleOf(node, pseudoName);
+                if (!pseudoVisible(pseudo)) continue;
+                const pseudoBox = pseudoRect(node, pseudo);
+                if (pseudoBox && paintedLine(pseudo, pseudoBox.width, pseudoBox.height)) {
+                  lines.push(`${node.className || node.tagName.toLowerCase()}${pseudoName}`);
+                }
+              }
+            }
+            return lines.length <= 3 ? [] : [{
+              slide:slide.dataset.slideId || 'unknown', reason:'excessive-unowned-hairlines',
+              count:lines.length, nodes:lines.slice(0, 6)
+            }];
+          });
           const tokenRoot = slideDocuments[0]?.documentElement || document.documentElement;
           const rootStyle = tokenRoot ? tokenRoot.ownerDocument.defaultView.getComputedStyle(tokenRoot) : null;
           const stageRect = stage?.getBoundingClientRect();
@@ -300,6 +482,15 @@ def validate_file(
           invalidCopyFlows,
           invalidBounds,
           invalidOptionalRegions,
+          visualFindings: [
+            ...invalidContentBounds.map(item => ({...item, category:'content-bounds'})),
+            ...invalidSurfaceClips.map(item => ({...item, category:'surface-clipping'})),
+            ...invalidDecorations.map(item => ({...item, category:'decoration'})),
+            ...invalidMotifBounds.map(item => ({...item, category:'decoration'})),
+            ...invalidRingGeometry.map(item => ({...item, category:'ring-geometry'})),
+            ...invalidPaint.map(item => ({...item, category:'surface-paint'})),
+            ...excessiveHairlines.map(item => ({...item, category:'line-density'}))
+          ],
           viewport: {width:innerWidth, height:innerHeight},
           stage: stageRect ? {
             left:stageRect.left, top:stageRect.top, right:stageRect.right, bottom:stageRect.bottom,

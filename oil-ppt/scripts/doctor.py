@@ -5,24 +5,27 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 from build_deck import chrome_binary
-from cdp_validate import validate_file
+from capability_recommender import recommend_outline
+from cdp_validate import VISUAL_FINDING_CATEGORIES, validate_file
 from component_contracts import COMPONENT_CONTRACTS
 from design_quality import audit_summary
 from fill_slots import set_slot_text_force
-from media_assets import inspect_image
+from media_assets import inspect_image, inspect_outline_media, verify_outline_media
 from media_frame import frame_media
 from media_plan import build_media_plan
 from outline_schema import validate_outline
 from render_programmatic_visual import render_html_visual
 from render_outline_review import EDITOR_FRAME_CSS, PREVIEW_SHELL_CSS, RUNTIME_CSS, RUNTIME_JS, prepared_slide, render, theme_css
 from text_editor import EditorSession
-from validate_skill import validate_skill
+from validate_skill import gradient_design_issues, validate_skill
+import oil_ppt as workflow
 
 
 def mark(ok: bool) -> str:
@@ -149,6 +152,7 @@ def render_component_matrix(root: Path, browser: str) -> int:
         or report.get("slides") != index
         or report.get("brokenImages")
         or report.get("invalidBleeds")
+        or report.get("visualFindings")
         or not theme_ok
     ):
         raise RuntimeError(f"component matrix browser validation failed: {report}")
@@ -218,9 +222,59 @@ def verify_optional_region_guard(root: Path, browser: str) -> None:
         raise RuntimeError(f"process-cards optional collapse did not survive browser validation: {positive_report}")
 
 
+def verify_visual_quality_guards(root: Path, browser: str) -> None:
+    """Prove maintenance-only visual findings catch semantic regressions without blocking user builds."""
+    probe = root / "invalid-visual-quality-probe.html"
+    probe.write_text(
+        "<!doctype html><html data-oil-validated='ok'><head><style>"
+        + RUNTIME_CSS
+        + """
+        .quality-probe .oil-surface{position:relative;width:420px;height:220px;margin:20px}
+        .bad-clip{overflow:hidden!important}
+        .bad-anchor::after{top:0!important;right:0!important;bottom:auto!important;left:auto!important}
+        .bad-ring::after{right:0!important;top:0!important;width:220px!important;height:130px!important;
+          border:24px solid rgba(0,0,0,.08)!important;border-radius:36px!important;background:none!important;clip-path:none!important}
+        .bad-overflow::after{right:-2100px!important;top:0!important}
+        .bad-paint{background-image:linear-gradient(90deg,transparent,rgba(0,0,0,.03)),
+          linear-gradient(0deg,transparent,rgba(0,0,0,.03)),linear-gradient(45deg,transparent,rgba(0,0,0,.03))!important}
+        .spilling-copy{position:absolute;left:380px;top:80px;width:90px;height:40px}
+        .hairline{display:block;width:180px;height:1px;margin:8px;background:rgba(0,0,0,.2)}
+        """
+        + "</style></head><body data-oil-mode='preview'><main class='slide-preview-stage'>"
+        + "<section class='oil-slide quality-probe' data-slide-id='surface-clip'><div class='slide-safe'>"
+          "<article class='oil-surface bad-clip' data-tone='neutral'></article></div></section>"
+        + "<section class='oil-slide quality-probe' data-slide-id='decor-anchor'><div class='slide-safe'>"
+          "<article class='oil-surface bad-anchor' data-tone='neutral' data-decor='dots' data-decor-pos='bottom-left'></article></div></section>"
+        + "<section class='oil-slide quality-probe' data-slide-id='ring-shape'><div class='slide-safe'>"
+          "<article class='oil-surface bad-ring' data-tone='neutral' data-motif='ring'></article></div></section>"
+        + "<section class='oil-slide quality-probe' data-slide-id='motif-overflow'><div class='slide-safe'>"
+          "<article class='oil-surface bad-overflow' data-tone='neutral' data-motif='triangle'></article></div></section>"
+        + "<section class='oil-slide quality-probe' data-slide-id='surface-paint'><div class='slide-safe'>"
+          "<article class='oil-surface bad-paint' data-tone='neutral'></article></div></section>"
+        + "<section class='oil-slide quality-probe' data-slide-id='content-bounds'><div class='slide-safe'>"
+          "<article class='oil-surface' data-tone='neutral'><span class='spilling-copy' data-fit>越界内容</span></article></div></section>"
+        + "<section class='oil-slide quality-probe' data-slide-id='line-density'><div class='slide-safe'>"
+          "<article class='oil-surface' data-tone='neutral'>"
+          + "".join("<span class='hairline'></span>" for _ in range(5))
+          + "</article></div></section></main></body></html>",
+        encoding="utf-8",
+    )
+    report = validate_file(browser, probe, timeout=10)
+    probe.unlink(missing_ok=True)
+    findings = report.get("visualFindings") or []
+    reasons = {item.get("reason") for item in findings}
+    categories = {item.get("category") for item in findings}
+    expected = {
+        "surface-clips-content", "decoration-anchor-mismatch", "ring-is-not-circular",
+        "decoration-outside-slide", "excessive-gradient-layers", "content-outside-semantic-container",
+        "excessive-unowned-hairlines",
+    }
+    if report.get("status") != "ok" or not expected.issubset(reasons) or categories != set(VISUAL_FINDING_CATEGORIES):
+        raise RuntimeError(f"visual quality guards missed semantic regressions: expected={sorted(expected)}, report={report}")
+
+
 def verify_specialized_capability_advice() -> None:
-    summary = audit_summary({
-        "media_policy": "text-only",
+    ambiguous = recommend_outline({
         "slides": [{
             "id": "generic-four-step",
             "title": "四步完成交付",
@@ -230,17 +284,130 @@ def verify_specialized_capability_advice() -> None:
             "steps": [{"label": f"动作{i}", "body": f"完成第{i}个动作"} for i in range(1, 5)],
         }],
     })
-    if summary.get("status") != "warning" or not any(
-        item.get("code") == "specialized-capability-suggestion"
-        and item.get("level") == "warning"
-        and item.get("blocking") is False
-        for item in summary.get("issues") or []
+    if ambiguous.get("review_count") != 0:
+        raise RuntimeError(f"ambiguous four-step content became a forced recommendation: {ambiguous}")
+
+    keyword_only = recommend_outline({
+        "slides": [{
+            "id": "keyword-only",
+            "title": "全屏斜切浏览器转向",
+            "template": "split-visual",
+            "variant": "balanced",
+            "decor": "none",
+            "image": "assets/smoke.svg",
+            "media_intent": "铺满整页并形成方向冲突",
+        }],
+    })
+    if keyword_only.get("review_count") != 0:
+        raise RuntimeError(f"free-text keywords became a forced recommendation: {keyword_only}")
+
+    summary = audit_summary({
+        "media_policy": "text-only",
+        "slides": [{
+            "id": "structured-quote",
+            "title": "一个明确引用",
+            "template": "timeline",
+            "variant": "default",
+            "decor": "none",
+            "quote": "结构化引用",
+            "source": "可核验来源",
+        }],
+    })
+    if (
+        summary.get("status") != "ok"
+        or (summary.get("capability_review") or {}).get("review_count") != 1
+        or summary.get("issues")
     ):
-        raise RuntimeError(f"specialized capability advice did not remain non-blocking: {summary}")
+        raise RuntimeError(f"structured capability advice did not remain separate and non-blocking: {summary}")
+
+
+def verify_batch_confirmation_boundary() -> None:
+    """A confirmation flag must never approve a preview made in the same run."""
+    with tempfile.TemporaryDirectory(prefix="oil-ppt-batch-boundary-") as temp_dir:
+        project = Path(temp_dir) / "project"
+        project.mkdir()
+        phases = {project: "needs_preview"}
+        calls: list[str] = []
+
+        def fake_status(target: Path) -> dict:
+            phase = phases[target]
+            return {
+                "phase": phase,
+                "next": {"action": "start_editor" if phase == "needs_preview" else "ask_user_to_confirm_preview"},
+            }
+
+        def fake_step(command: str, target: Path, *arguments: str) -> dict:
+            calls.append(command)
+            if command == "preview":
+                phases[target] = "needs_preview_confirmation"
+            elif command == "confirm":
+                phases[target] = "ready_to_build"
+            elif command == "build":
+                phases[target] = "complete"
+            return {"ok": True, "returncode": 0, "stdout": "", "stderr": ""}
+
+        originals = workflow.discover_projects, workflow.status_payload, workflow.run_batch_step
+        try:
+            workflow.discover_projects = lambda _: [project]
+            workflow.status_payload = fake_status
+            workflow.run_batch_step = fake_step
+            first = workflow.batch_projects([project], user_confirmed_preview=True)
+            if calls != ["preview"] or first["next"]["action"] != "ask_user_to_confirm_previews":
+                raise RuntimeError(f"batch confirmed a preview generated in the same invocation: {first}, calls={calls}")
+
+            calls.clear()
+            second = workflow.batch_projects([project], user_confirmed_preview=True)
+            if calls != ["confirm", "build"] or second["next"]["action"] != "complete":
+                raise RuntimeError(f"batch did not advance a previously awaiting preview: {second}, calls={calls}")
+
+            project_two = Path(temp_dir) / "project-two"
+            project_two.mkdir()
+            phases[project] = phases[project_two] = "needs_preview_confirmation"
+            workflow.discover_projects = lambda _: [project, project_two]
+            calls.clear()
+            relative_targets = [Path("relative-one"), Path("relative-two")]
+            multi = workflow.batch_projects(relative_targets, user_confirmed_preview=False)
+            command = shlex.split(str(multi["next"]["command"]))
+            expected_targets = [str(target.resolve()) for target in relative_targets]
+            if (
+                calls
+                or multi["next"]["action"] != "ask_user_to_confirm_previews"
+                or command[-1] != "--user-confirmed-preview"
+                or command[-3:-1] != expected_targets
+            ):
+                raise RuntimeError(f"multi-project batch did not return one portable confirmation command: {multi}")
+        finally:
+            workflow.discover_projects, workflow.status_payload, workflow.run_batch_step = originals
+
+
+def verify_media_error_aggregation() -> None:
+    with tempfile.TemporaryDirectory(prefix="oil-ppt-media-errors-") as temp_dir:
+        root = Path(temp_dir)
+        data = {
+            "slides": [
+                {"id": "one", "image": "assets/missing-one.png"},
+                {"id": "two", "image": "assets/missing-two.png"},
+                {"id": "three", "image": "https://example.com/remote.png"},
+            ],
+        }
+        report = inspect_outline_media(data, root)
+        if report["count"] != 0 or len(report["errors"]) != 3:
+            raise RuntimeError(f"media inspection stopped before aggregating every invalid binding: {report}")
+        try:
+            verify_outline_media(data, root)
+        except SystemExit as error:
+            if str(error).count("\n- slide") != 3:
+                raise RuntimeError(f"media verification did not report all invalid bindings: {error}") from error
+        else:
+            raise RuntimeError("media verification accepted invalid bindings")
 
 
 def verify_regression_guards(entry: Path) -> None:
     templates = Path(__file__).resolve().parent.parent / "assets" / "templates"
+    clean_gradient = ".surface{background:linear-gradient(145deg,#fafaf8,rgb(246,244,239))}"
+    dirty_gradient = ".surface{background:linear-gradient(90deg,#ff3355,#33ccff)}"
+    if gradient_design_issues(clean_gradient) or not gradient_design_issues(dirty_gradient):
+        raise RuntimeError("gradient token guard did not distinguish theme-owned paint from hardcoded chromatic paint")
     rhythm_slide = {
         "id": "auto-backdrop", "title": "把重点留给重点", "highlight": "重点",
         "template": "section", "variant": "default", "decor": "none",
@@ -470,8 +637,8 @@ def verify_regression_guards(entry: Path) -> None:
     })
     if not any(item.get("code") == "media-required" for item in no_media.get("issues") or []):
         raise RuntimeError("short media-required decks can still pass with zero visible media")
-    if any(item.get("code") == "media-coverage" for item in no_media.get("issues") or []):
-        raise RuntimeError("zero-media decks report both media-required and media-coverage for the same defect")
+    if any(item.get("code") == "media-rhythm" for item in no_media.get("issues") or []):
+        raise RuntimeError("zero-media decks report both media-required and media-rhythm for the same defect")
 
     sparse_visual_slides = [
         {"id": "m1", "title": "媒体", "template": "split-visual", "variant": "balanced", "decor": "none", "image": "assets/smoke.svg", "media_frame": "content", "background": "soft-spotlight"},
@@ -485,9 +652,10 @@ def verify_regression_guards(entry: Path) -> None:
     ]
     sparse_media = audit_summary({"media_policy": "required", "slides": sparse_visual_slides})
     if not any(
-        item.get("code") == "media-coverage"
+        item.get("code") == "media-rhythm"
         and item.get("level") == "warning"
         and item.get("blocking") is False
+        and any(signal.get("code") == "media-coverage" for signal in (item.get("suggestion") or {}).get("signals") or [])
         for item in sparse_media.get("issues") or []
     ):
         raise RuntimeError("sparse media coverage did not remain visible as non-blocking advice")
@@ -499,7 +667,7 @@ def verify_regression_guards(entry: Path) -> None:
         slide["background"] = "grid-fade"
     monotone = audit_summary({"media_policy": "text-only", "slides": monotone_slides})
     if not any(
-        item.get("code") in {"background-monotony", "background-class-monotony"}
+        item.get("code") == "background-rhythm"
         and item.get("level") == "warning"
         and item.get("blocking") is False
         for item in monotone.get("issues") or []
@@ -510,7 +678,11 @@ def verify_regression_guards(entry: Path) -> None:
     for index, slide in enumerate(same_class_slides):
         slide["background"] = "grid-fade" if index % 2 == 0 else "grid-wide"
     same_class = audit_summary({"media_policy": "text-only", "slides": same_class_slides})
-    if not any(item.get("code") == "background-class-monotony" for item in same_class.get("issues") or []):
+    if not any(
+        item.get("code") == "background-rhythm"
+        and any(signal.get("code") == "background-class-monotony" for signal in (item.get("suggestion") or {}).get("signals") or [])
+        for item in same_class.get("issues") or []
+    ):
         raise RuntimeError("mixed preset names bypassed same-class background monotony")
 
     media_owned = [
@@ -711,6 +883,8 @@ def main() -> None:
 
     validate_skill()
     verify_specialized_capability_advice()
+    verify_batch_confirmation_boundary()
+    verify_media_error_aggregation()
     verify_regression_guards(entry)
     verify_media_policy_interface(entry)
 
@@ -822,6 +996,7 @@ def main() -> None:
                 verify_responsive_stage(root, browser)
                 verify_layout_containment_guard(root, browser)
                 verify_optional_region_guard(root, browser)
+                verify_visual_quality_guards(root, browser)
                 matrix_count = render_component_matrix(root, browser)
                 matrix_ok = matrix_count > 0
             smoke_deck_slides = smoke_slides()

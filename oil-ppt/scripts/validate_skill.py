@@ -9,6 +9,7 @@ from pathlib import Path
 
 from background_presets import ALL_BACKGROUNDS, BACKGROUND_PRESETS, BACKGROUND_UI_LABELS, template_background
 from capability_catalog import DECOR_UI_LABELS, PROGRAM_OWNED_CAPABILITIES, TEMPLATE_DISCOVERY, VARIANT_HELP, VARIANT_UI_LABELS
+from cdp_validate import VISUAL_FINDING_CATEGORIES
 from component_contracts import COMPONENT_CONTRACTS, COMPONENT_QUALITY, PAGE_BLEND_TEMPLATES, VARIANT_QUALITY, effective_media_fit, effective_media_surface
 from fill_slots import FILLERS, MEDIA_FIT_DEFAULTS
 from icon_registry import ICON_CATALOG, verify_icons
@@ -20,11 +21,58 @@ from media_plan import MEDIA_SLOTS, MEDIA_VARIANT_SLOTS
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES = ROOT / "assets" / "templates"
 SKILL = ROOT / "SKILL.md"
-CLIPPABLE_TEMPLATE_SELECTORS = ("figure", "media", "visual", "photo", "canvas")
+TEMPLATE_CLIP_ROLES = {"media", "browser", "shape"}
 ADAPTIVE_COPY_TEMPLATES = {
     "bleed-split", "browser-showcase", "cover", "diagonal-split", "editorial-feature", "end",
     "metric", "photo-gradient", "photo-split", "recap", "section", "split-visual",
 }
+
+
+def gradient_design_issues(text: str) -> list[str]:
+    """Return token-level gradient issues without depending on business copy or pixel snapshots."""
+    def channel_spread(channels: list[float]) -> float:
+        return max(channels) - min(channels)
+
+    def hex_channels(color: str) -> list[float]:
+        digits = color.removeprefix("#")
+        if len(digits) in {3, 4}:
+            return [float(int(digit * 2, 16)) for digit in digits[:3]]
+        return [float(int(digits[index:index + 2], 16)) for index in (0, 2, 4)]
+
+    def rgb_channels(value: str) -> list[float]:
+        channels: list[float] = []
+        for token in re.findall(r"\d+(?:\.\d+)?%?", value)[:3]:
+            channels.append(float(token[:-1]) * 2.55 if token.endswith("%") else float(token))
+        return channels
+
+    issues: list[str] = []
+    declarations = re.findall(
+        r"(?:background(?:-image)?|(?:-webkit-)?mask-image)\s*:\s*([^;}]*gradient[^;}]*)(?:;|})",
+        text,
+        re.I,
+    )
+    for value in declarations:
+        layer_count = len(re.findall(r"(?:repeating-)?(?:linear|radial|conic)-gradient\s*\(", value, re.I))
+        if layer_count > 2:
+            issues.append(f"uses {layer_count} stacked gradient layers")
+        chromatic_hex = [
+            color for color in re.findall(r"#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})\b", value, re.I)
+            if channel_spread(hex_channels(color)) > 20
+        ]
+        if chromatic_hex:
+            issues.append(f"hardcodes chromatic gradient color {chromatic_hex[0]}")
+        for rgb in re.findall(r"rgba?\(([^)]*)\)", value, re.I):
+            channels = rgb_channels(rgb)
+            if len(channels) == 3 and channel_spread(channels) > 20:
+                issues.append("hardcodes a chromatic rgb gradient color instead of a design token")
+                break
+        for hsl in re.findall(r"hsla?\(([^)]*)\)", value, re.I):
+            channels = re.findall(r"-?\d+(?:\.\d+)?%?", hsl)
+            saturation = float(channels[1].removesuffix("%")) if len(channels) >= 2 else 0
+            if saturation > 12:
+                issues.append("hardcodes a chromatic hsl gradient color instead of a design token")
+                break
+    return issues
 
 
 class TemplateTextCollector(HTMLParser):
@@ -152,8 +200,11 @@ def validate_skill() -> None:
         contract = COMPONENT_CONTRACTS.get(path.stem)
         for match in re.finditer(r"([^{}]+)\{[^{}]*overflow\s*:\s*(?:hidden|clip)\b", text, re.I):
             selector = " ".join(match.group(1).split())
-            if not any(token in selector.lower() for token in CLIPPABLE_TEMPLATE_SELECTORS):
-                errors.append(f"{path.name}: card/container clipping is forbidden; move it to a media wrapper: {selector}")
+            roles = re.findall(r'data-clip=["\']([^"\']+)["\']', selector, re.I)
+            if len(roles) != 1 or roles[0] not in TEMPLATE_CLIP_ROLES:
+                errors.append(f"{path.name}: clipping requires one explicit data-clip role (media, browser, or shape): {selector}")
+        for problem in gradient_design_issues(text):
+            errors.append(f"{path.name}: {problem}")
         if "placeholder" in text.lower():
             errors.append(f"{path.name}: bundled templates must not contain visible placeholder visuals")
         collector = TemplateTextCollector()
@@ -256,7 +307,7 @@ def validate_skill() -> None:
     public_files = [*docs, ROOT / "agents" / "openai.yaml"]
     if repo_readme.is_file():
         public_files.append(repo_readme)
-    commands = r"(?:init|status|plan|check|doctor|audit|recommend|contract|preview|edit|confirm|scaffold|build|list|add|remove|sync|media|icon)"
+    commands = r"(?:init|batch|status|plan|check|doctor|audit|recommend|contract|preview|edit|confirm|scaffold|build|list|add|remove|sync|media|icon)"
     bare_cli = re.compile(rf"(?<![/\w-])oil-ppt\s+{commands}\b")
     hardcoded_install = re.compile(r"(?:\$HOME|~|/Users/[^/]+)/(?:\.codex|\.agents|\.claude|\.workbuddy)/.*?/oil-ppt")
     old_public_name = re.compile(r"\boil-slides\b|\$oil-slides")
@@ -361,17 +412,27 @@ def validate_skill() -> None:
         errors.append("runtime must retain the program-rendered marker highlight")
     if ".oil-backdrop-text" not in runtime_css:
         errors.append("runtime must render content-owned oversized background type")
-    if '.oil-surface[data-tone]::before' not in runtime_css:
-        errors.append("runtime must own automatic surface texture geometry")
     declared_tones = tuple(PROGRAM_OWNED_CAPABILITIES["surface"]["tones"])
     for tone in declared_tones:
-        if f'.oil-surface[data-tone="{tone}"]::before' not in runtime_css:
-            errors.append(f"runtime surface tone {tone} must include an automatic texture treatment")
+        if f'.oil-surface[data-tone="{tone}"]' not in runtime_css:
+            errors.append(f"runtime surface tone {tone} is declared but missing")
+    tone_layer = re.search(r"\.oil-surface\[data-tone\]::before\s*\{([^}]*)\}", runtime_css, re.S)
+    if not tone_layer or "content:none" not in re.sub(r"\s+", "", tone_layer.group(1)):
+        errors.append("runtime surface tones must stay flat; local motifs own decorative geometry")
     for motif in PROGRAM_OWNED_CAPABILITIES["surface"]["automatic_motifs"]:
-        if f'.oil-surface[data-motif="{motif}"]::after' not in runtime_css:
+        motif_rule = re.search(
+            rf'\.oil-surface\[data-motif="{re.escape(motif)}"\]::after\s*\{{([^}}]*)\}}',
+            runtime_css,
+            re.S,
+        )
+        if not motif_rule:
             errors.append(f"runtime surface motif {motif} is declared but missing")
-    if '.oil-surface[data-motif]::before' not in runtime_css:
-        errors.append("runtime must suppress tone texture when a template motif already owns the surface")
+            continue
+        declarations = motif_rule.group(1)
+        if not re.search(r"\bright\s*:", declarations) or not re.search(r"\btop\s*:", declarations):
+            errors.append(f"runtime surface motif {motif} must use the fixed top-right anchor")
+        if re.search(r"\b(?:left|bottom)\s*:", declarations):
+            errors.append(f"runtime surface motif {motif} may not declare an opposite-corner anchor")
     if ".oil-icon-frame" not in runtime_css or "--icon-frame" not in runtime_css or "--icon-size" not in runtime_css:
         errors.append("runtime must provide the enlarged, reduced-padding icon frame contract")
     if ".oil-chart-bars" not in runtime_css:
@@ -385,6 +446,11 @@ def validate_skill() -> None:
     cdp_source = (ROOT / "scripts/cdp_validate.py").read_text(encoding="utf-8")
     if "invalidCopyFlows" not in cdp_source or "reason:'copy-gap'" not in cdp_source:
         errors.append("browser validation must reject excessive title-to-body gaps")
+    expected_visual_categories = {
+        "content-bounds", "surface-clipping", "decoration", "ring-geometry", "surface-paint", "line-density",
+    }
+    if set(VISUAL_FINDING_CATEGORIES) != expected_visual_categories:
+        errors.append("browser visual maintenance finding categories are incomplete")
     for background_name in BACKGROUND_PRESETS:
         if f'data-bg="{background_name}"' not in runtime_css:
             errors.append(f"runtime background preset missing selector for {background_name}")

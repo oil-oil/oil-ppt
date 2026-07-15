@@ -4,14 +4,14 @@
 /* Each step is one colored scene; the image is evidence inside it, not another framed card. */
 .s-__ID__ .frames{gap:16px}
 .s-__ID__ .frame{padding:26px;border:0;border-radius:42px}
-.s-__ID__ .frame:nth-child(1){background:linear-gradient(150deg,color-mix(in srgb,var(--accent-soft) 76%,#fff),#fff)}
-.s-__ID__ .frame:nth-child(2){background:linear-gradient(150deg,color-mix(in srgb,var(--surface) 84%,#fff),#fff)}
-.s-__ID__ .frame:nth-child(3){background:linear-gradient(150deg,color-mix(in srgb,var(--accent-soft) 48%,#fff),#fff)}
+.s-__ID__ .frame:nth-child(1){background:color-mix(in srgb,var(--accent-soft) 76%,#fff)}
+.s-__ID__ .frame:nth-child(2){background:color-mix(in srgb,var(--surface) 84%,#fff)}
+.s-__ID__ .frame:nth-child(3){background:color-mix(in srgb,var(--accent-soft) 48%,#fff)}
 .s-__ID__ .frame-head span{display:grid;place-items:center;width:48px;height:34px;border-radius:999px;background:rgba(255,255,255,.66);color:var(--ink-2)}
 .s-__ID__ .frame-visual{border-radius:28px;background:rgba(255,255,255,.58)}
 .s-__ID__ .frame-visual img{border-radius:28px}
 .s-__ID__ .frame:nth-child(2)::before{display:none}
-.s-__ID__ .frame:nth-child(2)::after{content:"";position:absolute;right:0;top:0;width:190px;height:190px;border:26px solid color-mix(in srgb,var(--ink) 5%,transparent);border-radius:50%;clip-path:inset(0 0 40% 40%);pointer-events:none}
+.s-__ID__ .frame:nth-child(2)::after{content:none;display:none}
 .s-__ID__ .frame-head,.s-__ID__ .frame-visual,.s-__ID__ .frame p{position:relative;z-index:1}
 .s-__ID__ .foot strong{max-width:1180px;padding:12px 20px;border-radius:18px;background:color-mix(in srgb,var(--surface) 72%,#fff)}
 /* OIL-SLIDE-CSS:END */</style></head><body data-oil-mode="preview"><div class="slide-preview-viewport"><div class="slide-preview-shell"><div class="slide-preview-stage">

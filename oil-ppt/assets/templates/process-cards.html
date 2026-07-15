@@ -8,10 +8,10 @@
 /* Four roomy color blocks and filled connectors replace outlined step cards. */
 .s-__ID__ .steps{grid-template-columns:minmax(0,1fr) 62px minmax(0,1fr) 62px minmax(0,1fr) 62px minmax(0,1fr)}
 .s-__ID__ .step{padding:34px 32px 38px;border:0;border-radius:42px}
-.s-__ID__ .step:nth-of-type(1){background:linear-gradient(150deg,color-mix(in srgb,var(--accent-soft) 88%,#fff),#fff)}
-.s-__ID__ .step:nth-of-type(2){background:linear-gradient(150deg,color-mix(in srgb,var(--surface) 88%,#fff),#fff)}
-.s-__ID__ .step:nth-of-type(3){background:linear-gradient(150deg,color-mix(in srgb,var(--accent-soft) 56%,#fff),#fff)}
-.s-__ID__ .step:nth-of-type(4){background:linear-gradient(150deg,color-mix(in srgb,var(--surface) 82%,#fff),#fff)}
+.s-__ID__ .step:nth-of-type(1){background:color-mix(in srgb,var(--accent-soft) 88%,#fff)}
+.s-__ID__ .step:nth-of-type(2){background:color-mix(in srgb,var(--surface) 88%,#fff)}
+.s-__ID__ .step:nth-of-type(3){background:color-mix(in srgb,var(--accent-soft) 56%,#fff)}
+.s-__ID__ .step:nth-of-type(4){background:color-mix(in srgb,var(--surface) 82%,#fff)}
 .s-__ID__ .step::before{content:"01";display:block;position:absolute;inset:28px 28px auto auto;width:auto;height:auto;opacity:1;border:0;border-radius:0;background:none;color:color-mix(in srgb,var(--ink) 36%,transparent);font:760 18px/1 var(--font-ui);letter-spacing:.12em;-webkit-mask-image:none;mask-image:none}
 .s-__ID__ .step:nth-of-type(2)::before{content:"02"}.s-__ID__ .step:nth-of-type(3)::before{content:"03"}.s-__ID__ .step:nth-of-type(4)::before{content:"04"}
 .s-__ID__ .oil-icon-frame{background:rgba(255,255,255,.68)}
@@ -22,11 +22,11 @@
 .s-__ID__ .measurement:nth-child(2){background:color-mix(in srgb,var(--accent-soft) 72%,#fff)}
 .s-__ID__ .measurement:nth-child(3){background:color-mix(in srgb,var(--surface) 76%,#fff)}
 .s-__ID__ .measurement:nth-child(4){background:color-mix(in srgb,var(--accent-soft) 48%,#fff)}
-.s-__ID__[data-variant="terminal-focus"] .step:last-of-type{border:0;background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 18%,var(--ink)),var(--ink))}
+.s-__ID__[data-variant="terminal-focus"] .step:last-of-type{border:0;background:var(--ink)}
 .s-__ID__[data-variant="terminal-focus"] .step:last-of-type .oil-icon-frame{background:var(--accent-fill);color:var(--ink)}
 .s-__ID__[data-variant="linear"] .step:last-of-type .oil-icon-frame{background:rgba(255,255,255,.68);color:var(--ink)}
 .s-__ID__[data-variant="terminal-focus"] .step:last-of-type::before{z-index:2;color:rgba(255,255,255,.48)}
-.s-__ID__[data-variant="terminal-focus"] .step:last-of-type::after{border-color:rgba(255,255,255,.07)}
+.s-__ID__[data-variant="terminal-focus"] .step:last-of-type::after{content:none;display:none}
 /* OIL-SLIDE-CSS:END */</style></head><body data-oil-mode="preview"><div class="slide-preview-viewport"><div class="slide-preview-shell"><div class="slide-preview-stage">
 <!-- OIL-SLIDE:START -->
 <section class="oil-slide s-__ID__" data-slide-id="__ID__" data-title="__TITLE__" data-variant="__VARIANT__" data-component-decor="__DECOR__" data-bg="grid-fade"><div class="slide-safe" data-layout-check="full"><div class="wrap"><div class="intro"><div><div class="tag" data-slot="kicker"></div><h1 data-fit data-min-size="58" data-max-chars="26">__TITLE__</h1></div><p data-slot="content" data-sentence data-fit data-min-size="21" data-max-chars="48"></p></div><div class="steps" data-layout><article class="step oil-surface" data-tone="accent"><span class="oil-icon-frame" data-slot="step-icon-1"></span><h2 data-slot="step-title-1" data-fit data-min-size="30" data-max-chars="10"></h2><p data-slot="step-body-1" data-sentence data-fit data-min-size="20" data-max-chars="38"></p></article><span class="connector" data-slot="connector"></span><article class="step oil-surface" data-tone="neutral"><span class="oil-icon-frame" data-slot="step-icon-2"></span><h2 data-slot="step-title-2" data-fit data-min-size="30" data-max-chars="10"></h2><p data-slot="step-body-2" data-sentence data-fit data-min-size="20" data-max-chars="38"></p></article><span class="connector" data-slot="connector"></span><article class="step oil-surface" data-tone="neutral"><span class="oil-icon-frame" data-slot="step-icon-3"></span><h2 data-slot="step-title-3" data-fit data-min-size="30" data-max-chars="10"></h2><p data-slot="step-body-3" data-sentence data-fit data-min-size="20" data-max-chars="38"></p></article><span class="connector" data-slot="connector"></span><article class="step oil-surface" data-tone="ink"><span class="oil-icon-frame" data-slot="step-icon-4"></span><h2 data-slot="step-title-4" data-fit data-min-size="30" data-max-chars="10"></h2><p data-slot="step-body-4" data-sentence data-fit data-min-size="20" data-max-chars="38"></p></article></div><div class="measurements" data-optional-region="measurements"><div class="measurement-note"><b data-slot="measurement-note"></b><span data-slot="measurement-meta"></span></div><div class="measurement"><b data-slot="measurement-label-1"></b><span data-slot="measurement-value-1"></span></div><div class="measurement"><b data-slot="measurement-label-2"></b><span data-slot="measurement-value-2"></span></div><div class="measurement"><b data-slot="measurement-label-3"></b><span data-slot="measurement-value-3"></span></div><div class="measurement"><b data-slot="measurement-label-4"></b><span data-slot="measurement-value-4"></span></div></div></div></div></section>

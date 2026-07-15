@@ -14,6 +14,7 @@ import sys
 import tempfile
 import time
 import webbrowser
+from collections import Counter
 from pathlib import Path
 
 from background_presets import BACKGROUND_PRESETS, INTERNAL_BACKGROUNDS, template_background
@@ -25,7 +26,7 @@ from capability_catalog import (
 from capability_recommender import recommend_outline
 from component_contracts import COMPONENT_CONTRACTS, PAGE_BLEND_TEMPLATES, VARIANT_QUALITY, quality_for
 from design_quality import audit_summary, enforce_outline_quality
-from media_assets import outline_media_bindings, print_sources, verify_outline_media
+from media_assets import inspect_outline_media, outline_media_bindings, print_sources, verify_outline_media
 from media_frame import frame_media
 from media_plan import MEDIA_SLOTS, MEDIA_VARIANT_SLOTS, build_media_plan, write_media_plan
 from render_programmatic_visual import render_html_visual
@@ -1029,18 +1030,19 @@ def plan_project(project_arg: Path, input_path: Path | None, user_confirmed_text
     if source != target:
         atomic_write_json(target, data)
     state = read_project_state(project)
+    outline_sha256 = json_digest(target)
     if data.get("media_policy", "required") == "text-only":
         state["media_policy_confirmation"] = {
             "policy": "text-only",
-            "outline_sha256": json_digest(target),
+            "outline_sha256": outline_sha256,
             "user_confirmed": True,
         }
-        state.setdefault("history", []).append({"event": "text_only_confirmed", "outline_sha256": json_digest(target)})
+        state.setdefault("history", []).append({"event": "text_only_confirmed", "outline_sha256": outline_sha256})
     else:
         state.pop("media_policy_confirmation", None)
     state["visual_plan"] = {
         "markdown_sha256": outline_digest(project / "outline.md"),
-        "outline_sha256": json_digest(target),
+        "outline_sha256": outline_sha256,
     }
     atomic_write_json(project_state_path(project), state)
     print(json.dumps({
@@ -1050,7 +1052,11 @@ def plan_project(project_arg: Path, input_path: Path | None, user_confirmed_text
     }, ensure_ascii=False, indent=2))
 
 
-def check_project(target: Path) -> dict:
+def check_project(
+    target: Path,
+    *,
+    include_next: bool = True,
+) -> dict:
     outline = outline_from_target(target)
     if not outline.is_file():
         raise SystemExit(f"Missing outline.json: {outline}. Next: {cli_command('contract', '--example')}")
@@ -1075,17 +1081,172 @@ def check_project(target: Path) -> dict:
         add_gate_issue("unbound-visual-plan", "outline.json 尚未通过 plan 绑定到当前已确认的 Markdown 大纲。")
     if data.get("media_policy", "required") == "text-only" and not text_only_confirmation_valid(outline.parent, outline):
         add_gate_issue("unconfirmed-text-only", text_only_confirmation_message(outline.parent))
-    media = verify_outline_media(data, outline.parent)
-    workflow = status_payload(project)
-    return {
+    media = inspect_outline_media(data, outline.parent)
+    if media["errors"]:
+        add_gate_issue(
+            "invalid-media",
+            f"{len(media['errors'])} 个素材绑定不可用；查看 media.errors 后一次性补齐。",
+        )
+    payload = {
         "schema_version": "oil-ppt.check/v1",
         "ok": audit["status"] != "error",
         "project": str(outline.parent),
         "outline": str(outline),
         "slides": len(data["slides"]),
         "audit": audit,
-        "media": {"count": len(media), "items": media},
-        "next": workflow["next"],
+        "media": media,
+    }
+    if include_next:
+        payload["next"] = (
+            {
+                "action": "fix_media",
+                "command": None,
+                "path": str(outline),
+                "rerun": cli_command("check", project),
+            }
+            if media["errors"]
+            else status_payload(project)["next"]
+        )
+    return payload
+
+
+def advisory_summary(audit: dict) -> dict:
+    items = [
+        item
+        for item in audit.get("issues") or []
+        if not item.get("blocking") and item.get("level") in {"warning", "info"}
+    ]
+    return {
+        "count": len(items),
+        "codes": sorted({str(item.get("code")) for item in items if item.get("code")}),
+        "levels": dict(Counter(str(item.get("level")) for item in items)),
+    }
+
+
+BATCH_PRUNE_DIRS = {".git", ".hg", ".svn", "node_modules", ".venv", "venv", "__pycache__"}
+
+
+def discover_projects(targets: list[Path]) -> list[Path]:
+    """Resolve project roots from explicit projects or parent directories."""
+    projects: set[Path] = set()
+    for target_arg in targets:
+        target = target_arg.expanduser().resolve()
+        if not target.exists():
+            raise SystemExit(f"Batch target does not exist: {target}")
+        if target.is_file():
+            if target.name not in {PROJECT_STATE_NAME, *LEGACY_STATE_NAMES}:
+                raise SystemExit(f"Batch target must be a project or parent directory: {target}")
+            target = target.parent
+        migrate_legacy_state_files(target)
+        if project_state_path(target).is_file():
+            projects.add(target)
+            continue
+        for root, dirs, files in os.walk(target):
+            dirs[:] = [name for name in dirs if name not in BATCH_PRUNE_DIRS]
+            if PROJECT_STATE_NAME in files or any(name in files for name in LEGACY_STATE_NAMES):
+                project = Path(root).resolve()
+                migrate_legacy_state_files(project)
+                projects.add(project)
+                dirs[:] = []
+    if not projects:
+        rendered = ", ".join(str(item.expanduser().resolve()) for item in targets)
+        raise SystemExit(f"No initialized oil-ppt projects found under: {rendered}")
+    return sorted(projects, key=lambda item: str(item).casefold())
+
+
+def run_batch_step(command: str, project: Path, *arguments: str) -> dict:
+    """Run one public CLI step in isolation and retain its complete diagnostics."""
+    process = subprocess.run(
+        [sys.executable, str(Path(__file__).resolve()), command, str(project), *arguments],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return {
+        "ok": process.returncode == 0,
+        "returncode": process.returncode,
+        "stdout": process.stdout.strip(),
+        "stderr": process.stderr.strip(),
+    }
+
+
+def batch_projects(targets: list[Path], *, user_confirmed_preview: bool) -> dict:
+    """Advance deterministic phases without confirming a newly rendered preview.
+
+    A confirmation flag applies only to previews already awaiting approval when
+    this invocation starts. This preserves the user's opportunity to inspect any
+    preview generated by the same batch call.
+    """
+    projects = discover_projects(targets)
+    resolved_targets = [target.expanduser().resolve() for target in targets]
+    results: list[dict] = []
+    for project in projects:
+        actions: list[str] = []
+        failure: dict | None = None
+        initial_status = status_payload(project)
+        initial_phase = initial_status["phase"]
+
+        def advance(stage: str, command: str, *arguments: str) -> bool:
+            nonlocal failure
+            step = run_batch_step(command, project, *arguments)
+            if not step["ok"]:
+                failure = {"stage": stage, **step}
+                return False
+            actions.append(stage)
+            return True
+
+        if initial_phase == "needs_plan" and (initial_status.get("next") or {}).get("action") == "run_command":
+            if advance("plan", "plan"):
+                advance("preview", "preview", "--no-open")
+        elif initial_phase == "needs_preview":
+            advance("preview", "preview", "--no-open")
+        elif initial_phase == "needs_preview_confirmation" and user_confirmed_preview:
+            if advance("confirm-preview", "confirm", "--stage", "preview", "--user-confirmed"):
+                advance("build", "build")
+        elif initial_phase in {"ready_to_build", "needs_build"}:
+            advance("build", "build")
+
+        final_status = status_payload(project) if actions or failure else initial_status
+        advisories = {"count": 0, "codes": [], "levels": {}}
+        if (project / "outline.json").is_file():
+            try:
+                report = check_project(project, include_next=False)
+                advisories = advisory_summary(report.get("audit") or {})
+            except SystemExit:
+                pass
+        blocked = failure is not None or final_status["phase"] not in {"complete", "needs_preview_confirmation"}
+        results.append({
+            "project": str(project),
+            "actions": actions,
+            "phase": final_status["phase"],
+            "blocked": blocked,
+            **({"preview": (final_status.get("next") or {}).get("artifact")} if final_status["phase"] == "needs_preview_confirmation" else {}),
+            "issues": (final_status.get("next") or {}).get("issues") or [],
+            "advisories": advisories,
+            **({"failure": failure} if failure else {}),
+        })
+
+    summary = {
+        "projects": len(results),
+        "complete": sum(item["phase"] == "complete" for item in results),
+        "awaiting_preview_confirmation": sum(item["phase"] == "needs_preview_confirmation" for item in results),
+        "blocked": sum(bool(item["blocked"]) for item in results),
+    }
+    if summary["blocked"]:
+        next_step = {"action": "fix_reported_issues", "command": None}
+    elif summary["awaiting_preview_confirmation"]:
+        next_step = {
+            "action": "ask_user_to_confirm_previews",
+            "command": cli_command("batch", *resolved_targets, "--user-confirmed-preview"),
+        }
+    else:
+        next_step = {"action": "complete", "command": None}
+    return {
+        "schema_version": "oil-ppt.batch/v1",
+        "ok": summary["blocked"] == 0,
+        "summary": summary,
+        "projects": results,
+        "next": next_step,
     }
 
 
@@ -1731,26 +1892,15 @@ def generate_preview(
     outline = project / "outline.json"
     if not outline.is_file():
         raise SystemExit(f"Outline not found: {outline}. Next: {cli_command('contract', '--example')}")
-    if not outline_confirmation_valid(outline.parent):
-        raise SystemExit(
-            f"Preview blocked because the current outline.md is not confirmed. "
-            "Ask the user to confirm the current Markdown outline before recording approval."
-        )
-    if not visual_plan_valid(outline.parent, outline):
-        raise SystemExit(
-            "Preview blocked because outline.json is not bound to the current confirmed Markdown outline. Run plan again."
-        )
-    data = json.loads(outline.read_text(encoding="utf-8"))
-    validate_outline(data, TEMPLATES)
-    write_media_plan(
-        build_media_plan(data, outline.parent, cli=cli_display()),
-        outline.parent / "media-plan.json",
-    )
     check = check_project(outline)
     if not check["ok"]:
         print(json.dumps(check, ensure_ascii=False, indent=2))
         raise SystemExit(1)
-    enforce_outline_quality(data)
+    data = json.loads(outline.read_text(encoding="utf-8"))
+    write_media_plan(
+        build_media_plan(data, outline.parent, cli=cli_display()),
+        outline.parent / "media-plan.json",
+    )
     target = preview_output_path(outline, output)
     state_path = preview_state_path(outline)
     previous_preview: Path | None = None
@@ -1794,6 +1944,7 @@ def generate_preview(
         "project": str(outline.parent),
         "preview": str(target),
         "opened": open_browser,
+        "advisories": advisory_summary(check.get("audit") or {}),
         "next": {
             "action": "ask_user_to_confirm_preview",
             "command": None,
@@ -2012,14 +2163,21 @@ def parse_args() -> argparse.Namespace:
         prog="oil-ppt",
         description="Create and validate an oil-ppt project through one stateful CLI.",
         epilog=(
-            "Workflow: init PROJECT → write and confirm outline.md → plan PROJECT → preview PROJECT → "
-            "optionally edit text → confirm preview → build PROJECT. Run `status PROJECT --json` at any time."
+            "Default for existing work: batch TARGET [TARGET ...]. New work: init PROJECT → write and confirm "
+            "outline.md → plan PROJECT → preview PROJECT → optionally edit text → confirm preview → build PROJECT."
         ),
     )
-    public_commands = ("init", "status", "plan", "check", "doctor", "contract", "preview", "edit", "confirm", "build", "media", "icon")
+    public_commands = ("init", "batch", "status", "plan", "check", "doctor", "contract", "preview", "edit", "confirm", "build", "media", "icon")
     sub = parser.add_subparsers(dest="command", metavar="{" + ",".join(public_commands) + "}")
     init_parser = sub.add_parser("init", help="initialize outline.md, assets, and project state")
     init_parser.add_argument("project", type=Path, help="one project root directory")
+    batch_parser = sub.add_parser("batch", help="discover projects and advance every deterministic stage without opening editors")
+    batch_parser.add_argument("targets", type=Path, nargs="+", help="one or more project roots or parent directories")
+    batch_parser.add_argument(
+        "--user-confirmed-preview",
+        action="store_true",
+        help="attest that the user approved every awaiting preview, then build all ready projects",
+    )
     status_parser = sub.add_parser("status", help="show the current phase and one explicit next action")
     status_parser.add_argument("project", type=Path, help="project root")
     status_parser.add_argument("--json", action="store_true", help="emit a stable machine-readable envelope")
@@ -2130,6 +2288,11 @@ def main() -> None:
     args = parse_args()
     if args.command == "init":
         init_project(args.project)
+    elif args.command == "batch":
+        payload = batch_projects(args.targets, user_confirmed_preview=args.user_confirmed_preview)
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        if not payload["ok"]:
+            raise SystemExit(1)
     elif args.command == "status":
         print_status(args.project, as_json=args.json)
     elif args.command == "plan":

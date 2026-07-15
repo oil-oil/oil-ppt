@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import re
 import struct
@@ -63,8 +64,8 @@ RASTER_MIME = {
 }
 
 
-def _jpeg_dimensions(path: Path) -> tuple[int, int]:
-    with path.open("rb") as handle:
+def _jpeg_dimensions(data: bytes) -> tuple[int, int]:
+    with io.BytesIO(data) as handle:
         if handle.read(2) != b"\xff\xd8":
             raise ValueError("invalid JPEG signature")
         while True:
@@ -114,10 +115,11 @@ def _svg_number(value: str | None) -> float | None:
     return float(match.group(1)) if match else None
 
 
-def _svg_dimensions(path: Path) -> tuple[int, int]:
-    if path.stat().st_size > 8 * 1024 * 1024:
-        raise ValueError("SVG exceeds the 8 MB inspection limit")
-    raw = path.read_text(encoding="utf-8")
+def _svg_dimensions(data: bytes) -> tuple[int, int]:
+    try:
+        raw = data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError("SVG must be UTF-8 encoded") from error
     if re.search(r"<\s*(?:script|foreignObject)\b", raw, re.I):
         raise ValueError("SVG scripts and foreignObject are forbidden")
     if re.search(r"(?:href|src)\s*=\s*[\"'](?!#|data:)[^\"']+", raw, re.I):
@@ -146,11 +148,14 @@ def inspect_image(path: Path) -> dict:
     path = path.expanduser().resolve()
     if not path.is_file():
         raise ValueError(f"media file is missing: {path}")
+    size = path.stat().st_size
     suffix = path.suffix.lower()
-    data = path.read_bytes() if suffix in {".png", ".gif", ".webp"} else b""
+    if suffix == ".svg" and size > 8 * 1024 * 1024:
+        raise ValueError("SVG exceeds the 8 MB inspection limit")
+    data = path.read_bytes()
     if suffix == ".svg":
         mime = "image/svg+xml"
-        width, height = _svg_dimensions(path)
+        width, height = _svg_dimensions(data)
     elif suffix == ".png":
         if len(data) < 24 or data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
             raise ValueError("invalid PNG signature or IHDR")
@@ -158,7 +163,7 @@ def inspect_image(path: Path) -> dict:
         width, height = struct.unpack(">II", data[16:24])
     elif suffix in {".jpg", ".jpeg"}:
         mime = RASTER_MIME[suffix]
-        width, height = _jpeg_dimensions(path)
+        width, height = _jpeg_dimensions(data)
     elif suffix == ".gif":
         if len(data) < 10 or data[:6] not in {b"GIF87a", b"GIF89a"}:
             raise ValueError("invalid GIF signature")
@@ -176,8 +181,8 @@ def inspect_image(path: Path) -> dict:
         "mime": mime,
         "width": width,
         "height": height,
-        "bytes": path.stat().st_size,
-        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "bytes": size,
+        "sha256": hashlib.sha256(data).hexdigest(),
         "aspect_ratio": round(width / height, 5),
     }
 
@@ -218,24 +223,56 @@ def outline_media_bindings(slide: dict) -> list[tuple[str, object]]:
     return bindings
 
 
-def verify_outline_media(data: dict, base: Path) -> list[dict]:
+def inspect_outline_media(data: dict, base: Path) -> dict:
     root = base.expanduser().resolve()
     verified: list[dict] = []
+    errors: list[dict] = []
+    inspected: dict[Path, dict | ValueError] = {}
     for index, slide in enumerate(data.get("slides") or [], start=1):
         for field, bound_value in outline_media_bindings(slide):
-            if re.match(r"(?:https?:|data:|file:)", str(bound_value), re.I):
-                raise SystemExit(f"Outline slide {index} {field} must be a project-relative local file: {bound_value}")
-            path = (root / str(bound_value)).resolve()
-            if root not in path.parents:
-                raise SystemExit(f"Outline slide {index} {field} must stay inside the project: {bound_value}")
-            try:
-                details = inspect_image(path)
-            except ValueError as error:
-                raise SystemExit(f"Outline slide {index} media verification failed for {field}={bound_value}: {error}") from error
+            rendered_value = str(bound_value)
+            if re.match(r"^[a-z][a-z0-9+.-]*:", rendered_value, re.I):
+                errors.append({
+                    "slide": slide.get("id"), "page": index, "field": field,
+                    "path": rendered_value, "reason": "media must be a project-relative local file",
+                })
+                continue
+            path = (root / rendered_value).resolve()
+            if not path.is_relative_to(root) or path == root:
+                errors.append({
+                    "slide": slide.get("id"), "page": index, "field": field,
+                    "path": rendered_value, "reason": "media must stay inside the project",
+                })
+                continue
+            if path not in inspected:
+                try:
+                    inspected[path] = inspect_image(path)
+                except ValueError as error:
+                    inspected[path] = error
+            inspected_value = inspected[path]
+            if isinstance(inspected_value, ValueError):
+                errors.append({
+                    "slide": slide.get("id"), "page": index, "field": field,
+                    "path": rendered_value, "reason": str(inspected_value),
+                })
+                continue
+            details = dict(inspected_value)
             details["slide_id"] = slide.get("id")
             details["field"] = field
-            details["relative_path"] = str(bound_value)
+            details["relative_path"] = rendered_value
             verified.append(details)
+    return {"count": len(verified), "items": verified, "errors": errors}
+
+
+def verify_outline_media(data: dict, base: Path) -> list[dict]:
+    report = inspect_outline_media(data, base)
+    if report["errors"]:
+        lines = [
+            f"slide {item['page']} ({item.get('slide') or 'unknown'}) {item['field']}={item['path']}: {item['reason']}"
+            for item in report["errors"]
+        ]
+        raise SystemExit("Media verification failed:\n- " + "\n- ".join(lines))
+    verified = report["items"]
     return verified
 
 

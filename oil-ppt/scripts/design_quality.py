@@ -99,6 +99,119 @@ def content_segments(slides: list[dict]) -> list[list[dict]]:
     return segments
 
 
+def consecutive_runs(items: list[dict], key) -> list[list[dict]]:
+    """Return maximal repeated runs without duplicating window diagnostics."""
+    runs: list[list[dict]] = []
+    start = 0
+    while start < len(items):
+        value = key(items[start])
+        end = start + 1
+        while end < len(items) and key(items[end]) == value:
+            end += 1
+        runs.append(items[start:end])
+        start = end
+    return runs
+
+
+ADVISORY_THEMES = (
+    (
+        "layout-rhythm",
+        "Layout rhythm repeats across the deck; review the grouped signals together instead of changing pages one warning at a time.",
+        {
+            "surface-dominance", "component-dominance", "missing-focal-beat",
+            "repeated-silhouette", "repeated-layout-signature", "low-rhythm-variety",
+            "missing-visual-anchor",
+        },
+    ),
+    (
+        "media-rhythm",
+        "Media coverage has a pacing gap; review the grouped deck and section signals as one issue.",
+        {"media-coverage", "missing-section-media", "media-gap"},
+    ),
+    (
+        "media-composition",
+        "Media composition energy is concentrated in one shape or part of the deck; review only where the material supports a different treatment.",
+        {"missing-cinematic-beat", "media-energy-concentration", "media-shape-monotony", "inset-media-run"},
+    ),
+    (
+        "background-rhythm",
+        "Background rhythm is perceptually repetitive; apply a small number of coordinated changes.",
+        {"background-monotony", "background-class-monotony", "background-run"},
+    ),
+    (
+        "emphasis-rhythm",
+        "Emphasis devices are overused; reduce them together rather than treating each mechanism independently.",
+        {"highlight-saturation", "backdrop-saturation"},
+    ),
+)
+
+
+def consolidate_issues(items: list[dict]) -> list[dict]:
+    """Deduplicate diagnostics and collapse related heuristics into themes."""
+    results: list[dict] = []
+    seen: set[tuple[str, tuple[str, ...]]] = set()
+    for item in items:
+        identity = (str(item.get("code") or ""), tuple(item.get("slides") or ()))
+        if identity in seen:
+            continue
+        seen.add(identity)
+        results.append(item)
+
+    consumed: set[int] = set()
+    consolidated: list[dict] = []
+    for theme_code, message, codes in ADVISORY_THEMES:
+        matches = [
+            (index, item) for index, item in enumerate(results)
+            if not item.get("blocking") and item.get("code") in codes
+        ]
+        if not matches:
+            continue
+        consumed.update(index for index, _ in matches)
+        slide_ids: list[str] = []
+        for _, item in matches:
+            for slide_id in item.get("slides") or []:
+                if slide_id not in slide_ids:
+                    slide_ids.append(slide_id)
+        signals: list[dict] = []
+        for signal_code in dict.fromkeys(str(item["code"]) for _, item in matches):
+            occurrences = [item for _, item in matches if item["code"] == signal_code]
+            signal_slides: list[str] = []
+            for occurrence in occurrences:
+                for slide_id in occurrence.get("slides") or []:
+                    if slide_id not in signal_slides:
+                        signal_slides.append(slide_id)
+            signal = {
+                "code": signal_code,
+                "message": (
+                    occurrences[0]["message"]
+                    if len(occurrences) == 1
+                    else f"{len(occurrences)} related occurrences"
+                ),
+                "slides": signal_slides,
+            }
+            if len(occurrences) == 1 and occurrences[0].get("suggestion"):
+                signal["suggestion"] = occurrences[0]["suggestion"]
+            elif len(occurrences) > 1:
+                signal["occurrences"] = [
+                    {
+                        "message": occurrence["message"],
+                        "slides": occurrence.get("slides") or [],
+                        **({"suggestion": occurrence["suggestion"]} if occurrence.get("suggestion") else {}),
+                    }
+                    for occurrence in occurrences
+                ]
+            signals.append(signal)
+        consolidated.append(issue(
+            "warning" if any(item.get("level") == "warning" for _, item in matches) else "info",
+            theme_code,
+            message,
+            slide_ids,
+            {"signals": signals},
+        ))
+    consolidated.extend(item for index, item in enumerate(results) if index not in consumed)
+    return consolidated
+
+
 def coverage_summary(data: dict) -> dict:
     """Expose deck-level capability usage without pretending every deck needs everything."""
     slides = data.get("slides") or []
@@ -166,23 +279,6 @@ def audit_outline(data: dict) -> list[dict]:
     if not content:
         return results
 
-    capability_review = recommend_outline(data)
-    for review in capability_review["slides"]:
-        if review["decision"] != "review":
-            continue
-        candidates = [item["template"] for item in review["candidates"]]
-        results.append(issue(
-            "warning", "specialized-capability-suggestion",
-            f"Slide {review['id']!r} may also fit a specialized component; the selected component remains valid when it satisfies its contract.",
-            [review["id"]],
-            {
-                "action": "consider a specialized candidate only when it expresses the content relation more clearly",
-                "templates": candidates,
-                "candidates": [item["choice_patch"] for item in review["candidates"]],
-                "candidate_slides": [review["id"]],
-            },
-        ))
-
     if require_media and media_slides:
         minimum = (len(content) + 4) // 5
         if len(media_slides) < minimum:
@@ -202,6 +298,7 @@ def audit_outline(data: dict) -> list[dict]:
             [slide["id"] for slide in heavy],
         ))
 
+    missing_focal_beat = False
     if len(content) >= 8:
         template_counts = Counter(slide["template"] for slide in content)
         dominant_template, dominant_count = template_counts.most_common(1)[0]
@@ -220,8 +317,8 @@ def audit_outline(data: dict) -> list[dict]:
         if len(content) >= 10 and not focal:
             candidates = [content[len(content) // 3], content[(len(content) * 2) // 3]]
             results.append(issue(
-                "warning", "missing-focal-beat",
-                "The content deck has no dedicated focal pause such as a quote, metric, or single-judgment page.",
+                "info", "missing-focal-beat",
+                "The content deck has no dedicated focal pause; review whether the narrative contains a real quote, metric, or single judgment worth isolating.",
                 [slide["id"] for slide in candidates],
                 {
                     "action": "only if the content supports it, convert one candidate into a focal beat",
@@ -229,15 +326,17 @@ def audit_outline(data: dict) -> list[dict]:
                     "candidate_slides": [slide["id"] for slide in candidates],
                 },
             ))
+            missing_focal_beat = True
 
+    missing_cinematic_beat = False
     if require_media and len(content) >= 8 and len(media_slides) >= 2:
         bleed_media = [slide for slide in media_slides if slide_quality(slide)["silhouette"] == "bleed"]
         if not bleed_media:
             eligible = [slide for slide in media_slides if slide["template"] not in BLEED_TEMPLATES]
             candidates = eligible[1::3][:3] or eligible[:2]
             results.append(issue(
-                "warning", "missing-cinematic-beat",
-                f"All {len(media_slides)} media slides stay inside inset frames; the deck never uses a full-screen or edge-bleed visual beat.",
+                "info", "missing-cinematic-beat",
+                f"All {len(media_slides)} media slides stay inside inset frames; review whether one strong image can legitimately carry an edge-bleed beat.",
                 [slide["id"] for slide in media_slides],
                 {
                     "action": "consider one full-screen media composition where the image can carry the argument",
@@ -245,6 +344,7 @@ def audit_outline(data: dict) -> list[dict]:
                     "candidate_slides": [slide["id"] for slide in candidates],
                 },
             ))
+            missing_cinematic_beat = True
         elif len(media_slides) >= 5:
             content_positions = {slide["id"]: index for index, slide in enumerate(content)}
             bleed_positions = [content_positions[slide["id"]] for slide in bleed_media]
@@ -271,7 +371,7 @@ def audit_outline(data: dict) -> list[dict]:
                 ))
 
         media_silhouettes = Counter(slide_quality(slide)["silhouette"] for slide in media_slides)
-        if len(media_slides) >= 3 and len(media_silhouettes) == 1:
+        if not missing_cinematic_beat and len(media_slides) >= 3 and len(media_silhouettes) == 1:
             results.append(issue(
                 "warning", "media-shape-monotony",
                 f"All {len(media_slides)} media slides use silhouette {next(iter(media_silhouettes))!r}.",
@@ -285,34 +385,36 @@ def audit_outline(data: dict) -> list[dict]:
                 },
             ))
 
-        inset_run: list[dict] = []
-        for slide in [*content, None]:
-            is_inset_media = (
-                slide is not None
-                and has_media(slide)
-                and slide_quality(slide)["silhouette"] != "bleed"
-            )
-            if is_inset_media:
-                inset_run.append(slide)
-                continue
-            if len(inset_run) >= 3:
-                target = inset_run[len(inset_run) // 2]
-                results.append(issue(
-                    "warning", "inset-media-run",
-                    f"{len(inset_run)} consecutive media slides remain inset inside the safe area.",
-                    [item["id"] for item in inset_run],
-                    {
-                        "action": "if the middle image is strong enough, use one edge-bleed composition",
-                        "templates": list(BLEED_TEMPLATES),
-                        "candidate_slides": [target["id"]],
-                    },
-                ))
-            inset_run = []
+        if not missing_cinematic_beat:
+            inset_run: list[dict] = []
+            for slide in [*content, None]:
+                is_inset_media = (
+                    slide is not None
+                    and has_media(slide)
+                    and slide_quality(slide)["silhouette"] != "bleed"
+                )
+                if is_inset_media:
+                    inset_run.append(slide)
+                    continue
+                if len(inset_run) >= 3:
+                    target = inset_run[len(inset_run) // 2]
+                    results.append(issue(
+                        "warning", "inset-media-run",
+                        f"{len(inset_run)} consecutive media slides remain inset inside the safe area.",
+                        [item["id"] for item in inset_run],
+                        {
+                            "action": "if the middle image is strong enough, use one edge-bleed composition",
+                            "templates": list(BLEED_TEMPLATES),
+                            "candidate_slides": [target["id"]],
+                        },
+                    ))
+                inset_run = []
 
     if len(content) >= 8:
         backgrounds = [effective_background(slide) for slide in content]
         counts = Counter(backgrounds)
         dominant, dominant_count = counts.most_common(1)[0]
+        background_theme_reported = False
         if dominant != "media-owned" and (len(counts) == 1 or dominant_count / len(content) > .72):
             dominant_slides = [slide for slide in content if effective_background(slide) == dominant]
             candidates = dominant_slides[2::4] or dominant_slides[len(dominant_slides) // 2:len(dominant_slides) // 2 + 1]
@@ -324,10 +426,16 @@ def audit_outline(data: dict) -> list[dict]:
                 [slide["id"] for slide in dominant_slides],
                 {"set_background": changes},
             ))
+            background_theme_reported = True
 
         classes = Counter(BACKGROUND_CLASSES[value] for value in backgrounds)
         dominant_class, dominant_class_count = classes.most_common(1)[0]
-        if dominant_class != "media" and len(counts) > 1 and dominant_class_count / len(content) > .72:
+        if (
+            not background_theme_reported
+            and dominant_class != "media"
+            and len(counts) > 1
+            and dominant_class_count / len(content) > .72
+        ):
             same_class = [slide for slide in content if BACKGROUND_CLASSES[effective_background(slide)] == dominant_class]
             candidates = same_class[2::4][:3] or same_class[:1]
             changes = {slide["id"]: suggested_background(slide, effective_background(slide)) for slide in candidates}
@@ -337,17 +445,13 @@ def audit_outline(data: dict) -> list[dict]:
                 [slide["id"] for slide in same_class],
                 {"set_background": changes},
             ))
+            background_theme_reported = True
 
-        run: list[dict] = []
-        run_background = ""
-        for slide in [*content, None]:
-            background = effective_background(slide) if slide is not None else ""
-            if slide is not None and (not run or background == run_background):
-                if not run:
-                    run_background = background
-                run.append(slide)
-                continue
-            if len(run) >= 5 and run_background != "media-owned":
+        if not background_theme_reported:
+            for run in consecutive_runs(content, effective_background):
+                run_background = effective_background(run[0])
+                if len(run) < 5 or run_background == "media-owned":
+                    continue
                 target = run[len(run) // 2]
                 results.append(issue(
                     "warning", "background-run",
@@ -355,22 +459,9 @@ def audit_outline(data: dict) -> list[dict]:
                     [item["id"] for item in run],
                     {"set_background": {target["id"]: suggested_background(target, run_background)}},
                 ))
-            run = [slide] if slide is not None else []
-            run_background = background
 
         highlighted = [slide for slide in content if slide.get("highlight")]
-        if not highlighted:
-            candidates = content[2::4][:4] or content[:1]
-            results.append(issue(
-                "warning", "highlight-absence",
-                "Long decks have no title marker highlights; choose a few key titles rather than emphasizing every page.",
-                [slide["id"] for slide in candidates],
-                {
-                    "action": "set highlight to one exact phrase inside title",
-                    "candidate_slides": [slide["id"] for slide in candidates],
-                },
-            ))
-        elif len(highlighted) / len(content) > .4:
+        if len(highlighted) / len(content) > .4:
             results.append(issue(
                 "warning", "highlight-saturation",
                 f"{len(highlighted)}/{len(content)} content slides use title highlights; keep emphasis selective.",
@@ -387,55 +478,55 @@ def audit_outline(data: dict) -> list[dict]:
                 {"action": "remove backdrop_text from supporting slides"},
             ))
 
-    for segment_index, segment in enumerate(content_segments(slides), start=1):
+    segments = content_segments(slides)
+    for segment_index, segment in enumerate(segments, start=1):
         if not segment:
             continue
-        silhouettes = [slide_quality(slide)["silhouette"] for slide in segment]
-        signatures = [slide_quality(slide)["layout_signature"] for slide in segment]
-        start = 0
-        while start < len(segment):
-            end = start + 1
-            while end < len(segment) and silhouettes[end] == silhouettes[start]:
-                end += 1
-            if end - start >= 3:
-                run = segment[start:end]
-                results.append(issue(
-                    "warning", "repeated-silhouette",
-                    f"Section {segment_index} repeats silhouette {silhouettes[start]!r} for {len(run)} consecutive slides.",
-                    [slide["id"] for slide in run],
-                ))
-            start = end
+        silhouette_runs = [run for run in consecutive_runs(segment, lambda slide: slide_quality(slide)["silhouette"]) if len(run) >= 3]
+        signature_runs = [run for run in consecutive_runs(segment, lambda slide: slide_quality(slide)["layout_signature"]) if len(run) >= 3]
+        signature_sets = [{slide["id"] for slide in run} for run in signature_runs]
 
-        start = 0
-        while start < len(segment):
-            end = start + 1
-            while end < len(segment) and signatures[end] == signatures[start]:
-                end += 1
-            if end - start >= 3:
-                run = segment[start:end]
-                results.append(issue(
-                    "warning", "repeated-layout-signature",
-                    f"Section {segment_index} repeats perceived layout {signatures[start]!r} for {len(run)} consecutive slides; mirroring or changing decoration does not create a new rhythm.",
-                    [slide["id"] for slide in run],
-                ))
-            start = end
+        for run in signature_runs:
+            signature = slide_quality(run[0])["layout_signature"]
+            results.append(issue(
+                "warning", "repeated-layout-signature",
+                f"Section {segment_index} repeats perceived layout {signature!r} for {len(run)} consecutive slides; mirroring or changing decoration does not create a new rhythm.",
+                [slide["id"] for slide in run],
+            ))
+
+        for run in silhouette_runs:
+            run_ids = {slide["id"] for slide in run}
+            if any(run_ids <= signature_ids for signature_ids in signature_sets):
+                continue
+            silhouette = slide_quality(run[0])["silhouette"]
+            results.append(issue(
+                "warning", "repeated-silhouette",
+                f"Section {segment_index} repeats silhouette {silhouette!r} for {len(run)} consecutive slides.",
+                [slide["id"] for slide in run],
+            ))
 
         if len(segment) >= 6:
+            repeated_sets = [
+                {slide["id"] for slide in run}
+                for run in [*signature_runs, *silhouette_runs]
+            ]
             for start in range(0, len(segment) - 5):
                 window = segment[start:start + 6]
                 distinct = {slide_quality(slide)["silhouette"] for slide in window}
-                if len(distinct) < 3:
+                window_ids = {slide["id"] for slide in window}
+                if len(distinct) < 3 and not any(window_ids <= repeated for repeated in repeated_sets):
                     results.append(issue(
                         "warning", "low-rhythm-variety",
                         f"Section {segment_index} has only {len(distinct)} silhouettes across six consecutive content slides.",
                         [slide["id"] for slide in window],
                     ))
+                    break
 
         anchors = [slide for slide in segment if slide_quality(slide)["visual_energy"] == "anchor"]
-        if len(segment) >= 5 and not anchors:
+        if len(segment) >= 5 and not anchors and not (len(segments) == 1 and missing_focal_beat):
             results.append(issue(
-                "warning", "missing-visual-anchor",
-                f"Section {segment_index} has {len(segment)} content slides but no visual anchor.",
+                "info", "missing-visual-anchor",
+                f"Section {segment_index} has {len(segment)} content slides but no visual anchor; review whether its content contains a genuine anchor rather than forcing one.",
                 [slide["id"] for slide in segment],
             ))
 
@@ -443,11 +534,12 @@ def audit_outline(data: dict) -> list[dict]:
             segment_media = [slide for slide in segment if has_media(slide)]
             minimum = (len(segment) + 4) // 5
             if len(segment_media) < minimum:
-                results.append(issue(
-                    "warning", "missing-section-media",
-                    f"Section {segment_index} has {len(segment)} content slides but only {len(segment_media)} media slide(s); need {minimum}.",
-                    [slide["id"] for slide in segment],
-                ))
+                if len(segments) > 1:
+                    results.append(issue(
+                        "warning", "missing-section-media",
+                        f"Section {segment_index} has {len(segment)} content slides but only {len(segment_media)} media slide(s); need {minimum}.",
+                        [slide["id"] for slide in segment],
+                    ))
             else:
                 run: list[dict] = []
                 for slide in [*segment, None]:
@@ -462,12 +554,12 @@ def audit_outline(data: dict) -> list[dict]:
                         ))
                     run = []
 
-    return results
+    return consolidate_issues(results)
 
 
 def audit_summary(data: dict) -> dict:
-    results = audit_outline(data)
     review = recommend_outline(data)
+    results = audit_outline(data)
     return {
         "status": (
             "error" if any(item["blocking"] for item in results)
@@ -489,14 +581,24 @@ def enforce_outline_quality(data: dict) -> list[dict]:
     for item in results:
         if item["level"] == "warning":
             suffix = f" Slides: {', '.join(item['slides'])}." if item["slides"] else ""
-            suggestion = f" Suggestion: {json.dumps(item['suggestion'], ensure_ascii=False)}" if item.get("suggestion") else ""
+            signals = (item.get("suggestion") or {}).get("signals") or []
+            suggestion = (
+                f" Signals: {', '.join(str(signal.get('code')) for signal in signals)}."
+                if signals
+                else f" Suggestion: {json.dumps(item['suggestion'], ensure_ascii=False)}" if item.get("suggestion") else ""
+            )
             print(f"[WARN] {item['code']}: {item['message']}{suffix}{suggestion}")
     errors = [item for item in results if item["blocking"]]
     if errors:
         lines = []
         for item in errors:
             suffix = f" Slides: {', '.join(item['slides'])}." if item["slides"] else ""
-            suggestion = f" Suggestion: {json.dumps(item['suggestion'], ensure_ascii=False)}" if item.get("suggestion") else ""
+            signals = (item.get("suggestion") or {}).get("signals") or []
+            suggestion = (
+                f" Signals: {', '.join(str(signal.get('code')) for signal in signals)}."
+                if signals
+                else f" Suggestion: {json.dumps(item['suggestion'], ensure_ascii=False)}" if item.get("suggestion") else ""
+            )
             lines.append(f"{item['code']}: {item['message']}{suffix}{suggestion}")
         raise SystemExit("Deck quality audit failed:\n- " + "\n- ".join(lines))
     return results
