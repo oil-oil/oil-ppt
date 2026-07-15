@@ -9,11 +9,12 @@ from pathlib import Path
 
 from background_presets import ALL_BACKGROUNDS, BACKGROUND_PRESETS, BACKGROUND_UI_LABELS, template_background
 from capability_catalog import DECOR_UI_LABELS, PROGRAM_OWNED_CAPABILITIES, TEMPLATE_DISCOVERY, VARIANT_HELP, VARIANT_UI_LABELS
-from component_contracts import COMPONENT_CONTRACTS, COMPONENT_QUALITY, VARIANT_QUALITY
-from fill_slots import FILLERS
+from component_contracts import COMPONENT_CONTRACTS, COMPONENT_QUALITY, PAGE_BLEND_TEMPLATES, VARIANT_QUALITY, effective_media_fit, effective_media_surface
+from fill_slots import FILLERS, MEDIA_FIT_DEFAULTS
 from icon_registry import ICON_CATALOG, verify_icons
 from outline_schema import DECK_FIELDS, SHARED_SLIDE_FIELDS, SLIDE_ALLOWED_FIELDS, TEMPLATE_CONTENT_HELP, TEMPLATE_FAMILIES, TEMPLATE_VISIBLE_FIELDS, VARIANT_INPUT_GUIDANCE
 from palette_tokens import PALETTES
+from media_plan import MEDIA_SLOTS, MEDIA_VARIANT_SLOTS
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -300,6 +301,25 @@ def validate_skill() -> None:
     media_frame = SHARED_SLIDE_FIELDS.get("media_frame")
     if not isinstance(media_frame, dict) or set(media_frame.get("allowed") or ()) != {"content", "self-framed"}:
         errors.append("contract must expose media_frame with content and self-framed choices")
+    media_surface = SHARED_SLIDE_FIELDS.get("media_surface")
+    if not isinstance(media_surface, dict) or set(media_surface.get("allowed") or ()) != {"component", "page-blend"}:
+        errors.append("contract must expose media_surface with component and page-blend choices")
+    surface_templates = {template for template, fields in TEMPLATE_VISIBLE_FIELDS.items() if "media_surface" in fields}
+    if surface_templates != set(PAGE_BLEND_TEMPLATES):
+        errors.append(f"media_surface exposure mismatch; expected={sorted(PAGE_BLEND_TEMPLATES)}, actual={sorted(surface_templates)}")
+    if effective_media_surface({"template": "split-visual", "media_fidelity": "illustrative"}) != "page-blend":
+        errors.append("illustrative split media must infer page-blend")
+    if effective_media_fit({"template": "split-visual", "media_fidelity": "illustrative"}) != "contain":
+        errors.append("page-blend illustration must preserve its full subject with contain")
+    if MEDIA_FIT_DEFAULTS.get("cover") != "cover" or MEDIA_SLOTS.get("cover", {}).get("ratio") != "4:5":
+        errors.append("cover media must default to cover in a portrait-oriented 4:5 generation slot")
+    if MEDIA_SLOTS.get("browser-showcase", {}).get("ratio") != "4:3":
+        errors.append("browser media plan must match the template's 4:3 evidence area")
+    sequence_slot = MEDIA_SLOTS.get("sequence-gallery", {})
+    if sequence_slot.get("fit") != "cover" or sequence_slot.get("fidelity") != "contextual":
+        errors.append("sequence-gallery must default to crop-safe contextual process photography")
+    if MEDIA_VARIANT_SLOTS.get(("split-visual", "copy-dominant"), {}).get("ratio") != "4:5":
+        errors.append("copy-dominant split media must expose its portrait slot ratio")
     if set((DECK_FIELDS.get("media_policy") or {}).get("allowed") or ()) != {"required", "text-only"}:
         errors.append("contract must expose both media policies")
     companion_keys = {"accent_alt", "accent_alt_soft", "accent_warm", "accent_warm_soft"}
@@ -312,6 +332,11 @@ def validate_skill() -> None:
     surface_rule = re.search(r"\.oil-surface\s*\{([^}]*)\}", runtime_css, re.S)
     if not surface_rule or not re.search(r"overflow\s*:\s*visible", surface_rule.group(1)):
         errors.append("runtime .oil-surface must keep overflow visible; clipping belongs to media wrappers")
+    if '[data-media-surface="page-blend"]' not in runtime_css:
+        errors.append("runtime must implement the page-blend media surface")
+    cover_text = (TEMPLATES / "cover.html").read_text(encoding="utf-8")
+    if 'class="media oil-surface oil-media"' in cover_text or COMPONENT_QUALITY["cover"]["frame_owner"] != "none":
+        errors.append("cover media must stay open and frameless; it may not use the generic oil-surface shell")
     for obsolete in ("oil-bleed-art", "oil-browser-mock", "oil-photo-placeholder"):
         if obsolete in runtime_css:
             errors.append(f"runtime must not retain template stand-in visual: {obsolete}")

@@ -139,8 +139,14 @@ def slide_recommendation(slide: dict) -> dict | None:
         if re.search(r"(?:全屏|满屏|铺底|铺满|整页照片)", text, re.I):
             candidates.insert(0, _candidate("photo-gradient", "EXPLICIT_FULL_PHOTO"))
             high_confidence = True
-        if re.search(r"(?:斜切|斜杠|方向感|冲突)", text, re.I):
-            candidates.insert(0, _candidate("diagonal-split", "EXPLICIT_DIAGONAL_DIRECTION"))
+        explicit_diagonal = bool(re.search(r"(?:斜切|斜杠|方向感|方向冲突)", text, re.I))
+        semantic_diagonal = bool(re.search(r"(?:转向|转换|转化|过渡|分界|边界|对立|张力|从.{0,18}(?:到|变成|变为|走向))", text, re.I))
+        protected_evidence = selected in {
+            "cover", "end", "browser-showcase", "annotated-showcase", "case-study-board",
+            "editorial-canvas", "bleed-split", "photo-gradient",
+        } or slide.get("media_fidelity") == "strict"
+        if explicit_diagonal or (semantic_diagonal and not protected_evidence):
+            candidates.insert(0, _candidate("diagonal-split", "DIRECTION_TRANSITION_OR_BOUNDARY"))
             high_confidence = True
         elif re.search(r"(?:出血|破框|边缘主视觉)", text, re.I):
             candidates.insert(0, _candidate("bleed-split", "EXPLICIT_EDGE_BLEED"))
@@ -150,6 +156,15 @@ def slide_recommendation(slide: dict) -> dict | None:
             high_confidence = True
         if re.search(r"(?:展陈|局部放大|批注|材料画布)", text, re.I):
             candidates.insert(0, _candidate("editorial-canvas", "EDITORIAL_MATERIAL_CANVAS"))
+
+    concept_media = (
+        str(slide.get("media_fidelity") or "").lower() == "illustrative"
+        or bool(re.search(r"(?:概念|插画|抽象|机制|关系|concept|illustrat|abstract)", str(slide.get("media_role") or ""), re.I))
+    )
+    if concept_media:
+        for item in candidates:
+            if item["template"] in {"split-visual", "editorial-feature"}:
+                item["choice_patch"]["media_surface"] = "page-blend"
 
     deduped: list[dict] = []
     seen: set[str] = set()

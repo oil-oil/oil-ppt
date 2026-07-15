@@ -625,7 +625,7 @@ def rhythm_panel(data: dict, slides: list[dict]) -> str:
     aesthetic_codes = {
         "background-monotony", "background-class-monotony", "background-run", "highlight-absence", "highlight-saturation",
         "backdrop-saturation", "component-dominance", "missing-focal-beat",
-        "missing-cinematic-beat", "media-shape-monotony", "inset-media-run", "specialized-capability-suggestion",
+        "missing-cinematic-beat", "media-energy-concentration", "media-shape-monotony", "inset-media-run", "specialized-capability-suggestion",
     }
     issues = [item for item in summary["issues"] if item["code"] in aesthetic_codes]
     issue_html = "".join(

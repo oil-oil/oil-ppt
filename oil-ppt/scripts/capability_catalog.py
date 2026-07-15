@@ -33,7 +33,7 @@ FAMILY_GUIDANCE = {
         "reading_path": "图文并置",
     },
     "bleed": {
-        "question": "主视觉是否值得打破安全区，承担一次全屏或强方向的节奏变化？",
+        "question": "主视觉是否值得打破安全区，或内容是否表达方向、过渡、边界与冲突，需要一次强节奏变化？",
         "reading_path": "全屏视觉",
     },
     "compound": {
@@ -44,7 +44,7 @@ FAMILY_GUIDANCE = {
 
 
 TEMPLATE_DISCOVERY = {
-    "cover": {"aliases": ["封面", "开场", "首屏"], "effects": ["opening-focal"], "avoid_when": "普通内容页"},
+    "cover": {"aliases": ["封面", "开场", "首屏"], "effects": ["opening-focal", "open-full-slot-media"], "avoid_when": "普通内容页"},
     "end": {"aliases": ["结尾", "收束", "行动页"], "effects": ["closing-focal"], "avoid_when": "尚未完成论证"},
     "section": {"aliases": ["章节页", "转场", "分隔页"], "effects": ["section-pause"], "avoid_when": "没有真实章节变化"},
     "quote": {"aliases": ["引言", "原话", "金句"], "effects": ["editorial-quote"], "avoid_when": "没有可核验来源的改写句"},
@@ -60,13 +60,13 @@ TEMPLATE_DISCOVERY = {
     "tabs": {"aliases": ["状态切换", "前后视图", "两个模式"], "effects": ["interactive-state"], "avoid_when": "两个对象需要同时可见"},
     "converge": {"aliases": ["汇聚", "合流", "输入到结果"], "effects": ["merge-diagram"], "avoid_when": "内容是顺序流程"},
     "editorial-canvas": {"aliases": ["展陈", "素材画布", "局部批注"], "effects": ["editorial-canvas"], "avoid_when": "只有一张普通照片与一句说明"},
-    "split-visual": {"aliases": ["图文并排", "配图说明", "通用分栏"], "effects": ["inset-media"], "avoid_when": "图片值得全屏或需要浏览器壳"},
+    "split-visual": {"aliases": ["图文并排", "配图说明", "通用分栏", "融页插画"], "effects": ["inset-media", "page-blend-illustration"], "avoid_when": "图片值得全屏或需要浏览器壳"},
     "photo-split": {"aliases": ["照片分栏", "图文等权", "半屏照片"], "effects": ["balanced-photo"], "avoid_when": "UI 截图或不可裁切材料"},
     "browser-showcase": {"aliases": ["网页截图", "产品界面", "浏览器壳"], "effects": ["browser-frame"], "avoid_when": "窗口语境本身不是证据"},
     "bleed-split": {"aliases": ["边缘出血", "破框主视觉", "半屏铺满"], "effects": ["edge-bleed"], "avoid_when": "素材不可裁切或已有重要外框"},
-    "diagonal-split": {"aliases": ["斜切", "斜杠分区", "方向冲突"], "effects": ["diagonal-bleed"], "avoid_when": "页面语气平静且无方向关系"},
+    "diagonal-split": {"aliases": ["斜切", "斜杠分区", "方向冲突", "转向", "过渡", "边界"], "effects": ["diagonal-bleed"], "avoid_when": "页面语气平静且无方向、过渡、边界或冲突关系"},
     "photo-gradient": {"aliases": ["全屏照片", "照片铺底", "图上叠字", "满屏样式"], "effects": ["full-bleed", "text-overlay"], "avoid_when": "文字较多或主体落在文字区"},
-    "editorial-feature": {"aliases": ["编辑式主视觉", "主视觉加三条支撑", "主副图拼贴"], "effects": ["editorial-feature", "editorial-hero-collage"], "avoid_when": "没有主视觉或三项支撑并不共同解释标题"},
+    "editorial-feature": {"aliases": ["编辑式主视觉", "主视觉加三条支撑", "主副图拼贴", "融页概念图"], "effects": ["editorial-feature", "editorial-hero-collage", "page-blend-illustration"], "avoid_when": "没有主视觉或三项支撑并不共同解释标题"},
     "catalog-board": {"aliases": ["结构化目录", "知识地图", "分类展板"], "effects": ["catalog-density"], "avoid_when": "条目无法稳定分成四组或每组不是三项"},
     "case-study-board": {"aliases": ["案例证据板", "项目复盘", "案例指标"], "effects": ["case-evidence", "native-chart"], "avoid_when": "没有真实证据、真实数据或明确洞察"},
     "annotated-showcase": {"aliases": ["标注式展示", "局部说明", "界面解读"], "effects": ["annotated-evidence"], "avoid_when": "标注无法对应图片中的明确位置"},
@@ -189,7 +189,7 @@ PROGRAM_OWNED_CAPABILITIES = {
             "inset split", "balanced photo split", "browser frame", "editorial canvas",
             "edge bleed", "diagonal bleed", "full-photo gradient",
         ],
-        "automatic": "槽位比例、适配、裁切、遮罩、渐变和 frame ownership 由程序管理；Agent 提供真实素材及其角色和回答的问题。",
+        "automatic": "程序按真实版位比例规划素材：照片默认 cover 铺满，UI/文档 strict 素材用 contain 保真，概念插画可 page-blend 融入页面；裁切、遮罩、渐变和 frame ownership 统一管理，避免通用灰框与双重外壳。Agent 只提供素材角色和它回答的问题。",
         "source_command": "scripts/oil-ppt media sources",
         "plan_command": "scripts/oil-ppt media plan <项目> --write",
         "frame_command": "scripts/oil-ppt media frame <截图> <输出.png> --project <项目> --ratio <ratio>",
@@ -215,7 +215,7 @@ PROGRAM_OWNED_CAPABILITIES = {
 
 SELECTION_ORDER = (
     "先按内容关系选择 family，不按外观挑模板。",
-    "再看整套 silhouette 节奏；有真实素材时必须同时考虑 split 与 bleed 两类。",
+    "再看整套 silhouette 节奏；有真实素材时必须同时考虑 split 与 bleed 两类，并把出血节奏分布在前、中段，而不是只放结尾。",
     "最后选择 variant、decor、background 和可选强调字段；程序校验所有组合。",
     "生成 outline.json 后运行 plan；推荐、节奏与专用能力门禁由程序统一完成。",
 )

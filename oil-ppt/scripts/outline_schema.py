@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 from background_presets import BACKGROUND_PRESETS
-from component_contracts import COMPONENT_CONTRACTS, normalize_component_choices
+from component_contracts import COMPONENT_CONTRACTS, PAGE_BLEND_TEMPLATES, normalize_component_choices
 from icon_registry import ICON_CATALOG
 from media_assets import outline_media_bindings
 from palette_tokens import PALETTES, TOKEN_KEYS, canonical_name, normalize_palette
@@ -138,7 +138,7 @@ VARIANT_INPUT_GUIDANCE = {
     "sequence-gallery": {
         "default": {
             "minimum": ["content", "conclusion", "media_frame", "steps[3]: title + body + image"],
-            "optional": ["kicker", "page_note", "steps[].image_alt"],
+            "optional": ["kicker", "page_note", "steps[].image_alt", "steps[].media_question", "steps[].media_source"],
         },
     },
 }
@@ -174,7 +174,7 @@ SLIDE_ALLOWED_FIELDS = frozenset({
     "kicker", "content", "note", "meta", "page_note",
     "image", "media", "artifact_image", "image_alt",
     "secondary_image", "secondary_image_alt", "badge", "media_note",
-    "media_frame", "media_fit", "media_position", "media_treatment",
+    "media_frame", "media_fit", "media_position", "media_treatment", "media_surface",
     "media_role", "media_fidelity", "media_question", "media_source",
     "cards", "steps", "sides", "groups", "outcome",
     "quote", "source", "metric", "metrics", "insight", "chart", "annotations",
@@ -218,8 +218,8 @@ TEMPLATE_VISIBLE_FIELDS = {
     "editorial-canvas": set(STANDARD_MEDIA_FIELDS),
     "photo-gradient": set(STANDARD_MEDIA_FIELDS),
     "photo-split": set(STANDARD_MEDIA_FIELDS),
-    "split-visual": set(STANDARD_MEDIA_FIELDS),
-    "editorial-feature": {"content", "note", "kicker", "meta", "page_note", "image", "media", "image_alt", "secondary_image", "secondary_image_alt", "badge", "media_note", "cards", *MEDIA_METADATA_FIELDS},
+    "split-visual": {*STANDARD_MEDIA_FIELDS, "media_surface"},
+    "editorial-feature": {"content", "note", "kicker", "meta", "page_note", "image", "media", "image_alt", "secondary_image", "secondary_image_alt", "badge", "media_note", "cards", "media_surface", *MEDIA_METADATA_FIELDS},
     "catalog-board": {"kicker", "meta", "page_note", "metrics", "groups"},
     "case-study-board": {"content", "note", "kicker", "image", "media", "image_alt", "metrics", "insight", "chart", *MEDIA_METADATA_FIELDS},
     "annotated-showcase": {"content", "note", "kicker", "image", "media", "image_alt", "annotations", *MEDIA_METADATA_FIELDS},
@@ -267,6 +267,13 @@ SHARED_SLIDE_FIELDS = {
         "allowed": ["cover", "contain"],
         "use_when": "素材不可裁切时选 contain；照片铺满时选 cover",
         "rule": "省略时由模板按素材角色决定",
+    },
+    "media_surface": {
+        "type": "string",
+        "required": False,
+        "allowed": ["component", "page-blend"],
+        "use_when": "split-visual 或 editorial-feature 中，概念插画需要直接融入页面而不是进入通用卡片外框",
+        "rule": "截图、界面和文档使用 component；概念插画使用 page-blend；省略时程序按 media_fidelity 与 media_role 推断",
     },
     "media_position": {
         "type": "string",
@@ -529,11 +536,14 @@ def _validate_media_contract(slide: dict, index: int) -> list[tuple[str, object]
     if not bindings and frame is not None:
         raise SystemExit(f"Outline slide {index} declares media_frame but the selected component has no rendered media.")
     media_only_fields = (
-        "media_fit", "media_position", "media_treatment", "media_role",
+        "media_fit", "media_position", "media_treatment", "media_surface", "media_role",
         "media_fidelity", "media_question", "media_source",
     )
     if not bindings:
         _reject_fields(slide, index, media_only_fields, "media metadata requires rendered media")
+    if slide.get("media_surface") is not None and template not in PAGE_BLEND_TEMPLATES:
+        allowed = ", ".join(sorted(PAGE_BLEND_TEMPLATES))
+        raise SystemExit(f"Outline slide {index} media_surface is only supported by: {allowed}.")
     if not top_level and slide.get("image_alt") is not None:
         raise SystemExit(f"Outline slide {index} image_alt requires a rendered top-level image/media/artifact_image.")
     if not slide.get("secondary_image") and slide.get("secondary_image_alt") is not None:
@@ -886,6 +896,7 @@ def validate_outline(data: dict, templates_dir: Path) -> list[dict]:
             ("media_fit", {"cover", "contain"}),
             ("media_position", {"center", "left", "right", "top", "bottom", "top-left", "top-right", "bottom-left", "bottom-right"}),
             ("media_treatment", {"natural", "muted", "mono"}),
+            ("media_surface", {"component", "page-blend"}),
         ):
             if slide.get(field) is not None and slide[field] not in allowed:
                 raise SystemExit(f"Outline slide {index} {field} must be one of: {', '.join(sorted(allowed))}.")

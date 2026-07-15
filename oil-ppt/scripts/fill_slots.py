@@ -9,13 +9,14 @@ import re
 from pathlib import Path
 
 from background_presets import effective_background
+from component_contracts import effective_media_fit, effective_media_surface
 from editor_bindings import annotate_editable_fragment
 from icon_registry import CONNECTOR_ICON, icon_svg_markup
 from media_assets import outline_media_bindings
 
 
 MEDIA_FIT_DEFAULTS = {
-    "cover": "contain",
+    "cover": "cover",
     "end": "contain",
     "split-visual": "contain",
     "browser-showcase": "contain",
@@ -197,9 +198,13 @@ def inject_backdrop_text(fragment: str, slide: dict) -> str:
 def apply_media_attributes(fragment: str, slide: dict) -> str:
     if not outline_media_bindings(slide):
         return fragment
-    fit = str(slide.get("media_fit") or MEDIA_FIT_DEFAULTS.get(str(slide.get("template") or ""), "cover"))
+    fit = effective_media_fit(
+        slide,
+        fallback=MEDIA_FIT_DEFAULTS.get(str(slide.get("template") or ""), "cover"),
+    )
     position = str(slide.get("media_position") or "center")
     treatment = str(slide.get("media_treatment") or "natural")
+    surface = effective_media_surface(slide)
     template = str(slide.get("template") or "")
     variant = str(slide.get("variant") or "default")
     pattern = re.compile(r'<(?P<tag>[a-z][a-z0-9]*)\b(?P<attrs>[^>]*\bclass="[^"]*\boil-media\b[^"]*"[^>]*)>', re.I)
@@ -208,7 +213,7 @@ def apply_media_attributes(fragment: str, slide: dict) -> str:
 
     def add_attributes(match: re.Match[str]) -> str:
         attrs = match.group("attrs")
-        for name, value in (("data-media-fit", fit), ("data-media-position", position), ("data-media-treatment", treatment)):
+        for name, value in (("data-media-fit", fit), ("data-media-position", position), ("data-media-treatment", treatment), ("data-media-surface", surface)):
             if re.search(rf"\b{re.escape(name)}=", attrs, re.I):
                 attrs = re.sub(
                     rf'({re.escape(name)}=["\'])[^"\']+(["\'])',

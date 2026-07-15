@@ -23,11 +23,11 @@ from capability_catalog import (
     TEMPLATE_DISCOVERY, VARIANT_HELP,
 )
 from capability_recommender import recommend_outline
-from component_contracts import COMPONENT_CONTRACTS, VARIANT_QUALITY, quality_for
+from component_contracts import COMPONENT_CONTRACTS, PAGE_BLEND_TEMPLATES, VARIANT_QUALITY, quality_for
 from design_quality import audit_summary, enforce_outline_quality
 from media_assets import outline_media_bindings, print_sources, verify_outline_media
 from media_frame import frame_media
-from media_plan import build_media_plan, write_media_plan
+from media_plan import MEDIA_SLOTS, MEDIA_VARIANT_SLOTS, build_media_plan, write_media_plan
 from render_programmatic_visual import render_html_visual
 from icon_registry import print_icon_results
 from outline_schema import BASE_VISIBLE_FIELDS, DECK_FIELDS, MEDIA_TEMPLATES, SHARED_SLIDE_FIELDS, SLIDE_ALLOWED_FIELDS, TEMPLATE_CONTENT_HELP, TEMPLATE_FAMILIES, TEMPLATE_VISIBLE_FIELDS, VARIANT_INPUT_GUIDANCE, validate_outline
@@ -559,6 +559,14 @@ def contract_schema() -> dict:
         "mediaSource": {
             "type": "object",
             "description": "Source and rights metadata such as kind, url, author, license, rights and modifications.",
+            "properties": {
+                "kind": {"type": "string", "minLength": 1, "description": "user-material, generated, programmatic-visual, Wikimedia, Pexels, or another explicit source type"},
+                "url": {"type": "string", "minLength": 1},
+                "author": {"type": "string", "minLength": 1},
+                "license": {"type": "string", "minLength": 1},
+                "rights": {"type": "string", "minLength": 1, "description": "why this deck may use the asset"},
+                "modifications": {"type": "string", "minLength": 1},
+            },
         },
     }
     string_fields = {
@@ -616,6 +624,7 @@ def contract_schema() -> dict:
         "backdrop_text": {"type": "string", "minLength": 1, "maxLength": 12},
         "media_frame": {"enum": ["content", "self-framed"]},
         "media_fit": {"enum": ["cover", "contain"]},
+        "media_surface": {"enum": ["component", "page-blend"]},
         "media_position": {"enum": [
             "center", "left", "right", "top", "bottom",
             "top-left", "top-right", "bottom-left", "bottom-right",
@@ -639,7 +648,7 @@ def contract_schema() -> dict:
     copy_required = exactly_one_required("content", "note")
     image_required = exactly_one_required("image", "media")
     media_contract_fields = (
-        "image", "media", "artifact_image", "image_alt", "media_frame", "media_fit",
+        "image", "media", "artifact_image", "image_alt", "media_frame", "media_fit", "media_surface",
         "media_position", "media_treatment", "media_role", "media_fidelity", "media_question", "media_source",
     )
 
@@ -1187,6 +1196,21 @@ def print_contract(
             },
             **({"variant_quality": VARIANT_QUALITY[name]} if name in VARIANT_QUALITY else {}),
         }
+        if name in MEDIA_SLOTS:
+            entry["media_contract"] = {
+                "slot": MEDIA_SLOTS[name],
+                "fit_rule": "strict UI/document/chart uses contain; contextual photo uses cover; page-blend illustration stays frameless",
+                **(
+                    {"surface_modes": ["component", "page-blend"], "page_blend_frame_owner": "none"}
+                    if name in PAGE_BLEND_TEMPLATES else {}
+                ),
+                **(
+                    {"variant_slot_overrides": {
+                        variant: slot for (template, variant), slot in MEDIA_VARIANT_SLOTS.items() if template == name
+                    }}
+                    if any(template == name for template, _ in MEDIA_VARIANT_SLOTS) else {}
+                ),
+            }
         templates_by_family[TEMPLATE_FAMILIES[name]].append(entry)
     program_owned = json.loads(json.dumps(PROGRAM_OWNED_CAPABILITIES, ensure_ascii=False))
     def resolved_command(value: str) -> str:
@@ -1235,7 +1259,7 @@ def print_contract(
             "template": match,
             "base_fields": ["id", "title", "template", "variant", "decor"],
             "common_optional": ["highlight", "background", "backdrop_text"],
-            "media_rule": "出现任何图片路径时设置 media_frame='content'；只有素材自带必须保留的外框时才用 self-framed。",
+            "media_rule": "出现图片时通常设置 media_frame='content'。照片默认 cover 铺满版位；不可裁切的 UI/文档用 contain。split-visual/editorial-feature 的概念插画可用 media_surface='page-blend' 融入页面；只有素材自带必须保留的外框时才用 self-framed。",
             "full_schema_command": cli_command("contract", "--schema"),
         }
     print(json.dumps(payload, ensure_ascii=False, indent=2 if pretty else None, separators=None if pretty else (",", ":")))
@@ -2077,7 +2101,7 @@ def parse_args() -> argparse.Namespace:
     media_frame_parser.add_argument("output", type=Path)
     media_frame_parser.add_argument("--project", type=Path, help="read the current palette from this project")
     media_frame_parser.add_argument("--palette", choices=sorted(PALETTES), help="named palette when no project is supplied")
-    media_frame_parser.add_argument("--ratio", choices=("16:9", "16:10", "4:3", "1:1", "21:9"), default="16:10")
+    media_frame_parser.add_argument("--ratio", choices=("16:9", "16:10", "4:3", "4:5", "1:1", "21:9"), default="16:10")
     media_frame_parser.add_argument("--padding", choices=("compact", "standard", "spacious"), default="standard")
     media_frame_parser.add_argument("--align", choices=("center", "left", "right", "top", "bottom", "top-left", "top-right", "bottom-left", "bottom-right"), default="center")
     media_frame_parser.add_argument("--fit", choices=("contain", "cover"), default="contain")

@@ -20,11 +20,11 @@ COMPONENT_CONTRACTS = {
     },
     "converge": {"use_when": "多个输入汇聚为一个结果或判断。", "variants": ("default",), "decorations": ("none",)},
     "cover": {
-        "use_when": "演示开场。statement=大字焦点；media=标题+真实主视觉。",
+        "use_when": "演示开场。statement=大字焦点；media=标题+铺满版位的真实主视觉，不使用通用卡片外框。",
         "variants": ("statement", "media"),
         "decorations": ("none",),
     },
-    "diagonal-split": {"use_when": "章节转折或冲突需要更强的方向感，并有一张主视觉；斜切方向应跟随内容动势。", "variants": ("media-right", "media-left"), "decorations": ("none",)},
+    "diagonal-split": {"use_when": "内容表达转向、过渡、边界、对立或冲突，并有一张可裁切主视觉；斜切方向应跟随内容动势。", "variants": ("media-right", "media-left"), "decorations": ("none",)},
     "editorial-canvas": {"use_when": "一段说明与素材、局部或批注共同组成展陈式页面。", "variants": ("default",), "decorations": ("none",)},
     "end": {
         "use_when": "演示结束。line=一句刀；line-note=一句+余韵；line-artifact=一句+二维码/物件。",
@@ -78,7 +78,7 @@ COMPONENT_QUALITY = {
     "comparison": {"silhouette": "two-panel", "surface_density": "heavy", "frame_owner": "none"},
     "comparison-list": {"silhouette": "matrix", "surface_density": "light", "frame_owner": "none"},
     "converge": {"silhouette": "diagram", "surface_density": "light", "frame_owner": "none"},
-    "cover": {"silhouette": "focal", "surface_density": "none", "frame_owner": "template"},
+    "cover": {"silhouette": "focal", "surface_density": "none", "frame_owner": "none"},
     "diagonal-split": {"silhouette": "bleed", "surface_density": "none", "frame_owner": "media"},
     "editorial-canvas": {"silhouette": "canvas", "surface_density": "light", "frame_owner": "template"},
     "end": {"silhouette": "focal", "surface_density": "none", "frame_owner": "template"},
@@ -101,6 +101,15 @@ COMPONENT_QUALITY = {
     "sequence-gallery": {"silhouette": "gallery", "surface_density": "heavy", "frame_owner": "template"},
     "process-cards": {"silhouette": "step-cards", "surface_density": "heavy", "frame_owner": "none"},
 }
+
+
+# Concept illustrations may merge with the page in these two compositions.
+# Screenshots, UI and document evidence keep the component-owned shell.
+PAGE_BLEND_TEMPLATES = frozenset({"split-visual", "editorial-feature"})
+PAGE_BLEND_ROLE_TOKENS = (
+    "concept", "illustration", "illustrative", "abstract",
+    "概念", "插画", "抽象", "机制", "关系",
+)
 
 
 # Variant-level signatures describe changes visible from a distance. Mirroring
@@ -216,6 +225,41 @@ def quality_for(template: str, variant: str | None = None) -> dict:
     base.setdefault("layout_signature", base["silhouette"])
     base.setdefault("visual_energy", "anchor" if base["silhouette"] in {"bleed", "browser", "canvas", "diagram", "metric", "rail", "timeline"} else "structured")
     return base
+
+
+def effective_media_surface(slide: dict) -> str:
+    """Return whether media keeps a component shell or blends into the page."""
+    explicit = str(slide.get("media_surface") or "").strip()
+    if explicit:
+        return explicit
+    template = str(slide.get("template") or "")
+    if template not in PAGE_BLEND_TEMPLATES:
+        return "component"
+    fidelity = str(slide.get("media_fidelity") or "").lower()
+    role = str(slide.get("media_role") or "").lower()
+    if fidelity == "illustrative" or any(token in role for token in PAGE_BLEND_ROLE_TOKENS):
+        return "page-blend"
+    return "component"
+
+
+def effective_media_fit(slide: dict, *, fallback: str = "cover", fidelity: str | None = None) -> str:
+    """Choose crop-vs-preserve consistently for planning and rendering."""
+    explicit = str(slide.get("media_fit") or "").strip()
+    if explicit:
+        return explicit
+    resolved_fidelity = str(fidelity or slide.get("media_fidelity") or "").lower()
+    if resolved_fidelity == "strict" or effective_media_surface(slide) == "page-blend":
+        return "contain"
+    if resolved_fidelity == "contextual":
+        return "cover"
+    return fallback
+
+
+def effective_frame_owner(slide: dict) -> str:
+    """Resolve frame ownership after the media-surface policy is applied."""
+    if effective_media_surface(slide) == "page-blend":
+        return "none"
+    return quality_for(str(slide.get("template") or ""), slide.get("variant"))["frame_owner"]
 
 
 def normalize_component_choices(slide: dict, index: int) -> None:

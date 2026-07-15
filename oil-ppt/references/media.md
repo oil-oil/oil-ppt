@@ -8,15 +8,18 @@
 
 - `media_role`：截图、证据、照片、插画等页面角色。
 - `media_fidelity`：`strict` 保留 UI/数据/文档；`contextual` 保持真实语境；`illustrative` 只表达概念。
+- `media_fit`：照片与有边到边背景的画面使用 `cover` 铺满；UI、文档、图表等不可裁切素材使用 `contain`。
+- `media_surface`：仅 `split-visual` / `editorial-feature` 使用；概念插画可设 `page-blend` 直接融入页面，真实证据使用 `component`。
 - `media_question`：这张素材回答的具体问题。
 - `media_source`：来源类型、URL、作者、许可、权利依据和修改说明。
 
-运行 `scripts/oil-ppt media plan <项目> --write`。程序会输出槽位比例、目标尺寸、frame owner、文件状态与哈希；需要截图适配时还会给出完整 `media frame` 命令。不要先生成任意比例图片再硬塞进页面。
+运行 `scripts/oil-ppt media plan <项目> --write`。程序会按组件与 variant 的真实版位输出槽位比例、目标尺寸、fit、surface、frame owner、文件状态与哈希；需要截图适配时还会给出完整 `media frame` 命令。不要先生成任意比例图片再硬塞进页面，也不要用 `contain` 给可裁切照片留下大面积空带。
 
 ## 选择视觉
 
 - 产品界面、数据、案例、真人和文档是事实证据，使用真实素材；不让图片模型重画。
 - 截图需要补足比例时使用 `media frame`，它只做等比缩放、对齐和块状背景，不改变截图内容。
+- 通用灰色圆角容器不是默认图片风格：封面主视觉直接铺满开放版位；概念插画优先融页；只有真实证据需要表达窗口、设备或文档边界时才保留语义外框。
 - 流程、关系、对比和数据优先使用 HTML/CSS/SVG 程序化视觉。
 - AI 生成只用于无事实指向的概念插画或隐喻，图中不生成文字、数字、标签、假 UI 或图表。
 - 每张图片必须回答一个问题；纯氛围图不算视觉锚点。

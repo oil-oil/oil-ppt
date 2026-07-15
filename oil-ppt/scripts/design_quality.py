@@ -7,7 +7,7 @@ from collections import Counter
 
 from background_presets import effective_background
 from capability_recommender import recommend_outline
-from component_contracts import COMPONENT_CONTRACTS, quality_for
+from component_contracts import COMPONENT_CONTRACTS, effective_frame_owner, effective_media_surface, quality_for
 from media_assets import outline_media_bindings
 from outline_schema import TEMPLATE_FAMILIES
 
@@ -111,6 +111,7 @@ def coverage_summary(data: dict) -> dict:
     background_classes = Counter(BACKGROUND_CLASSES[effective_background(slide)] for slide in content)
     media = [slide for slide in content if has_media(slide)]
     bleed = [slide for slide in media if slide_quality(slide)["silhouette"] == "bleed"]
+    surfaces = Counter(effective_media_surface(slide) for slide in media)
     return {
         "content_slides": len(content),
         "templates": dict(templates),
@@ -119,7 +120,7 @@ def coverage_summary(data: dict) -> dict:
         "layout_signatures": dict(signatures),
         "backgrounds": dict(backgrounds),
         "background_classes": dict(background_classes),
-        "media": {"slides": len(media), "full_bleed": len(bleed)},
+        "media": {"slides": len(media), "full_bleed": len(bleed), "surfaces": dict(surfaces)},
         "emphasis": {
             "highlight": sum(bool(slide.get("highlight")) for slide in content),
             "backdrop_text": sum(bool(slide.get("backdrop_text")) for slide in content),
@@ -145,7 +146,7 @@ def audit_outline(data: dict) -> list[dict]:
                 blocking=True,
             ))
             continue
-        owner = slide_quality(slide)["frame_owner"]
+        owner = effective_frame_owner(slide)
         if owner == "template" and declared != "content":
             results.append(issue(
                 "error", "double-frame-risk",
@@ -244,6 +245,30 @@ def audit_outline(data: dict) -> list[dict]:
                     "candidate_slides": [slide["id"] for slide in candidates],
                 },
             ))
+        elif len(media_slides) >= 5:
+            content_positions = {slide["id"]: index for index, slide in enumerate(content)}
+            bleed_positions = [content_positions[slide["id"]] for slide in bleed_media]
+            sparse = len(bleed_media) / len(media_slides) < .25
+            late = min(bleed_positions) >= max(1, (len(content) * 2) // 3)
+            if sparse or late:
+                eligible = [
+                    slide for slide in media_slides
+                    if slide_quality(slide)["silhouette"] != "bleed"
+                    and slide.get("media_frame") != "self-framed"
+                    and slide.get("media_fidelity") != "strict"
+                    and content_positions[slide["id"]] < max(1, (len(content) * 2) // 3)
+                ]
+                candidates = eligible[1::2][:3] or eligible[:2]
+                results.append(issue(
+                    "warning", "media-energy-concentration",
+                    f"Only {len(bleed_media)}/{len(media_slides)} media slides break the safe area, or those beats arrive too late; the visual energy is concentrated instead of paced through the deck.",
+                    [slide["id"] for slide in bleed_media],
+                    {
+                        "action": "promote an early or middle media page to edge bleed; use diagonal split only when the content expresses direction, transition, boundary, or conflict",
+                        "templates": ["bleed-split", "diagonal-split", "photo-gradient"],
+                        "candidate_slides": [slide["id"] for slide in candidates],
+                    },
+                ))
 
         media_silhouettes = Counter(slide_quality(slide)["silhouette"] for slide in media_slides)
         if len(media_slides) >= 3 and len(media_silhouettes) == 1:
