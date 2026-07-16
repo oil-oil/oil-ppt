@@ -2,6 +2,7 @@
 """Small explicit outline contract shared by preview, scaffold, and build."""
 from __future__ import annotations
 
+import math
 import re
 from pathlib import Path
 
@@ -13,10 +14,20 @@ from palette_tokens import PALETTES, TOKEN_KEYS, canonical_name, normalize_palet
 from profile_tokens import SHAPE_PROFILES, TYPE_PROFILES
 
 
+MAX_ABS_DATA_VALUE = 1_000_000_000_000_000
+
+DATA_STORY_QUESTIONS = {
+    "category-comparison": "哪些类别更大或更小？",
+    "trend": "数值如何随时间变化？",
+    "composition": "各部分如何组成整体？",
+    "relationship": "两个指标是否共同变化，样本分布在哪里？",
+}
+
+
 TEMPLATE_FAMILIES = {
     "bleed-split": "bleed", "browser-showcase": "split", "card-trio": "cards",
     "comparison": "comparison", "comparison-list": "comparison", "converge": "canvas",
-    "cover": "focal", "diagonal-split": "bleed", "editorial-canvas": "canvas",
+    "cover": "focal", "data-story": "data", "diagonal-split": "bleed", "editorial-canvas": "canvas",
     "end": "focal", "metric": "focal", "photo-gradient": "bleed",
     "photo-split": "split", "process-rail": "sequence", "quote": "focal", "recap": "cards",
     "section": "focal", "split-visual": "split", "tabs": "comparison",
@@ -52,6 +63,7 @@ TEMPLATE_CONTENT_HELP = {
     "editorial-feature": "content + image + cards[3] with title + body; hero-collage also requires secondary_image",
     "catalog-board": "metrics[3] + groups[4], each with title/meta + items[3] title/body",
     "case-study-board": "content + metrics[2] + insight; evidence variant uses image, chart variant uses chart.label + chart.values",
+    "data-story": "content + source + data; choose the variant by asking whether the values compare categories, change over time, compose a whole, or relate/distribute across two measures",
     "annotated-showcase": "content + image + annotations[3] with title + body",
     "narrative-bento": "content + statement + statement_body + cards[2] + quote; optional icons",
     "sequence-gallery": "content + conclusion + steps[3], each with title + body + image",
@@ -104,6 +116,32 @@ VARIANT_INPUT_GUIDANCE = {
     "process-cards": {
         "linear": {"minimum": ["content", "steps[4]: title + body"], "optional": ["icons on all 4 steps", "measurements[4] + measurement_note + measurement_meta"]},
         "terminal-focus": {"minimum": ["content", "steps[4]: title + body"], "optional": ["icons on all 4 steps", "measurements[4] + measurement_note + measurement_meta"]},
+    },
+    "data-story": {
+        "category-comparison": {
+            "minimum": ["content", "source", "data.items[2..6]: label + numeric value"],
+            "optional": ["data.unit", "data.precision (0..6)"],
+            "question": DATA_STORY_QUESTIONS["category-comparison"],
+            "budgets": {"data.items[].label": 8},
+        },
+        "trend": {
+            "minimum": ["content", "source", "data.items[3..8] in time order: label + numeric value"],
+            "optional": ["data.unit", "data.precision (0..6)"],
+            "question": DATA_STORY_QUESTIONS["trend"],
+            "budgets": {"data.items[].label": 6},
+        },
+        "composition": {
+            "minimum": ["content", "source", "data.items[2..5]: label + non-negative numeric value"],
+            "optional": ["data.unit", "data.precision (0..6)"],
+            "question": DATA_STORY_QUESTIONS["composition"],
+            "budgets": {"data.items[].label": 12},
+        },
+        "relationship": {
+            "minimum": ["content", "source", "data.x_label + data.y_label", "data.items[3..12]: label + numeric x + numeric y"],
+            "optional": ["data.x_unit", "data.y_unit", "data.precision (0..6)"],
+            "question": DATA_STORY_QUESTIONS["relationship"],
+            "budgets": {"data.items[].label": 12},
+        },
     },
     "catalog-board": {
         "default": {
@@ -177,7 +215,7 @@ SLIDE_ALLOWED_FIELDS = frozenset({
     "media_frame", "media_fit", "media_position", "media_treatment", "media_surface",
     "media_role", "media_fidelity", "media_question", "media_source",
     "cards", "steps", "sides", "groups", "outcome",
-    "quote", "source", "metric", "metrics", "insight", "chart", "annotations",
+    "quote", "source", "metric", "metrics", "insight", "chart", "data", "annotations",
     "statement", "statement_body", "statement_icon", "quote_icon", "conclusion",
     "measurements", "measurement_note", "measurement_meta",
     "aside", "aside_label", "artifact_title", "artifact_body",
@@ -199,6 +237,7 @@ STANDARD_MEDIA_FIELDS = frozenset({"content", "note", "image", "media", "image_a
 # fields are narrowed further by validate_slide_content.
 TEMPLATE_VISIBLE_FIELDS = {
     "cover": {"kicker", "content", "note", "image", "media", "image_alt", *MEDIA_METADATA_FIELDS},
+    "data-story": {"content", "note", "source", "data"},
     "end": {"content", "note", "meta", "aside", "aside_label", "image", "artifact_image", "image_alt", "artifact_title", "artifact_body", *MEDIA_METADATA_FIELDS},
     "section": {"content", "note"},
     "three-steps": {"steps"},
@@ -446,6 +485,120 @@ def _require_metrics(slide: dict, index: int, count: int) -> list:
     return metrics
 
 
+def _real_number(value: object, index: int, path: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+        raise SystemExit(
+            f"Outline slide {index} {path} must be a finite JSON number, not text, boolean, NaN, or infinity."
+        )
+    number = float(value)
+    if abs(number) > MAX_ABS_DATA_VALUE:
+        raise SystemExit(
+            f"Outline slide {index} {path} exceeds the supported absolute value {MAX_ABS_DATA_VALUE:,}."
+        )
+    return number
+
+
+def _validate_data_story(slide: dict, index: int) -> None:
+    variant = str(slide.get("variant") or "")
+    data = slide.get("data")
+    if not isinstance(data, dict):
+        raise SystemExit(f"Outline slide {index} data-story/{variant} requires a data object.")
+    _require_content(slide, index)
+    if not _text(slide.get("source")):
+        raise SystemExit(f"Outline slide {index} data-story/{variant} requires non-empty source text.")
+    _max_chars(slide.get("content") or slide.get("note"), index, "content", 72)
+    _max_chars(slide.get("source"), index, "source", 96)
+
+    precision = data.get("precision")
+    if precision is not None and (isinstance(precision, bool) or not isinstance(precision, int) or not 0 <= precision <= 6):
+        raise SystemExit(f"Outline slide {index} data.precision must be an integer from 0 to 6.")
+
+    if variant == "relationship":
+        allowed = {"items", "x_label", "y_label", "x_unit", "y_unit", "precision"}
+        hidden = sorted(set(data) - allowed)
+        if hidden:
+            raise SystemExit(
+                f"Outline slide {index} data-story/relationship does not render data field(s) {', '.join(hidden)}."
+            )
+        for field in ("x_label", "y_label"):
+            if not _text(data.get(field)):
+                raise SystemExit(f"Outline slide {index} data-story/relationship requires data.{field}.")
+            _max_chars(data.get(field), index, f"data.{field}", 18)
+        for field in ("x_unit", "y_unit"):
+            if field in data:
+                if not _text(data.get(field)):
+                    raise SystemExit(f"Outline slide {index} data.{field} must be non-empty when provided.")
+                _max_chars(data.get(field), index, f"data.{field}", 10)
+        items = data.get("items")
+        if not isinstance(items, list) or not 3 <= len(items) <= 12:
+            raise SystemExit(f"Outline slide {index} data-story/relationship requires 3–12 data.items.")
+        labels: list[str] = []
+        x_values: list[float] = []
+        y_values: list[float] = []
+        for item_index, item in enumerate(items, start=1):
+            if not isinstance(item, dict) or set(item) != {"label", "x", "y"}:
+                raise SystemExit(
+                    f"Outline slide {index} data.items[{item_index}] requires exactly label, x, and y."
+                )
+            label = _text(item.get("label"))
+            if not label:
+                raise SystemExit(f"Outline slide {index} data.items[{item_index}].label must be non-empty.")
+            _max_chars(label, index, f"data.items[{item_index}].label", 12)
+            labels.append(label.casefold())
+            x_values.append(_real_number(item.get("x"), index, f"data.items[{item_index}].x"))
+            y_values.append(_real_number(item.get("y"), index, f"data.items[{item_index}].y"))
+        if len(set(labels)) != len(labels):
+            raise SystemExit(f"Outline slide {index} data.items labels must be unique.")
+        if len(set(x_values)) < 2 or len(set(y_values)) < 2:
+            raise SystemExit(
+                f"Outline slide {index} data-story/relationship needs at least two distinct x values and two distinct y values."
+            )
+        return
+
+    allowed = {"items", "unit", "precision"}
+    hidden = sorted(set(data) - allowed)
+    if hidden:
+        raise SystemExit(
+            f"Outline slide {index} data-story/{variant} does not render data field(s) {', '.join(hidden)}."
+        )
+    if "unit" in data:
+        if not _text(data.get("unit")):
+            raise SystemExit(f"Outline slide {index} data.unit must be non-empty when provided.")
+        _max_chars(data.get("unit"), index, "data.unit", 10)
+    ranges = {
+        "category-comparison": (2, 6),
+        "trend": (3, 8),
+        "composition": (2, 5),
+    }
+    minimum, maximum = ranges[variant]
+    items = data.get("items")
+    if not isinstance(items, list) or not minimum <= len(items) <= maximum:
+        raise SystemExit(
+            f"Outline slide {index} data-story/{variant} requires {minimum}–{maximum} data.items."
+        )
+    labels: list[str] = []
+    values: list[float] = []
+    label_limit = {"category-comparison": 8, "trend": 6, "composition": 12}[variant]
+    for item_index, item in enumerate(items, start=1):
+        if not isinstance(item, dict) or set(item) != {"label", "value"}:
+            raise SystemExit(
+                f"Outline slide {index} data.items[{item_index}] requires exactly label and value."
+            )
+        label = _text(item.get("label"))
+        if not label:
+            raise SystemExit(f"Outline slide {index} data.items[{item_index}].label must be non-empty.")
+        _max_chars(label, index, f"data.items[{item_index}].label", label_limit)
+        labels.append(label.casefold())
+        values.append(_real_number(item.get("value"), index, f"data.items[{item_index}].value"))
+    if len(set(labels)) != len(labels):
+        raise SystemExit(f"Outline slide {index} data.items labels must be unique.")
+    if variant == "composition":
+        if any(value < 0 for value in values):
+            raise SystemExit(f"Outline slide {index} data-story/composition values must be non-negative.")
+        if sum(values) <= 0:
+            raise SystemExit(f"Outline slide {index} data-story/composition values must sum to more than zero.")
+
+
 def _require_icon(value: object, index: int, field: str) -> None:
     if value is None or not str(value).strip():
         return
@@ -559,7 +712,9 @@ def validate_slide_content(slide: dict, index: int) -> None:
     if _text(slide.get("content")) and _text(slide.get("note")):
         raise SystemExit(f"Outline slide {index} accepts content or note as aliases, not both.")
 
-    if template == "editorial-feature":
+    if template == "data-story":
+        _validate_data_story(slide, index)
+    elif template == "editorial-feature":
         _require_content(slide, index)
         if not image:
             raise SystemExit(f"Outline slide {index} template 'editorial-feature' requires an image path.")

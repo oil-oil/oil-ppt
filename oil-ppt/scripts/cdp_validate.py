@@ -224,8 +224,10 @@ def validate_file(
               child:outsideChild.className || outsideChild.tagName.toLowerCase()
             }] : [];
           });
-          const invalidText = all('[data-fit]').flatMap(text => {
+          const textCandidates = all('[data-fit], [data-sentence], [data-slot], [data-copy-title], [data-copy-body]');
+          const invalidText = textCandidates.flatMap(text => {
             if (!text.getClientRects().length || styleOf(text).display === 'none') return [];
+            if (text.hasAttribute('data-overflow-ok') || !(text.textContent || '').replace(/\\s+/g, ' ').trim()) return [];
             const slide = text.closest('.oil-slide');
             const overflow = text.scrollWidth > text.clientWidth + 1 || text.scrollHeight > text.clientHeight + 1;
             return overflow ? [{
@@ -296,7 +298,7 @@ def validate_file(
           const insideRect = (box, bounds, tolerance=3) => box.left >= bounds.left - tolerance
             && box.right <= bounds.right + tolerance && box.top >= bounds.top - tolerance
             && box.bottom <= bounds.bottom + tolerance;
-          const invalidContentBounds = all('.slide-safe [data-fit], .slide-safe img, .slide-safe video, .slide-safe canvas, .slide-safe svg').flatMap(node => {
+          const invalidContentBounds = all('.slide-safe [data-fit], .slide-safe [data-sentence], .slide-safe [data-slot], .slide-safe [data-copy-title], .slide-safe [data-copy-body], .slide-safe img, .slide-safe video, .slide-safe canvas, .slide-safe svg, .slide-safe svg text').flatMap(node => {
             if (!visible(node) || node.closest('[data-bleed]')) return [];
             const owner = node.parentElement?.closest('[data-bound], [data-layout], .oil-surface, .oil-media, .oil-browser');
             if (!owner || owner === node || !visible(owner)) return [];
@@ -340,6 +342,25 @@ def validate_file(
             const y = top !== null ? bounds.top + top * scaleY : bottom !== null ? bounds.bottom - bottom * scaleY - height : null;
             return x === null || y === null ? null : {left:x, top:y, right:x + width, bottom:y + height, width, height};
           };
+          const transformedRect = (box, style, scaleX, scaleY) => {
+            if (!box || !style.transform || style.transform === 'none') return box;
+            let matrix;
+            try { matrix = new DOMMatrixReadOnly(style.transform); }
+            catch (_) { return box; }
+            const origin = String(style.transformOrigin || '0 0').split(/\\s+/).map(px);
+            const ox = box.left + (origin[0] ?? 0) * scaleX;
+            const oy = box.top + (origin[1] ?? 0) * scaleY;
+            const points = [
+              [box.left, box.top], [box.right, box.top],
+              [box.right, box.bottom], [box.left, box.bottom],
+            ].map(([x, y]) => ({
+              x: ox + matrix.a * (x - ox) + matrix.c * (y - oy) + matrix.e * scaleX,
+              y: oy + matrix.b * (x - ox) + matrix.d * (y - oy) + matrix.f * scaleY,
+            }));
+            const xs = points.map(point => point.x), ys = points.map(point => point.y);
+            const left = Math.min(...xs), right = Math.max(...xs), top = Math.min(...ys), bottom = Math.max(...ys);
+            return {left, right, top, bottom, width:right - left, height:bottom - top};
+          };
           const pseudoVisible = style => style.content !== 'none' && style.display !== 'none'
             && style.visibility !== 'hidden' && Number(style.opacity || 1) > .001;
           const insetClipRect = (box, clipPath) => {
@@ -369,6 +390,7 @@ def validate_file(
             const bounds = surface.getBoundingClientRect();
             const scaleX = surface.offsetWidth ? bounds.width / surface.offsetWidth : 1;
             const scaleY = surface.offsetHeight ? bounds.height / surface.offsetHeight : 1;
+            const paintedBox = transformedRect(box, pseudo, scaleX, scaleY);
             const horizontalInset = px(style.getPropertyValue(`--decor-${horizontal}`));
             const verticalInset = px(style.getPropertyValue(`--decor-${vertical}`));
             const expectedLeft = box && horizontalInset !== null
@@ -378,8 +400,8 @@ def validate_file(
             const wrongAnchor = !box || expectedLeft === null || expectedTop === null
               || Math.abs(box.left - expectedLeft) > 3 || Math.abs(box.top - expectedTop) > 3;
             const slide = surface.closest('.oil-slide');
-            const outsideSlide = box && slide && pseudo.clipPath === 'none'
-              && !insideRect(box, slide.getBoundingClientRect(), 3);
+            const outsideSlide = paintedBox && slide && pseudo.clipPath === 'none'
+              && !insideRect(paintedBox, slide.getBoundingClientRect(), 3);
             return [
               ...(wrongAnchor ? [{
                 slide:slide?.dataset.slideId || 'unknown', reason:'decoration-anchor-mismatch',
@@ -395,7 +417,10 @@ def validate_file(
             if (!visible(surface)) return [];
             const pseudo = styleOf(surface, '::after');
             if (!pseudoVisible(pseudo)) return [];
-            const box = insetClipRect(pseudoRect(surface, pseudo), pseudo.clipPath);
+            const bounds = surface.getBoundingClientRect();
+            const scaleX = surface.offsetWidth ? bounds.width / surface.offsetWidth : 1;
+            const scaleY = surface.offsetHeight ? bounds.height / surface.offsetHeight : 1;
+            const box = insetClipRect(transformedRect(pseudoRect(surface, pseudo), pseudo, scaleX, scaleY), pseudo.clipPath);
             const slide = surface.closest('.oil-slide');
             return box && slide && !insideRect(box, slide.getBoundingClientRect(), 3) ? [{
               slide:slide.dataset.slideId || 'unknown', reason:'decoration-outside-slide',
@@ -454,7 +479,10 @@ def validate_file(
               for (const pseudoName of ['::before', '::after']) {
                 const pseudo = styleOf(node, pseudoName);
                 if (!pseudoVisible(pseudo)) continue;
-                const pseudoBox = pseudoRect(node, pseudo);
+                const bounds = node.getBoundingClientRect();
+                const scaleX = node.offsetWidth ? bounds.width / node.offsetWidth : 1;
+                const scaleY = node.offsetHeight ? bounds.height / node.offsetHeight : 1;
+                const pseudoBox = transformedRect(pseudoRect(node, pseudo), pseudo, scaleX, scaleY);
                 if (pseudoBox && paintedLine(pseudo, pseudoBox.width, pseudoBox.height)) {
                   lines.push(`${node.className || node.tagName.toLowerCase()}${pseudoName}`);
                 }
@@ -470,9 +498,13 @@ def validate_file(
           const stageRect = stage?.getBoundingClientRect();
           const documentsReady = documents.every(doc => doc.readyState === 'complete' && (!doc.fonts || doc.fonts.status === 'loaded'));
           const validated = slideDocuments.length > 0 && slideDocuments.every(doc => doc.documentElement?.dataset.oilValidated === 'ok');
+          const blockingVisualCount = invalidContentBounds.length + invalidSurfaceClips.length
+            + invalidDecorations.length + invalidMotifBounds.length + invalidRingGeometry.length;
           return {
           ready: documentsReady && imagesReady,
-          status: brokenImages.length || invalidBleeds.length || invalidLayouts.length || invalidText.length || invalidCopyFlows.length || invalidBounds.length || invalidOptionalRegions.length ? 'error' : (validated && slides > 0 && !!stage ? 'ok' : 'pending'),
+          status: brokenImages.length || invalidBleeds.length || invalidLayouts.length || invalidText.length
+            || invalidCopyFlows.length || invalidBounds.length || invalidOptionalRegions.length || blockingVisualCount
+            ? 'error' : (validated && slides > 0 && !!stage ? 'ok' : 'pending'),
           slides,
           images: images.length,
           brokenImages: brokenImages.map(image => image.currentSrc || image.getAttribute('src') || ''),

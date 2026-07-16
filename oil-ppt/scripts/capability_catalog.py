@@ -6,6 +6,8 @@ contract instead of hunting through templates, runtime CSS, and references.
 """
 from __future__ import annotations
 
+from outline_schema import DATA_STORY_QUESTIONS
+
 
 FAMILY_GUIDANCE = {
     "focal": {
@@ -23,6 +25,10 @@ FAMILY_GUIDANCE = {
     "comparison": {
         "question": "两个对象是否需要沿同一维度对照，或同一对象是否需要切换状态？",
         "reading_path": "左右对照",
+    },
+    "data": {
+        "question": "真实数值要回答哪一种关系：类别大小、时间变化、整体构成，还是两个指标的共同变化与分布？",
+        "reading_path": "数据关系",
     },
     "canvas": {
         "question": "信息是否需要在开放画布中展陈、汇聚或被批注？",
@@ -49,6 +55,7 @@ TEMPLATE_DISCOVERY = {
     "section": {"aliases": ["章节页", "转场", "分隔页"], "effects": ["section-pause"], "avoid_when": "没有真实章节变化"},
     "quote": {"aliases": ["引言", "原话", "金句"], "effects": ["editorial-quote"], "avoid_when": "没有可核验来源的改写句"},
     "metric": {"aliases": ["大数字", "指标", "单一数据"], "effects": ["numeric-focal"], "avoid_when": "多个数字同等重要"},
+    "data-story": {"aliases": ["数据关系", "量化证据", "原生数据图"], "effects": ["category-comparison", "trend", "composition", "relationship-distribution"], "avoid_when": "没有真实数值、没有来源，或页面只需强调一个数字"},
     "three-steps": {"aliases": ["三步", "短流程", "三个动作"], "effects": ["linear-sequence"], "avoid_when": "三项只是并列而非顺序"},
     "timeline": {"aliases": ["时间线", "四阶段", "里程碑"], "effects": ["temporal-sequence"], "avoid_when": "没有时间或阶段推进"},
     "process-rail": {"aliases": ["六步流程", "八步流程", "完整路径"], "effects": ["serpentine-sequence"], "avoid_when": "六步需要长段落，或八步仍需要解释正文"},
@@ -93,6 +100,10 @@ VARIANT_HELP = {
     "comparison": {"default": "纯文字双栏对比", "visual-evidence": "每侧两张真实图片证据与两条判断"},
     "editorial-feature": {"default": "单主视觉与三条支撑", "hero-collage": "主图、辅助图与三项支撑共同形成编辑式主视觉"},
     "case-study-board": {"evidence": "左侧展示真实截图或作品", "chart": "左侧由真实数值生成原生柱状图"},
+    "data-story": {
+        variant: f"回答“{question.rstrip('？')}”"
+        for variant, question in DATA_STORY_QUESTIONS.items()
+    },
 }
 
 
@@ -101,6 +112,8 @@ VARIANT_HELP = {
 VARIANT_UI_LABELS = {
     "balanced": "均衡",
     "chart": "原生图表",
+    "category-comparison": "类别大小",
+    "composition": "整体构成",
     "copy-dominant": "文字主导",
     "copy-left": "文字在左",
     "copy-right": "文字在右",
@@ -128,6 +141,8 @@ VARIANT_UI_LABELS = {
     "terminal-focus": "结果收束",
     "thesis-left": "结论在左",
     "thesis-right": "结论在右",
+    "trend": "时间变化",
+    "relationship": "指标关系",
     "visual-evidence": "图片证据",
 }
 
@@ -200,6 +215,11 @@ PROGRAM_OWNED_CAPABILITIES = {
         "navigation": ["键盘", "触摸滑动", "可选鼠标左右半页翻页", "进度条", "页码", "下一页预告"],
         "components": ["tabs"],
     },
+    "data_expression": {
+        "relationships": ["类别大小", "时间变化", "整体构成", "两指标关系与样本分布"],
+        "automatic": "Agent 提交真实 JSON 数值、单位、结论与来源；程序统一生成坐标轴、标签、几何、主题色序列和数值格式，不使用 CDN。",
+        "component": "data-story",
+    },
     "icons": {
         "family": "Phosphor regular",
         "usage": "内容图标统一使用 Phosphor regular，并由模板放入 oil-icon-frame；只在图标能缩短识别时间时使用。",
@@ -214,7 +234,7 @@ PROGRAM_OWNED_CAPABILITIES = {
 
 
 SELECTION_ORDER = (
-    "先按内容关系选择 family，不按外观挑模板。",
+    "先按内容关系选择 family，不按外观挑模板；量化内容只需回答它在比较类别、展示时间变化、解释整体构成，还是观察两指标关系。",
     "再看整套 silhouette 节奏；有真实素材时必须同时考虑 split 与 bleed 两类，并把出血节奏分布在前、中段，而不是只放结尾。",
     "最后选择 variant、decor、background 和可选强调字段；程序校验所有组合。",
     "生成 outline.json 后运行 plan；推荐、节奏与专用能力门禁由程序统一完成。",

@@ -21,6 +21,14 @@ MEDIA_MENU = {
     "compound": ["editorial-feature", "catalog-board", "case-study-board", "annotated-showcase", "narrative-bento", "sequence-gallery"],
 }
 
+DATA_RELATIONSHIP_QUESTION = "真实数值要回答什么：比较类别、查看时间变化、解释整体构成，还是观察两个指标的关系与样本分布？"
+DATA_RELATIONSHIPS = {
+    "category-comparison": "比较类别",
+    "trend": "查看时间变化",
+    "composition": "解释整体构成",
+    "relationship": "观察两指标关系与样本分布",
+}
+
 
 def _candidate(
     template: str,
@@ -61,6 +69,7 @@ def slide_recommendation(slide: dict) -> dict | None:
     annotations = slide.get("annotations") if isinstance(slide.get("annotations"), list) else []
     image = slide.get("image") or slide.get("media") or slide.get("artifact_image")
     secondary_image = slide.get("secondary_image")
+    data = slide.get("data") if isinstance(slide.get("data"), dict) else None
 
     evidence_sides = [
         side for side in (slide.get("sides") or [])
@@ -71,7 +80,13 @@ def slide_recommendation(slide: dict) -> dict | None:
         if isinstance(card, dict) and isinstance(card.get("images"), list) and len(card["images"]) == 2
     ]
 
-    if image and secondary_image and len(cards) == 3:
+    if selected == "data-story" and data is not None:
+        variant = str(slide.get("variant") or "")
+        item = _candidate("data-story", f"REAL_VALUES_{variant.replace('-', '_').upper()}", variant=variant)
+        item["selection_question"] = DATA_RELATIONSHIP_QUESTION
+        item["relationship_answer"] = DATA_RELATIONSHIPS[variant]
+        candidates.append(item)
+    elif image and secondary_image and len(cards) == 3:
         candidates.append(_candidate("editorial-feature", "MAIN_AND_SECONDARY_VISUAL_THREE_SUPPORTS", variant="hero-collage"))
     elif len(evidence_sides) == 2:
         candidates.append(_candidate("comparison", "TWO_SIDES_WITH_PAIRED_EVIDENCE", variant="visual-evidence"))
@@ -153,6 +168,7 @@ def recommend_outline(data: dict) -> dict:
     slides = [item for slide in data.get("slides") or [] if (item := slide_recommendation(slide))]
     return {
         "schema_version": "oil-ppt.recommend/v1",
+        "data_relationship_question": DATA_RELATIONSHIP_QUESTION,
         "media_composition_menu": MEDIA_MENU,
         "slides": slides,
         "review_count": sum(item["decision"] == "review" for item in slides),

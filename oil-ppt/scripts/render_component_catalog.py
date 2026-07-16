@@ -25,10 +25,10 @@ PLACEHOLDER = (
     "%3Cpath d='M0 720L360 430l250 210 190-150 400 310H0z' fill='%23c9c6bc'/%3E%3C/svg%3E"
 )
 
-
-FAMILY_ORDER = ("focal", "sequence", "cards", "comparison", "canvas", "split", "bleed", "compound")
+FAMILY_ORDER = ("focal", "data", "sequence", "cards", "comparison", "canvas", "split", "bleed", "compound")
 FAMILY_LABELS = {
     "focal": "单焦点",
+    "data": "数据关系",
     "sequence": "顺序推进",
     "cards": "主次聚合",
     "comparison": "对照判断",
@@ -90,6 +90,35 @@ def catalog_slide(seed: dict, template: str, variant: str, decor: str, index: in
         slide.pop("image", None)
         slide.pop("media_frame", None)
         slide["chart"] = {"label": "真实变化", "values": [42, 58, 53, 76, 69]}
+    elif template == "data-story":
+        if variant == "trend":
+            slide["content"] = "变化发生在连续时间点之间"
+            slide["data"] = {
+                "unit": "k",
+                "items": [
+                    {"label": "Q1", "value": 18}, {"label": "Q2", "value": 24},
+                    {"label": "Q3", "value": 31}, {"label": "Q4", "value": 29},
+                    {"label": "Q5", "value": 42},
+                ],
+            }
+        elif variant == "composition":
+            slide["content"] = "少数部分构成了整体的大部分"
+            slide["data"] = {
+                "items": [
+                    {"label": "组成 A", "value": 48}, {"label": "组成 B", "value": 27},
+                    {"label": "组成 C", "value": 16}, {"label": "组成 D", "value": 9},
+                ],
+            }
+        elif variant == "relationship":
+            slide["content"] = "两个指标在样本中呈现共同变化"
+            slide["data"] = {
+                "x_label": "投入", "y_label": "产出", "x_unit": "h", "y_unit": "pt",
+                "items": [
+                    {"label": "样本 A", "x": 12, "y": 34}, {"label": "样本 B", "x": 18, "y": 45},
+                    {"label": "样本 C", "x": 25, "y": 52}, {"label": "样本 D", "x": 31, "y": 67},
+                    {"label": "样本 E", "x": 38, "y": 71}, {"label": "样本 F", "x": 44, "y": 83},
+                ],
+            }
 
     normalize_component_choices(slide, index)
     return slide
@@ -167,7 +196,7 @@ def render_catalog(output: Path) -> int:
     .family-section{{margin-top:26px;padding:34px;border:0;border-radius:36px;background:var(--surface)}}.section-head{{display:flex;justify-content:space-between;align-items:center;margin:0 0 24px}}.section-head span{{font-size:34px;font-weight:800}}.section-head b{{color:var(--muted);font-size:17px}}
     .component-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}}.component-card{{min-width:0;padding:18px;border-radius:28px;background:#f4f4f1}}.card-meta{{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:4px 6px 16px}}.card-meta>div:first-child{{display:flex;align-items:center;gap:12px}}.eyebrow{{display:grid;place-items:center;width:38px;height:38px;border-radius:13px;background:var(--accent-soft);font-size:13px;font-weight:800}}h3{{margin:0;font-size:22px}}.pills{{display:flex;gap:8px}}.pills span{{padding:7px 10px;border-radius:11px;background:#fff;color:var(--muted);font-size:13px}}
     .preview{{position:relative;aspect-ratio:16/9;border-radius:22px;background:#fff;overflow:hidden}}iframe{{position:absolute;inset:0;width:100%;height:100%;border:0;pointer-events:none}}.component-card footer{{display:flex;justify-content:space-between;padding:15px 6px 3px;color:var(--muted)}}code{{font-size:13px}}
-    body[data-filter]:not([data-filter="all"]) .family-section{{display:none}}body[data-filter="focal"] [data-family-section="focal"],body[data-filter="sequence"] [data-family-section="sequence"],body[data-filter="cards"] [data-family-section="cards"],body[data-filter="comparison"] [data-family-section="comparison"],body[data-filter="canvas"] [data-family-section="canvas"],body[data-filter="split"] [data-family-section="split"],body[data-filter="bleed"] [data-family-section="bleed"],body[data-filter="compound"] [data-family-section="compound"]{{display:block!important}}
+    body[data-filter]:not([data-filter="all"]) .family-section{{display:none}}body[data-filter="focal"] [data-family-section="focal"],body[data-filter="data"] [data-family-section="data"],body[data-filter="sequence"] [data-family-section="sequence"],body[data-filter="cards"] [data-family-section="cards"],body[data-filter="comparison"] [data-family-section="comparison"],body[data-filter="canvas"] [data-family-section="canvas"],body[data-filter="split"] [data-family-section="split"],body[data-filter="bleed"] [data-family-section="bleed"],body[data-filter="compound"] [data-family-section="compound"]{{display:block!important}}
     @media(max-width:980px){{.page{{width:calc(100% - 20px);margin-top:10px}}.hero{{padding:48px 32px;min-height:auto}}h1{{font-size:52px}}.primitives,.component-grid{{grid-template-columns:1fr}}.stats{{flex-wrap:wrap}}}}
     </style></head><body data-filter="all"><main class="page">
       <header class="hero"><div class="kicker">OIL-PPT COMPONENT CATALOG</div><h1>把真实可用的组件，放进同一个设计系统里。</h1><p class="lead">目录完全来自当前 CLI 契约。配色收束为一个主题色系、中性灰与可选深色锚点；圆环、点阵和块面由程序自动承担。</p><div class="stats"><div class="stat"><strong>{len(COMPONENT_CONTRACTS)}</strong><span>注册组件</span></div><div class="stat"><strong>{len(slides)}</strong><span>可调用组合</span></div><div class="stat"><strong>1 + N</strong><span>主题色与中性色层级</span></div></div></header>

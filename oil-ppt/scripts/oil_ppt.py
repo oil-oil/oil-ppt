@@ -14,7 +14,6 @@ import sys
 import tempfile
 import time
 import webbrowser
-from collections import Counter
 from pathlib import Path
 
 from background_presets import BACKGROUND_PRESETS, INTERNAL_BACKGROUNDS, template_background
@@ -31,7 +30,7 @@ from media_frame import frame_media
 from media_plan import MEDIA_SLOTS, MEDIA_VARIANT_SLOTS, build_media_plan, write_media_plan
 from render_programmatic_visual import render_html_visual
 from icon_registry import print_icon_results
-from outline_schema import BASE_VISIBLE_FIELDS, DECK_FIELDS, MEDIA_TEMPLATES, SHARED_SLIDE_FIELDS, SLIDE_ALLOWED_FIELDS, TEMPLATE_CONTENT_HELP, TEMPLATE_FAMILIES, TEMPLATE_VISIBLE_FIELDS, VARIANT_INPUT_GUIDANCE, validate_outline
+from outline_schema import BASE_VISIBLE_FIELDS, DECK_FIELDS, MAX_ABS_DATA_VALUE, MEDIA_TEMPLATES, SHARED_SLIDE_FIELDS, SLIDE_ALLOWED_FIELDS, TEMPLATE_CONTENT_HELP, TEMPLATE_FAMILIES, TEMPLATE_VISIBLE_FIELDS, VARIANT_INPUT_GUIDANCE, validate_outline
 from palette_tokens import PALETTES, TOKEN_KEYS, canonical_name, named_palette, normalize_palette
 from profile_tokens import SHAPE_PROFILES, TYPE_PROFILES
 
@@ -127,15 +126,80 @@ def edit_lock_path(project: Path) -> Path:
     return project.expanduser().resolve() / EDIT_LOCK_NAME
 
 
-def active_editor_pid(project: Path) -> int | None:
+def editor_process_identity(pid: int) -> str | None:
+    """Return a stable identity for one live process, not merely its reusable PID."""
+    proc_stat = Path(f"/proc/{pid}/stat")
+    if proc_stat.is_file():
+        try:
+            fields = proc_stat.read_text(encoding="utf-8").split()
+            if len(fields) > 21:
+                return f"proc-start:{fields[21]}"
+        except OSError:
+            pass
+    try:
+        process = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "lstart=", "-o", "command="],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    rendered = process.stdout.strip()
+    if process.returncode or not rendered:
+        return None
+    return hashlib.sha256(rendered.encode("utf-8")).hexdigest()
+
+
+def editor_lock_payload(project: Path, pid: int | None = None) -> dict:
+    process_pid = int(pid or os.getpid())
+    return {
+        "schema_version": "oil-ppt.editor-lock/v1",
+        "pid": process_pid,
+        "project": str(project.expanduser().resolve()),
+        "process_identity": editor_process_identity(process_pid),
+        "created_at": int(time.time()),
+    }
+
+
+def read_editor_lock(project: Path) -> dict | None:
     path = edit_lock_path(project)
     if not path.is_file():
         return None
     try:
-        pid = int(path.read_text(encoding="utf-8").strip())
-    except (OSError, ValueError):
+        raw = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        # An unreadable lock is still a lock. Do not silently remove it and
+        # allow a second editor to enter the same project.
+        raise
+    try:
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            data = {"pid": int(raw), "legacy": True}
+        if isinstance(data, int):
+            data = {"pid": data, "legacy": True}
+        if (
+            not isinstance(data, dict)
+            or isinstance(data.get("pid"), bool)
+            or not isinstance(data.get("pid"), int)
+        ):
+            raise ValueError
+    except ValueError:
         path.unlink(missing_ok=True)
         return None
+    if data.get("project") not in {None, str(project.expanduser().resolve())}:
+        path.unlink(missing_ok=True)
+        return None
+    return data
+
+
+def active_editor_pid(project: Path) -> int | None:
+    path = edit_lock_path(project)
+    lock = read_editor_lock(project)
+    if lock is None:
+        return None
+    pid = int(lock["pid"])
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -143,7 +207,19 @@ def active_editor_pid(project: Path) -> int | None:
         return None
     except PermissionError:
         pass
+    expected_identity = lock.get("process_identity")
+    if expected_identity and editor_process_identity(pid) != expected_identity:
+        path.unlink(missing_ok=True)
+        return None
     return pid
+
+
+def editor_lock_owned_by_current_process(project: Path) -> bool:
+    lock = read_editor_lock(project)
+    if lock is None or lock.get("pid") != os.getpid():
+        return False
+    expected_identity = lock.get("process_identity")
+    return not expected_identity or editor_process_identity(os.getpid()) == expected_identity
 
 
 def launch_text_editor(project: Path, *, port: int = 0) -> dict:
@@ -222,9 +298,20 @@ def read_project_state(project: Path) -> dict:
         return {"schema_version": "oil-ppt.project-state/v1", "history": []}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as error:
-        raise SystemExit(f"Invalid project state {path}: {error}") from error
-    return data if isinstance(data, dict) else {"schema_version": "oil-ppt.project-state/v1", "history": []}
+        if not isinstance(data, dict):
+            raise ValueError("project state must be a JSON object")
+        return data
+    except (json.JSONDecodeError, ValueError) as error:
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        backup = path.with_name(f"{path.stem}.invalid-{timestamp}-{os.getpid()}{path.suffix}")
+        os.replace(path, backup)
+        recovered = {
+            "schema_version": "oil-ppt.project-state/v1",
+            "history": [{"event": "invalid_state_recovered", "backup": str(backup)}],
+            "recovery": {"invalid_state_backup": str(backup), "reason": str(error)},
+        }
+        atomic_write_json(path, recovered)
+        return recovered
 
 
 def run_script(name: str, arguments: list[str]) -> None:
@@ -234,6 +321,22 @@ def run_script(name: str, arguments: list[str]) -> None:
         raise SystemExit(130) from None
     if proc.returncode:
         raise SystemExit(proc.returncode)
+
+
+def run_script_quiet(name: str, arguments: list[str]) -> None:
+    """Run one internal renderer without contaminating the public JSON stream."""
+    try:
+        process = subprocess.run(
+            [sys.executable, str(SCRIPTS / name), *arguments],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except KeyboardInterrupt:
+        raise SystemExit(130) from None
+    if process.returncode:
+        detail = process.stderr.strip() or process.stdout.strip() or f"{name} exited with {process.returncode}"
+        raise SystemExit(detail)
 
 
 OUTLINE_MARKDOWN_TEMPLATE = """# 演示标题
@@ -550,6 +653,21 @@ def contract_schema() -> dict:
                 "label": {"type": "string", "minLength": 1},
             },
         },
+        "dataValueItem": {
+            "type": "object", "required": ["label", "value"], "additionalProperties": False,
+            "properties": {
+                "label": {"type": "string", "minLength": 1, "maxLength": 12},
+                "value": {"type": "number", "minimum": -MAX_ABS_DATA_VALUE, "maximum": MAX_ABS_DATA_VALUE},
+            },
+        },
+        "dataRelationshipItem": {
+            "type": "object", "required": ["label", "x", "y"], "additionalProperties": False,
+            "properties": {
+                "label": {"type": "string", "minLength": 1, "maxLength": 12},
+                "x": {"type": "number", "minimum": -MAX_ABS_DATA_VALUE, "maximum": MAX_ABS_DATA_VALUE},
+                "y": {"type": "number", "minimum": -MAX_ABS_DATA_VALUE, "maximum": MAX_ABS_DATA_VALUE},
+            },
+        },
         "annotation": {
             "type": "object", "required": ["title", "body"], "additionalProperties": False,
             "properties": {
@@ -575,7 +693,7 @@ def contract_schema() -> dict:
         for key in SLIDE_ALLOWED_FIELDS
         if key not in {
             "cards", "steps", "sides", "groups", "metrics", "annotations", "measurements",
-            "metric", "insight", "chart", "media_source",
+            "metric", "insight", "chart", "data", "media_source",
         }
     }
     structured_fields = {
@@ -610,6 +728,29 @@ def contract_schema() -> dict:
                 "label": {"type": "string", "minLength": 1},
                 "values": {"type": "array", "minItems": 3, "maxItems": 7, "items": {"type": "number", "minimum": 0}},
             },
+        },
+        "data": {
+            "oneOf": [
+                {
+                    "type": "object", "required": ["items"], "additionalProperties": False,
+                    "properties": {
+                        "items": {"type": "array", "minItems": 2, "maxItems": 8, "items": {"$ref": "#/$defs/dataValueItem"}},
+                        "unit": {"type": "string", "minLength": 1, "maxLength": 10},
+                        "precision": {"type": "integer", "minimum": 0, "maximum": 6},
+                    },
+                },
+                {
+                    "type": "object", "required": ["items", "x_label", "y_label"], "additionalProperties": False,
+                    "properties": {
+                        "items": {"type": "array", "minItems": 3, "maxItems": 12, "items": {"$ref": "#/$defs/dataRelationshipItem"}},
+                        "x_label": {"type": "string", "minLength": 1, "maxLength": 18},
+                        "y_label": {"type": "string", "minLength": 1, "maxLength": 18},
+                        "x_unit": {"type": "string", "minLength": 1, "maxLength": 10},
+                        "y_unit": {"type": "string", "minLength": 1, "maxLength": 10},
+                        "precision": {"type": "integer", "minimum": 0, "maximum": 6},
+                    },
+                },
+            ],
         },
         "media_source": {"$ref": "#/$defs/mediaSource"},
     }
@@ -674,6 +815,7 @@ def contract_schema() -> dict:
             "properties": {"sides": {"minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/tabSide"}}},
         },
         "metric": {"required": ["metric"], "allOf": [copy_required]},
+        "data-story": {"required": ["source", "data"], "allOf": [copy_required]},
         "converge": {
             "required": ["groups", "outcome"],
             "properties": {"groups": {"minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/convergeGroup"}}},
@@ -812,6 +954,22 @@ def contract_schema() -> dict:
                     },
                 },
             ])
+        elif name == "data-story":
+            for variant, minimum, maximum, label_maximum in (
+                ("category-comparison", 2, 6, 8),
+                ("trend", 3, 8, 6),
+                ("composition", 2, 5, 12),
+            ):
+                variant_rules.append({
+                    "if": {"properties": {"variant": {"const": variant}}},
+                    "then": {"properties": {"data": {"properties": {
+                        "items": {
+                            "minItems": minimum,
+                            "maxItems": maximum,
+                            "items": {"properties": {"label": {"maxLength": label_maximum}}},
+                        },
+                    }}}},
+                })
         elif name == "comparison":
             then.update({"required": ["sides"], "properties": {**then["properties"], "sides": {"minItems": 2, "maxItems": 2}}})
             variant_rules.extend([
@@ -940,6 +1098,7 @@ def confirm_outline(project: Path, user_confirmed: bool) -> None:
         "sha256": markdown_sha256,
         "user_confirmed": True,
     }
+    state.pop("recovery", None)
     state.setdefault("history", []).append({"event": "outline_confirmed", "sha256": markdown_sha256})
     atomic_write_json(project_state_path(project), state)
     workflow = status_payload(project)
@@ -1110,19 +1269,6 @@ def check_project(
     return payload
 
 
-def advisory_summary(audit: dict) -> dict:
-    items = [
-        item
-        for item in audit.get("issues") or []
-        if not item.get("blocking") and item.get("level") in {"warning", "info"}
-    ]
-    return {
-        "count": len(items),
-        "codes": sorted({str(item.get("code")) for item in items if item.get("code")}),
-        "levels": dict(Counter(str(item.get("level")) for item in items)),
-    }
-
-
 BATCH_PRUNE_DIRS = {".git", ".hg", ".svn", "node_modules", ".venv", "venv", "__pycache__"}
 
 
@@ -1162,12 +1308,23 @@ def run_batch_step(command: str, project: Path, *arguments: str) -> dict:
         capture_output=True,
         text=True,
     )
-    return {
+    stdout = process.stdout.strip()
+    parsed: dict | None = None
+    if stdout:
+        try:
+            candidate = json.loads(stdout)
+            parsed = candidate if isinstance(candidate, dict) else None
+        except json.JSONDecodeError:
+            parsed = None
+    result = {
         "ok": process.returncode == 0,
         "returncode": process.returncode,
-        "stdout": process.stdout.strip(),
-        "stderr": process.stderr.strip(),
+        **({"result": parsed} if parsed is not None else {}),
     }
+    diagnostic = process.stderr.strip() or (stdout if parsed is None else "")
+    if diagnostic:
+        result["diagnostic"] = diagnostic[-4000:]
+    return result
 
 
 def batch_projects(targets: list[Path], *, user_confirmed_preview: bool) -> dict:
@@ -1207,13 +1364,6 @@ def batch_projects(targets: list[Path], *, user_confirmed_preview: bool) -> dict
             advance("build", "build")
 
         final_status = status_payload(project) if actions or failure else initial_status
-        advisories = {"count": 0, "codes": [], "levels": {}}
-        if (project / "outline.json").is_file():
-            try:
-                report = check_project(project, include_next=False)
-                advisories = advisory_summary(report.get("audit") or {})
-            except SystemExit:
-                pass
         blocked = failure is not None or final_status["phase"] not in {"complete", "needs_preview_confirmation"}
         results.append({
             "project": str(project),
@@ -1221,8 +1371,8 @@ def batch_projects(targets: list[Path], *, user_confirmed_preview: bool) -> dict
             "phase": final_status["phase"],
             "blocked": blocked,
             **({"preview": (final_status.get("next") or {}).get("artifact")} if final_status["phase"] == "needs_preview_confirmation" else {}),
-            "issues": (final_status.get("next") or {}).get("issues") or [],
-            "advisories": advisories,
+            "blockers": final_status.get("blockers") or [],
+            "next": final_status.get("next") or {},
             **({"failure": failure} if failure else {}),
         })
 
@@ -1233,17 +1383,23 @@ def batch_projects(targets: list[Path], *, user_confirmed_preview: bool) -> dict
         "blocked": sum(bool(item["blocked"]) for item in results),
     }
     if summary["blocked"]:
-        next_step = {"action": "fix_reported_issues", "command": None}
+        first_blocked = next(item for item in results if item["blocked"])
+        next_step = {"project": first_blocked["project"], **first_blocked["next"]}
     elif summary["awaiting_preview_confirmation"]:
         next_step = {
             "action": "ask_user_to_confirm_previews",
-            "command": cli_command("batch", *resolved_targets, "--user-confirmed-preview"),
+            "command": None,
+            "artifacts": [item["preview"] for item in results if item["phase"] == "needs_preview_confirmation"],
+            "command_on_confirm": cli_command("batch", *resolved_targets, "--user-confirmed-preview"),
         }
     else:
         next_step = {"action": "complete", "command": None}
     return {
         "schema_version": "oil-ppt.batch/v1",
-        "ok": summary["blocked"] == 0,
+        # An actionable human/model gate is a valid batch result, not a CLI
+        # failure. Reserve the non-zero exit for a deterministic step that
+        # actually failed to run.
+        "ok": not any(item.get("failure") for item in results),
         "summary": summary,
         "projects": results,
         "next": next_step,
@@ -1632,7 +1788,9 @@ def preview_state_status(outline: Path) -> tuple[str, dict | None, str | None]:
     return "confirmed" if state.get("confirmed") is True else "awaiting-confirmation", state, None
 
 
-def status_payload(project_arg: Path) -> dict:
+def status_payload(project_arg: Path, *, intent: str = "continue") -> dict:
+    if intent not in {"continue", "edit"}:
+        raise ValueError(f"Unsupported status intent: {intent}")
     requested = project_arg.expanduser()
     project = requested.resolve()
     if project.exists() and not project.is_dir():
@@ -1644,7 +1802,7 @@ def status_payload(project_arg: Path) -> dict:
             "next": {"action": "choose_project_directory", "command": None},
         }
     if not project.exists() or not any(project.iterdir()):
-        parent_project = enclosing_project() if not requested.is_absolute() else None
+        parent_project = enclosing_project(project)
         if parent_project is not None and project != parent_project:
             return {
                 "schema_version": "oil-ppt.status/v1", "ok": False, "code": "WRONG_PROJECT_PATH",
@@ -1653,8 +1811,8 @@ def status_payload(project_arg: Path) -> dict:
                 "blockers": [{
                     "path": str(project),
                     "message": (
-                        f"相对路径 {str(project_arg)!r} 从当前目录解析到了 {project}，"
-                        f"但当前目录已经位于项目 {parent_project} 内；不要在项目内再次拼接项目名"
+                        f"路径 {str(project_arg)!r} 解析到了项目子目录 {project}，"
+                        f"项目根目录是 {parent_project}；不要把输出子目录当作项目根目录"
                     ),
                 }],
                 "next": {
@@ -1670,6 +1828,18 @@ def status_payload(project_arg: Path) -> dict:
         }
     migrate_legacy_state_files(project)
     if not project_state_path(project).is_file():
+        parent_project = enclosing_project(project)
+        if parent_project is not None and project != parent_project:
+            return {
+                "schema_version": "oil-ppt.status/v1", "ok": False, "code": "WRONG_PROJECT_PATH",
+                "phase": "wrong_project_path", "project": str(project), "artifacts": {}, "confirmations": {},
+                "preview_status": "missing",
+                "blockers": [{
+                    "path": str(project),
+                    "message": f"当前路径位于项目 {parent_project} 内；不要把输出子目录当成项目根目录",
+                }],
+                "next": {"action": "run_command", "command": cli_command("status", parent_project, "--json")},
+            }
         return {
             "schema_version": "oil-ppt.status/v1", "ok": False, "code": "INVALID_PROJECT",
             "phase": "invalid_project", "project": str(project), "artifacts": {}, "confirmations": {},
@@ -1677,6 +1847,7 @@ def status_payload(project_arg: Path) -> dict:
             "blockers": [{"path": str(project), "message": "该非空目录没有 oil-ppt 项目标记；不要在其中创建或覆盖文件"}],
             "next": {"action": "choose_project_directory", "command": None},
         }
+    project_state = read_project_state(project)
     markdown = project / "outline.md"
     outline = project / "outline.json"
     preview = project / "预览.html"
@@ -1699,6 +1870,7 @@ def status_payload(project_arg: Path) -> dict:
     outline_structure_valid = False
     plan_error = None
     text_only_needs_confirmation = False
+    media_errors: list[dict] = []
     if outline.is_file():
         try:
             data = json.loads(outline.read_text(encoding="utf-8"))
@@ -1714,6 +1886,7 @@ def status_payload(project_arg: Path) -> dict:
                 plan_error = "outline.json 尚未由当前已确认的 Markdown 大纲生成或重新验证"
             else:
                 plan_ok = True
+                media_errors = inspect_outline_media(data, project).get("errors") or []
         except (json.JSONDecodeError, SystemExit) as error:
             plan_error = str(error)
     preview_status, preview_state, stale_reason = preview_state_status(outline)
@@ -1774,6 +1947,20 @@ def status_payload(project_arg: Path) -> dict:
                 "path": str(outline),
                 "reference_command": cli_command("contract", "--example"),
             }
+    elif media_errors:
+        phase = "needs_media"
+        blockers.append({
+            "path": str(outline),
+            "message": f"{len(media_errors)} 个素材绑定缺失或不可用；一次性处理 next.issues 后重新运行 status",
+        })
+        next_command = None
+        next_action = "fix_media"
+        next_details = {
+            "path": str(outline),
+            "issues": media_errors,
+            "reference_command": cli_command("media", "plan", project, "--write"),
+            "rerun": cli_command("status", project, "--json"),
+        }
     elif validation_failure:
         phase = "needs_render_fix"
         blockers.append({
@@ -1802,6 +1989,11 @@ def status_payload(project_arg: Path) -> dict:
             "artifact": str(preview),
             "command_on_confirm": cli_command("confirm", project, "--stage", "preview", "--user-confirmed"),
         }
+    elif intent == "edit":
+        phase = "ready_to_edit"
+        next_command = cli_command("edit", project)
+        next_action = "start_editor"
+        next_details = {"long_running": True, "wait_for_exit": False}
     elif not final.is_file():
         phase = "ready_to_build"
         next_command = cli_command("build", project)
@@ -1844,13 +2036,14 @@ def status_payload(project_arg: Path) -> dict:
             "preview": preview_status == "confirmed",
         },
         "preview_status": preview_status,
+        **({"recovery": project_state["recovery"]} if isinstance(project_state.get("recovery"), dict) else {}),
         "blockers": blockers,
         "next": {"action": next_action, "command": next_command, **next_details},
     }
 
 
-def print_status(project: Path, *, as_json: bool) -> None:
-    payload = status_payload(project)
+def print_status(project: Path, *, as_json: bool, intent: str = "continue") -> None:
+    payload = status_payload(project, intent=intent)
     if as_json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
@@ -1892,7 +2085,10 @@ def generate_preview(
     outline = project / "outline.json"
     if not outline.is_file():
         raise SystemExit(f"Outline not found: {outline}. Next: {cli_command('contract', '--example')}")
-    check = check_project(outline)
+    # Preview only needs the blocking project checks. Computing the next-step
+    # recommendation here would repeat media and state inspection immediately
+    # before the actual preview build.
+    check = check_project(outline, include_next=False)
     if not check["ok"]:
         print(json.dumps(check, ensure_ascii=False, indent=2))
         raise SystemExit(1)
@@ -1922,7 +2118,7 @@ def generate_preview(
     # Render first, validate the actual thumbnail iframes, and only then open it.
     # This keeps the public preview command as the single render-quality gate.
     command = [str(outline), "--out", str(target), "--no-open"]
-    run_script("render_outline_review.py", command)
+    run_script_quiet("render_outline_review.py", command)
     browser_validate(target, project=project, stage="preview")
     if previous_preview and previous_preview != target:
         previous_preview.unlink(missing_ok=True)
@@ -1944,7 +2140,6 @@ def generate_preview(
         "project": str(outline.parent),
         "preview": str(target),
         "opened": open_browser,
-        "advisories": advisory_summary(check.get("audit") or {}),
         "next": {
             "action": "ask_user_to_confirm_preview",
             "command": None,
@@ -2163,11 +2358,11 @@ def parse_args() -> argparse.Namespace:
         prog="oil-ppt",
         description="Create and validate an oil-ppt project through one stateful CLI.",
         epilog=(
-            "Default for existing work: batch TARGET [TARGET ...]. New work: init PROJECT → write and confirm "
-            "outline.md → plan PROJECT → preview PROJECT → optionally edit text → confirm preview → build PROJECT."
+            "Existing work: batch TARGET [TARGET ...]. New work: init PROJECT, write outline.md, then repeat "
+            "status PROJECT --json and follow its single next action. Run command_on_confirm only after user approval."
         ),
     )
-    public_commands = ("init", "batch", "status", "plan", "check", "doctor", "contract", "preview", "edit", "confirm", "build", "media", "icon")
+    public_commands = ("init", "batch", "status", "contract", "media", "icon", "doctor")
     sub = parser.add_subparsers(dest="command", metavar="{" + ",".join(public_commands) + "}")
     init_parser = sub.add_parser("init", help="initialize outline.md, assets, and project state")
     init_parser.add_argument("project", type=Path, help="one project root directory")
@@ -2181,6 +2376,10 @@ def parse_args() -> argparse.Namespace:
     status_parser = sub.add_parser("status", help="show the current phase and one explicit next action")
     status_parser.add_argument("project", type=Path, help="project root")
     status_parser.add_argument("--json", action="store_true", help="emit a stable machine-readable envelope")
+    status_parser.add_argument(
+        "--intent", choices=("continue", "edit"), default="continue",
+        help="continue the workflow, or explicitly reopen the current formal preview for text editing",
+    )
     plan_parser = sub.add_parser("plan", help="validate and install the visual outline.json after Markdown approval")
     plan_parser.add_argument("project", type=Path, help="project root")
     plan_parser.add_argument("--input", type=Path, help="optional candidate JSON to validate and copy into the project")
@@ -2294,7 +2493,7 @@ def main() -> None:
         if not payload["ok"]:
             raise SystemExit(1)
     elif args.command == "status":
-        print_status(args.project, as_json=args.json)
+        print_status(args.project, as_json=args.json, intent=args.intent)
     elif args.command == "plan":
         plan_project(args.project, args.input, args.user_confirmed_text_only)
     elif args.command == "check":
