@@ -219,8 +219,13 @@ def validate_skill() -> None:
         errors.append(f"{runtime_css.name}: circular decoration may not use clip-path: {selector}")
 
     catalog_renderer = ROOT / "scripts" / "render_component_catalog.py"
-    for selector in clipped_circle_selectors(catalog_renderer.read_text(encoding="utf-8")):
+    catalog_source = catalog_renderer.read_text(encoding="utf-8")
+    for selector in clipped_circle_selectors(catalog_source):
         errors.append(f"{catalog_renderer.name}: circular decoration may not use clip-path: {selector}")
+    if 'class="primitive ring"><span class="shape-window"' not in catalog_source:
+        errors.append(f"{catalog_renderer.name}: ring primitive requires a dedicated shape window")
+    if ".primitive.ring>.shape-window::after" not in catalog_source:
+        errors.append(f"{catalog_renderer.name}: ring primitive geometry must belong to its shape window")
 
     for path in sorted(TEMPLATES.glob("*.html")):
         text = path.read_text(encoding="utf-8")
@@ -234,6 +239,9 @@ def validate_skill() -> None:
             errors.append(f"{path.name}: {problem}")
         for selector in clipped_circle_selectors(text):
             errors.append(f"{path.name}: circular decoration may not use clip-path: {selector}")
+        for selector, _ in re.findall(r"([^{}]+)\{([^{}]*)\}", text, re.S):
+            if 'data-motif="ring"' in selector and "::after" in selector and "oil-shape-window" not in selector:
+                errors.append(f"{path.name}: ring geometry may only render inside oil-shape-window")
         if "placeholder" in text.lower():
             errors.append(f"{path.name}: bundled templates must not contain visible placeholder visuals")
         collector = TemplateTextCollector()
@@ -247,6 +255,14 @@ def validate_skill() -> None:
         copy_flow_count = len(re.findall(r"<[^>]+\bdata-copy-flow\b[^>]*>", fragment, re.I))
         copy_title_count = len(re.findall(r"<[^>]+\bdata-copy-title\b[^>]*>", fragment, re.I))
         copy_body_count = len(re.findall(r"<[^>]+\bdata-copy-body\b[^>]*>", fragment, re.I))
+        ring_motif_count = len(re.findall(r'<[^>]+\bdata-motif=["\']ring["\'][^>]*>', fragment, re.I))
+        ring_window_count = sum(
+            1 for tag in re.findall(r"<[^>]+>", fragment, re.I)
+            if re.search(r'\bclass=["\'][^"\']*\boil-shape-window\b[^"\']*["\']', tag, re.I)
+            and re.search(r'\bdata-clip=["\']shape["\']', tag, re.I)
+        )
+        if ring_motif_count != ring_window_count:
+            errors.append(f"{path.name}: every ring motif requires one explicit oil-shape-window with data-clip='shape'")
         if path.stem in ADAPTIVE_COPY_TEMPLATES and copy_flow_count != 1:
             errors.append(f"{path.name}: focal title/body composition must use the adaptive copy flow")
         if copy_flow_count and (copy_title_count != copy_flow_count or copy_body_count != copy_flow_count):
@@ -487,7 +503,23 @@ def validate_skill() -> None:
     tone_layer = re.search(r"\.oil-surface\[data-tone\]::before\s*\{([^}]*)\}", runtime_css, re.S)
     if not tone_layer or "content:none" not in re.sub(r"\s+", "", tone_layer.group(1)):
         errors.append("runtime surface tones must stay flat; local motifs own decorative geometry")
+    ring_surface_rule = re.search(r'\.oil-surface\[data-motif="ring"\]::after\s*\{([^}]*)\}', runtime_css, re.S)
+    ring_surface_declarations = re.sub(r"\s+", "", ring_surface_rule.group(1)) if ring_surface_rule else ""
+    if "content:none" not in ring_surface_declarations or "display:none" not in ring_surface_declarations:
+        errors.append("runtime ring motif must disable the unclipped surface pseudo-element")
+    ring_window_rule = re.search(r'\[data-motif="ring"\]\s*>\s*\.oil-shape-window\s*\{([^}]*)\}', runtime_css, re.S)
+    if not ring_window_rule or not re.search(r"overflow\s*:\s*(?:hidden|clip)\b", ring_window_rule.group(1), re.I):
+        errors.append("runtime ring motif requires a clipping oil-shape-window")
+    ring_geometry_rule = re.search(r'\[data-motif="ring"\]\s*>\s*\.oil-shape-window::after\s*\{([^}]*)\}', runtime_css, re.S)
+    if not ring_geometry_rule:
+        errors.append("runtime ring geometry must belong to the oil-shape-window")
+    else:
+        declarations = ring_geometry_rule.group(1)
+        if not re.search(r"\bright\s*:\s*-", declarations) or not re.search(r"\btop\s*:\s*-", declarations):
+            errors.append("runtime ring geometry must cross the top-right shape-window boundary")
     for motif in PROGRAM_OWNED_CAPABILITIES["surface"]["automatic_motifs"]:
+        if motif == "ring":
+            continue
         motif_rule = re.search(
             rf'\.oil-surface\[data-motif="{re.escape(motif)}"\]::after\s*\{{([^}}]*)\}}',
             runtime_css,

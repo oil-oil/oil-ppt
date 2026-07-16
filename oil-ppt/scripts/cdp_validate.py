@@ -427,11 +427,23 @@ def validate_file(
               decoration:surface.dataset.motif || 'unknown'
             }] : [];
           });
-          const invalidRingGeometry = all('.oil-surface[data-motif="ring"]').flatMap(surface => {
-            if (!visible(surface) || styleOf(surface).getPropertyValue('--decor-opacity').trim() === '0') return [];
-            const pseudo = styleOf(surface, '::after');
-            if (!pseudoVisible(pseudo)) return [];
-            const box = pseudoRect(surface, pseudo);
+          const invalidRingGeometry = all('[data-motif="ring"]').flatMap(motif => {
+            if (!visible(motif)) return [];
+            const slide = motif.closest('.oil-slide');
+            const node = motif.className || motif.tagName.toLowerCase();
+            const windows = [...motif.children].filter(child => child.classList?.contains('oil-shape-window'));
+            if (windows.length !== 1) return [{
+              slide:slide?.dataset.slideId || 'unknown', reason:'ring-window-missing', node
+            }];
+            const shapeWindow = windows[0];
+            const windowStyle = styleOf(shapeWindow);
+            const clipsShape = ['hidden', 'clip'].includes(windowStyle.overflowX)
+              && ['hidden', 'clip'].includes(windowStyle.overflowY);
+            if (!clipsShape) return [{
+              slide:slide?.dataset.slideId || 'unknown', reason:'ring-window-not-clipping', node
+            }];
+            const pseudo = styleOf(shapeWindow, '::after');
+            const box = pseudoVisible(pseudo) ? pseudoRect(shapeWindow, pseudo) : null;
             const borders = [pseudo.borderTopWidth, pseudo.borderRightWidth, pseudo.borderBottomWidth, pseudo.borderLeftWidth].map(px);
             const uniformBorder = borders.every(value => value !== null && value >= 3)
               && Math.max(...borders) - Math.min(...borders) <= 1;
@@ -448,14 +460,18 @@ def validate_file(
               && pseudo.backgroundImage.includes('radial-gradient')
               && inner !== null && outer !== null && outer - inner >= 6;
             if (clipped) return [{
-              slide:surface.closest('.oil-slide')?.dataset.slideId || 'unknown',
-              reason:'ring-is-clipped', node:surface.className || surface.tagName.toLowerCase()
+              slide:slide?.dataset.slideId || 'unknown', reason:'ring-is-clipped', node
             }];
-            if (borderCircle || radialCircle) return [];
-            return [{
-              slide:surface.closest('.oil-slide')?.dataset.slideId || 'unknown',
-              reason:'ring-is-not-circular', node:surface.className || surface.tagName.toLowerCase()
+            if (!(borderCircle || radialCircle)) return [{
+              slide:slide?.dataset.slideId || 'unknown', reason:'ring-is-not-circular', node
             }];
+            const bounds = shapeWindow.getBoundingClientRect();
+            const scaleX = shapeWindow.offsetWidth ? bounds.width / shapeWindow.offsetWidth : 1;
+            const scaleY = shapeWindow.offsetHeight ? bounds.height / shapeWindow.offsetHeight : 1;
+            const paintedBox = transformedRect(box, pseudo, scaleX, scaleY);
+            return paintedBox && insideRect(paintedBox, bounds, 1) ? [{
+              slide:slide?.dataset.slideId || 'unknown', reason:'ring-is-fully-exposed', node
+            }] : [];
           });
           const gradientCount = value => (value.match(/(?:repeating-)?(?:linear|radial|conic)-gradient\\(/g) || []).length;
           const invalidPaint = all('.oil-surface:not(.oil-media)').flatMap(surface => {

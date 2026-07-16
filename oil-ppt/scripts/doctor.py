@@ -276,9 +276,11 @@ def verify_visual_quality_guards(root: Path, browser: str) -> None:
         .quality-probe .oil-surface{position:relative;width:420px;height:220px;margin:20px}
         .bad-clip{overflow:hidden!important}
         .bad-anchor::after{top:0!important;right:0!important;bottom:auto!important;left:auto!important}
-        .bad-ring::after{right:0!important;top:0!important;width:220px!important;height:130px!important;
+        .bad-ring>.oil-shape-window::after{right:0!important;top:0!important;width:220px!important;height:130px!important;
           border:24px solid rgba(0,0,0,.08)!important;border-radius:36px!important;background:none!important;clip-path:none!important}
-        .bad-ring-clip::after{right:0!important;top:0!important;clip-path:inset(50% 50% 0 0)!important}
+        .bad-ring-clip>.oil-shape-window::after{right:0!important;top:0!important;clip-path:inset(50% 50% 0 0)!important}
+        .bad-ring-full>.oil-shape-window::after{right:20px!important;top:20px!important;width:120px!important;height:120px!important;border-width:18px!important}
+        .bad-ring-window>.oil-shape-window{overflow:visible!important}
         .bad-overflow::after{right:-2100px!important;top:0!important}
         .bad-transform::after{right:0!important;top:0!important;transform:translateX(2100px)!important}
         .bad-paint{background-image:linear-gradient(90deg,transparent,rgba(0,0,0,.03)),
@@ -292,9 +294,15 @@ def verify_visual_quality_guards(root: Path, browser: str) -> None:
         + "<section class='oil-slide quality-probe' data-slide-id='decor-anchor'><div class='slide-safe'>"
           "<article class='oil-surface bad-anchor' data-tone='neutral' data-decor='dots' data-decor-pos='bottom-left'></article></div></section>"
         + "<section class='oil-slide quality-probe' data-slide-id='ring-shape'><div class='slide-safe'>"
-          "<article class='oil-surface bad-ring' data-tone='neutral' data-motif='ring'></article></div></section>"
+          "<article class='oil-surface bad-ring' data-tone='neutral' data-motif='ring'><span class='oil-shape-window' data-clip='shape'></span></article></div></section>"
         + "<section class='oil-slide quality-probe' data-slide-id='ring-clip'><div class='slide-safe'>"
-          "<article class='oil-surface bad-ring-clip' data-tone='neutral' data-motif='ring'></article></div></section>"
+          "<article class='oil-surface bad-ring-clip' data-tone='neutral' data-motif='ring'><span class='oil-shape-window' data-clip='shape'></span></article></div></section>"
+        + "<section class='oil-slide quality-probe' data-slide-id='ring-window-missing'><div class='slide-safe'>"
+          "<article class='oil-surface' data-tone='neutral' data-motif='ring'></article></div></section>"
+        + "<section class='oil-slide quality-probe' data-slide-id='ring-window-open'><div class='slide-safe'>"
+          "<article class='oil-surface bad-ring-window' data-tone='neutral' data-motif='ring'><span class='oil-shape-window' data-clip='shape'></span></article></div></section>"
+        + "<section class='oil-slide quality-probe' data-slide-id='ring-full'><div class='slide-safe'>"
+          "<article class='oil-surface bad-ring-full' data-tone='neutral' data-motif='ring'><span class='oil-shape-window' data-clip='shape'></span></article></div></section>"
         + "<section class='oil-slide quality-probe' data-slide-id='motif-overflow'><div class='slide-safe'>"
           "<article class='oil-surface bad-overflow' data-tone='neutral' data-motif='triangle'></article></div></section>"
         + "<section class='oil-slide quality-probe' data-slide-id='motif-transform-overflow'><div class='slide-safe'>"
@@ -316,6 +324,7 @@ def verify_visual_quality_guards(root: Path, browser: str) -> None:
     categories = {item.get("category") for item in findings}
     expected = {
         "surface-clips-content", "decoration-anchor-mismatch", "ring-is-not-circular", "ring-is-clipped",
+        "ring-window-missing", "ring-window-not-clipping", "ring-is-fully-exposed",
         "decoration-outside-slide", "excessive-gradient-layers", "content-outside-semantic-container",
         "excessive-unowned-hairlines",
     }
