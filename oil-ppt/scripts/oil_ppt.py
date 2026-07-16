@@ -30,7 +30,7 @@ from media_frame import frame_media
 from media_plan import MEDIA_SLOTS, MEDIA_VARIANT_SLOTS, build_media_plan, write_media_plan
 from render_programmatic_visual import render_html_visual
 from icon_registry import print_icon_results
-from outline_schema import BASE_VISIBLE_FIELDS, DECK_FIELDS, MAX_ABS_DATA_VALUE, MEDIA_TEMPLATES, SHARED_SLIDE_FIELDS, SLIDE_ALLOWED_FIELDS, TEMPLATE_CONTENT_HELP, TEMPLATE_FAMILIES, TEMPLATE_VISIBLE_FIELDS, VARIANT_INPUT_GUIDANCE, validate_outline
+from outline_schema import BASE_VISIBLE_FIELDS, DECK_FIELDS, MAX_ABS_DATA_VALUE, MEDIA_TEMPLATES, SHARED_SLIDE_FIELDS, SLIDE_ALLOWED_FIELDS, TEMPLATE_CONTENT_HELP, TEMPLATE_FAMILIES, TEMPLATE_VISIBLE_FIELDS, VARIANT_INPUT_GUIDANCE, text_budgets_for, validate_outline
 from palette_tokens import PALETTES, TOKEN_KEYS, canonical_name, named_palette, normalize_palette
 from profile_tokens import SHAPE_PROFILES, TYPE_PROFILES
 
@@ -422,6 +422,14 @@ def example_outline() -> dict:
 
 
 def contract_schema() -> dict:
+    def bounded_text(template: str, path: str, variant: str | None = None) -> dict:
+        maximum = text_budgets_for(template, variant)[path]
+        return {
+            "type": "string",
+            "minLength": 1,
+            "pattern": rf"^(?:\s*\S){{1,{maximum}}}\s*$",
+        }
+
     definitions = {
         "evidence": {
             "oneOf": [
@@ -508,6 +516,24 @@ def contract_schema() -> dict:
                 "title": {"type": "string", "minLength": 1},
                 "label": {"type": "string", "minLength": 1},
                 "body": {"type": "string", "minLength": 1},
+            },
+        },
+        "cycleStep": {
+            "type": "object", "required": ["body"], "additionalProperties": False,
+            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "properties": {
+                "title": bounded_text("cycle", "steps[].title"),
+                "label": bounded_text("cycle", "steps[].title"),
+                "body": bounded_text("cycle", "steps[].body"),
+            },
+        },
+        "tierStep": {
+            "type": "object", "required": ["body"], "additionalProperties": False,
+            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "properties": {
+                "title": bounded_text("tier-stack", "steps[].title"),
+                "label": bounded_text("tier-stack", "steps[].title"),
+                "body": bounded_text("tier-stack", "steps[].body"),
             },
         },
         "stepIconBody": {
@@ -644,6 +670,27 @@ def contract_schema() -> dict:
                 "items": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "string", "minLength": 1}},
             },
         },
+        "quadrantGroup": {
+            "type": "object", "required": ["meta", "items"], "additionalProperties": False,
+            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "properties": {
+                "title": bounded_text("quadrant", "groups[].title"),
+                "label": bounded_text("quadrant", "groups[].title"),
+                "meta": bounded_text("quadrant", "groups[].meta"),
+                "emphasis": {"type": "boolean"},
+                "items": {
+                    "type": "array", "minItems": 1, "maxItems": 3,
+                    "items": bounded_text("quadrant", "groups[].items[]"),
+                },
+            },
+        },
+        "axes": {
+            "type": "object", "required": ["x", "y"], "additionalProperties": False,
+            "properties": {
+                "x": bounded_text("quadrant", "axes.x"),
+                "y": bounded_text("quadrant", "axes.y"),
+            },
+        },
         "measurement": {
             "type": "object", "required": ["value", "label"], "additionalProperties": False,
             "properties": {
@@ -693,14 +740,14 @@ def contract_schema() -> dict:
         for key in SLIDE_ALLOWED_FIELDS
         if key not in {
             "cards", "steps", "sides", "groups", "metrics", "annotations", "measurements",
-            "metric", "insight", "chart", "data", "media_source",
+            "metric", "insight", "chart", "data", "axes", "media_source",
         }
     }
     structured_fields = {
         "cards": {"type": "array", "items": {"$ref": "#/$defs/card"}},
         "steps": {"type": "array", "items": {"$ref": "#/$defs/step"}},
         "sides": {"type": "array", "items": {"$ref": "#/$defs/side"}},
-        "groups": {"type": "array", "items": {"$ref": "#/$defs/group"}},
+        "groups": {"type": "array"},
         "metrics": {"type": "array", "items": {"$ref": "#/$defs/measurement"}},
         "annotations": {"type": "array", "items": {"$ref": "#/$defs/annotation"}},
         "measurements": {"type": "array", "items": {"$ref": "#/$defs/measurement"}},
@@ -752,6 +799,7 @@ def contract_schema() -> dict:
                 },
             ],
         },
+        "axes": {"$ref": "#/$defs/axes"},
         "media_source": {"$ref": "#/$defs/mediaSource"},
     }
     slide_properties = {**string_fields, **structured_fields}
@@ -820,6 +868,17 @@ def contract_schema() -> dict:
             "required": ["groups", "outcome"],
             "properties": {"groups": {"minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/convergeGroup"}}},
         },
+        "cycle": {
+            "required": ["statement", "statement_body", "steps"],
+            "allOf": [copy_required],
+            "properties": {
+                "content": bounded_text("cycle", "content"),
+                "note": bounded_text("cycle", "content"),
+                "statement": bounded_text("cycle", "statement"),
+                "statement_body": bounded_text("cycle", "statement_body"),
+                "steps": {"minItems": 4, "maxItems": 4, "items": {"$ref": "#/$defs/cycleStep"}},
+            },
+        },
         "editorial-feature": {"required": ["media_frame", "cards"], "allOf": [copy_required, image_required], "properties": {"cards": {"minItems": 3, "maxItems": 3}}},
         "catalog-board": {
             "required": ["metrics", "groups"],
@@ -854,6 +913,31 @@ def contract_schema() -> dict:
                 "measurements": ["measurement_note", "measurement_meta"],
                 "measurement_note": ["measurements"],
                 "measurement_meta": ["measurements"],
+            },
+        },
+        "quadrant": {
+            "required": ["axes", "groups"],
+            "allOf": [copy_required],
+            "properties": {
+                "content": bounded_text("quadrant", "content"),
+                "note": bounded_text("quadrant", "content"),
+                "groups": {
+                    "minItems": 4,
+                    "maxItems": 4,
+                    "items": {"$ref": "#/$defs/quadrantGroup"},
+                    "contains": {"required": ["emphasis"], "properties": {"emphasis": {"const": True}}},
+                    "minContains": 1,
+                    "maxContains": 1,
+                },
+            },
+        },
+        "tier-stack": {
+            "required": ["steps"],
+            "allOf": [copy_required],
+            "properties": {
+                "content": bounded_text("tier-stack", "content"),
+                "note": bounded_text("tier-stack", "content"),
+                "steps": {"minItems": 4, "maxItems": 4, "items": {"$ref": "#/$defs/tierStep"}},
             },
         },
     }
@@ -1073,6 +1157,116 @@ def contract_schema() -> dict:
             "then": {"required": ["palette_source"]},
         }],
         "note": "Template-specific variants, exact counts, visible fields and media rules are validated by `contract --id <template>` and `plan`.",
+    }
+
+
+def _schema_clone(value: object) -> object:
+    return json.loads(json.dumps(value, ensure_ascii=False))
+
+
+def _selected_variant_names(condition: dict) -> set[str]:
+    selector = (((condition.get("if") or {}).get("properties") or {}).get("variant") or {})
+    if isinstance(selector.get("const"), str):
+        return {selector["const"]}
+    values = selector.get("enum")
+    return {str(value) for value in values} if isinstance(values, list) else set()
+
+
+def _collect_schema_definitions(value: object, definitions: dict) -> dict:
+    names: set[str] = set()
+
+    def visit(item: object) -> None:
+        if isinstance(item, dict):
+            reference = item.get("$ref")
+            if isinstance(reference, str) and reference.startswith("#/$defs/"):
+                names.add(reference.removeprefix("#/$defs/"))
+            for child in item.values():
+                visit(child)
+        elif isinstance(item, list):
+            for child in item:
+                visit(child)
+
+    visit(value)
+    previous = -1
+    while previous != len(names):
+        previous = len(names)
+        for name in list(names):
+            visit(definitions.get(name))
+    return {name: _schema_clone(definitions[name]) for name in sorted(names) if name in definitions}
+
+
+def component_fill_plan(template: str) -> dict:
+    """Build one self-contained authoring schema from the executable contract."""
+    if template not in COMPONENT_CONTRACTS:
+        raise SystemExit(f"Unknown template for fill plan: {template}")
+    full = contract_schema()
+    slide_schema = full["properties"]["slides"]["items"]
+    base_constraints: list[dict] = []
+    template_rules: dict | None = None
+    for condition in slide_schema.get("allOf") or []:
+        selected = ((((condition.get("if") or {}).get("properties") or {}).get("template") or {}).get("const"))
+        if selected is None:
+            base_constraints.append(_schema_clone(condition))
+        elif selected == template:
+            template_rules = _schema_clone(condition.get("then") or {})
+    if template_rules is None:
+        raise RuntimeError(f"contract schema is missing template rules for {template}")
+
+    base_required = list(slide_schema.get("required") or [])
+    allowed_fields = sorted(set(BASE_VISIBLE_FIELDS) | set(TEMPLATE_VISIBLE_FIELDS[template]))
+    properties = {
+        field: _schema_clone(slide_schema["properties"][field])
+        for field in allowed_fields
+        if field in slide_schema["properties"]
+    }
+    properties["template"] = {"const": template}
+    properties["variant"] = {"enum": list(COMPONENT_CONTRACTS[template]["variants"])}
+    properties["decor"] = {"enum": list(COMPONENT_CONTRACTS[template]["decorations"])}
+    input_schema = {
+        "$schema": full["$schema"],
+        "$id": f"https://oil-ppt.local/schema/fill-plan/{template}/v1",
+        "type": "object",
+        "additionalProperties": False,
+        "required": base_required,
+        "properties": properties,
+        "allOf": [*base_constraints, template_rules],
+    }
+    definitions = _collect_schema_definitions(input_schema, full.get("$defs") or {})
+    if definitions:
+        input_schema["$defs"] = definitions
+
+    template_required = set(template_rules.get("required") or [])
+    variant_conditions = [
+        condition for condition in (template_rules.get("allOf") or [])
+        if _selected_variant_names(condition)
+    ]
+    variants: dict[str, dict] = {}
+    guidance_by_variant = VARIANT_INPUT_GUIDANCE.get(template) or {}
+    for variant in COMPONENT_CONTRACTS[template]["variants"]:
+        guidance = _schema_clone(guidance_by_variant.get(variant) or {
+            "minimum": [TEMPLATE_CONTENT_HELP[template]],
+            "optional": [],
+        })
+        required = set(base_required) | template_required
+        for condition in variant_conditions:
+            if variant in _selected_variant_names(condition):
+                required.update((condition.get("then") or {}).get("required") or [])
+        budgets = text_budgets_for(template, variant)
+        variants[variant] = {
+            **guidance,
+            "required_top_level": sorted(required),
+            **({"text_budgets_nonspace": budgets} if budgets else {}),
+        }
+    canonical = json.dumps(input_schema, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return {
+        "schema_version": "oil-ppt.component-fill-plan/v1",
+        "template": template,
+        "authoritative_constraints": "input_schema",
+        "content_fields": sorted(set(allowed_fields) - set(base_required)),
+        "variants": variants,
+        "schema_digest": "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+        "input_schema": input_schema,
+        "validation_note": "Non-space budgets and semantic rules are enforced by plan/check in addition to JSON Schema.",
     }
 
 
@@ -1574,6 +1768,7 @@ def print_contract(
             "schema_version": payload["schema_version"],
             "registry_digest": payload["registry_digest"],
             "template": match,
+            "fill_plan": component_fill_plan(normalized),
             "base_fields": ["id", "title", "template", "variant", "decor"],
             "common_optional": ["highlight", "background", "backdrop_text"],
             "media_rule": "出现图片时通常设置 media_frame='content'。照片默认 cover 铺满版位；不可裁切的 UI/文档用 contain。split-visual/editorial-feature 的概念插画可用 media_surface='page-blend' 融入页面；只有素材自带必须保留的外框时才用 self-framed。",

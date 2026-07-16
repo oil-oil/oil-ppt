@@ -199,6 +199,23 @@ def slot_pointer(slide: dict, slide_index: int, slot: str) -> str | None:
         key = _existing_key(groups[index], candidates)
         return _slide_pointer(slide_index, "groups", index, key) if key else None
 
+    match = re.fullmatch(r"group-item-(\d+)-(\d+)", slot)
+    if match:
+        group_index, item_index = int(match.group(1)) - 1, int(match.group(2)) - 1
+        groups = slide.get("groups") or []
+        if group_index >= len(groups) or not isinstance(groups[group_index], dict):
+            return None
+        items = groups[group_index].get("items") or []
+        if item_index >= len(items) or not isinstance(items[item_index], str):
+            return None
+        return _slide_pointer(slide_index, "groups", group_index, "items", item_index)
+
+    match = re.fullmatch(r"axis-(x|y)", slot)
+    if match:
+        axes = slide.get("axes") or {}
+        key = match.group(1)
+        return _slide_pointer(slide_index, "axes", key) if isinstance(axes, dict) and key in axes else None
+
     match = re.fullmatch(r"annotation-(title|body)-(\d+)", slot)
     if match:
         index = int(match.group(2)) - 1
@@ -469,6 +486,11 @@ def iter_editable_values(data: dict) -> Iterator[tuple[str, str]]:
             for key in allowed:
                 if key in item:
                     candidates.add(_slide_pointer(slide_index, collection, key))
+        axes = slide.get("axes")
+        if isinstance(axes, dict):
+            for key in ("x", "y"):
+                if key in axes:
+                    candidates.add(_slide_pointer(slide_index, "axes", key))
         for value in sorted(candidates):
             try:
                 raw = get_pointer(data, value)

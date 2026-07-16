@@ -435,9 +435,11 @@ def validate_file(
             const borders = [pseudo.borderTopWidth, pseudo.borderRightWidth, pseudo.borderBottomWidth, pseudo.borderLeftWidth].map(px);
             const uniformBorder = borders.every(value => value !== null && value >= 3)
               && Math.max(...borders) - Math.min(...borders) <= 1;
-            const radius = px(pseudo.borderTopLeftRadius);
-            const clippedQuadrant = /^inset\\(/.test(pseudo.clipPath)
-              && (pseudo.clipPath.match(/(?:[3-9]\\d|100)(?:\\.\\d+)?%/g) || []).length >= 2;
+            const radiusValue = pseudo.borderTopLeftRadius;
+            const radius = box && radiusValue.endsWith('%')
+              ? Math.min(box.width, box.height) * Number.parseFloat(radiusValue) / 100
+              : px(radiusValue);
+            const clipped = pseudo.clipPath && pseudo.clipPath !== 'none';
             const borderCircle = box && Math.abs(box.width - box.height) <= Math.max(2, box.width * .04)
               && uniformBorder && radius !== null && radius >= Math.min(box.width, box.height) * .45;
             const inner = px(pseudo.getPropertyValue('--oil-ring-inner'));
@@ -445,7 +447,11 @@ def validate_file(
             const radialCircle = box && Math.abs(box.width - box.height) <= Math.max(2, box.width * .04)
               && pseudo.backgroundImage.includes('radial-gradient')
               && inner !== null && outer !== null && outer - inner >= 6;
-            if (clippedQuadrant && (borderCircle || radialCircle)) return [];
+            if (clipped) return [{
+              slide:surface.closest('.oil-slide')?.dataset.slideId || 'unknown',
+              reason:'ring-is-clipped', node:surface.className || surface.tagName.toLowerCase()
+            }];
+            if (borderCircle || radialCircle) return [];
             return [{
               slide:surface.closest('.oil-slide')?.dataset.slideId || 'unknown',
               reason:'ring-is-not-circular', node:surface.className || surface.tagName.toLowerCase()

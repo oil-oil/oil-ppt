@@ -70,6 +70,7 @@ def slide_recommendation(slide: dict) -> dict | None:
     image = slide.get("image") or slide.get("media") or slide.get("artifact_image")
     secondary_image = slide.get("secondary_image")
     data = slide.get("data") if isinstance(slide.get("data"), dict) else None
+    axes = slide.get("axes") if isinstance(slide.get("axes"), dict) else None
 
     evidence_sides = [
         side for side in (slide.get("sides") or [])
@@ -80,7 +81,15 @@ def slide_recommendation(slide: dict) -> dict | None:
         if isinstance(card, dict) and isinstance(card.get("images"), list) and len(card["images"]) == 2
     ]
 
-    if selected == "data-story" and data is not None:
+    if selected == "cycle" and len(steps) == 4 and slide.get("statement") and slide.get("statement_body"):
+        candidates.append(_candidate("cycle", "FOUR_STAGES_WITH_FEEDBACK_LOOP"))
+    elif axes is not None and len(groups) == 4 and sum(
+        isinstance(group, dict) and group.get("emphasis") is True for group in groups
+    ) == 1:
+        candidates.append(_candidate("quadrant", "TWO_AXES_FOUR_GROUPS_ONE_EMPHASIS"))
+    elif selected == "tier-stack" and len(steps) == 4:
+        candidates.append(_candidate("tier-stack", "FOUR_ORDERED_LEVELS", variant=str(slide.get("variant") or "funnel")))
+    elif selected == "data-story" and data is not None:
         variant = str(slide.get("variant") or "")
         item = _candidate("data-story", f"REAL_VALUES_{variant.replace('-', '_').upper()}", variant=variant)
         item["selection_question"] = DATA_RELATIONSHIP_QUESTION

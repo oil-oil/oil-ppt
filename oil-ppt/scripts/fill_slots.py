@@ -519,6 +519,51 @@ def fill_converge(fragment: str, slide: dict) -> str:
     return replace_nth(fragment, r'(<div\b[^>]*class="[^"]*\boutcome\b[^"]*"[^>]*>)(.*?)(</div>)', 0, slide.get("outcome"))
 
 
+def _fill_relationship_steps(fragment: str, slide: dict) -> str:
+    for index, step in enumerate((slide.get("steps") or [])[:4], start=1):
+        if not isinstance(step, dict):
+            continue
+        fragment = set_slot_text_force(fragment, f"step-title-{index}", str(step.get("title") or step.get("label") or ""))
+        fragment = set_slot_text_force(fragment, f"step-body-{index}", str(step.get("body") or step.get("text") or ""))
+    return fragment
+
+
+def fill_cycle(fragment: str, slide: dict) -> str:
+    fragment = fill_common_slots(fragment, slide)
+    fragment = set_slot_text_force(fragment, "statement", str(slide.get("statement") or ""))
+    fragment = set_slot_text_force(fragment, "statement-body", str(slide.get("statement_body") or ""))
+    return _fill_relationship_steps(fragment, slide)
+
+
+def fill_quadrant(fragment: str, slide: dict) -> str:
+    fragment = fill_common_slots(fragment, slide)
+    axes = slide.get("axes") or {}
+    fragment = set_slot_text_force(fragment, "axis-x", str(axes.get("x") or ""))
+    fragment = set_slot_text_force(fragment, "axis-y", str(axes.get("y") or ""))
+    for group_index, group in enumerate((slide.get("groups") or [])[:4], start=1):
+        if not isinstance(group, dict):
+            continue
+        fragment = set_slot_text_force(fragment, f"group-title-{group_index}", str(group.get("title") or group.get("label") or ""))
+        fragment = set_slot_text_force(fragment, f"group-meta-{group_index}", str(group.get("meta") or ""))
+        items = "".join(
+            f'<span class="quadrant-item" data-slot="group-item-{group_index}-{item_index}" data-fit data-min-size="16">{esc(str(item))}</span>'
+            for item_index, item in enumerate((group.get("items") or [])[:3], start=1)
+        )
+        fragment = set_slot_html_force(fragment, f"group-items-{group_index}", items)
+        if group.get("emphasis") is True:
+            fragment = fragment.replace(
+                f'data-quadrant="{group_index}"',
+                f'data-quadrant="{group_index}" data-emphasis="true"',
+                1,
+            )
+    return fragment
+
+
+def fill_tier_stack(fragment: str, slide: dict) -> str:
+    fragment = fill_common_slots(fragment, slide)
+    return _fill_relationship_steps(fragment, slide)
+
+
 def fill_editorial(fragment: str, slide: dict) -> str:
     fragment = fill_split_like(fragment, slide)
     image = slide.get("image") or slide.get("media")
@@ -739,6 +784,7 @@ FILLERS = {
     "recap": fill_recap,
     "tabs": fill_tabs,
     "converge": fill_converge,
+    "cycle": fill_cycle,
     "data-story": fill_data_story,
     "editorial-canvas": fill_editorial,
     "editorial-feature": fill_editorial_feature,
@@ -747,6 +793,8 @@ FILLERS = {
     "annotated-showcase": fill_annotated_showcase,
     "narrative-bento": fill_narrative_bento,
     "sequence-gallery": fill_sequence_gallery,
+    "quadrant": fill_quadrant,
+    "tier-stack": fill_tier_stack,
 }
 
 

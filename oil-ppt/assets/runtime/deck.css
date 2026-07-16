@@ -308,10 +308,9 @@ p, h1, h2, h3, li, [data-fit] { overflow-wrap: anywhere; }
   pointer-events:none;
 }
 .oil-surface[data-motif="ring"]::after {
-  right:-126px;top:-126px;width:340px;height:340px;opacity:1;
+  right:-54px;top:42px;width:340px;height:340px;opacity:1;
   border:40px solid color-mix(in srgb,var(--ink) 5%,transparent);
-  border-radius:170px;
-  clip-path:inset(50% 50% 0 0);
+  border-radius:50%;
 }
 .oil-surface[data-motif="triangle"]::after {
   right:-28px;top:-26px;width:238px;height:214px;opacity:1;

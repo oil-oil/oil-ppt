@@ -261,7 +261,7 @@ def validate_skill() -> None:
                 if 'data-decor="__DECOR__"' not in text:
                     errors.append(f"{path.name}: declares decorations but has no rendered data-decor slot")
             quality = COMPONENT_QUALITY.get(path.stem) or {}
-            if quality.get("silhouette") not in {"bleed", "browser", "canvas", "card-grid", "data-story", "diagram", "editorial-list", "focal", "matrix", "metric", "rail", "split", "state-panel", "step-grid", "step-cards", "timeline", "two-panel", "editorial-feature", "catalog", "case-board", "annotated", "bento", "gallery"}:
+            if quality.get("silhouette") not in {"bleed", "browser", "canvas", "card-grid", "cycle", "data-story", "diagram", "editorial-list", "focal", "matrix", "metric", "quadrant", "rail", "split", "state-panel", "step-grid", "step-cards", "tier-stack", "timeline", "two-panel", "editorial-feature", "catalog", "case-board", "annotated", "bento", "gallery"}:
                 errors.append(f"{path.name}: invalid or missing silhouette metadata")
             if quality.get("surface_density") not in {"none", "light", "heavy"}:
                 errors.append(f"{path.name}: invalid or missing surface_density metadata")
@@ -299,6 +299,32 @@ def validate_skill() -> None:
             errors.append("process-rail.html: turn connector must rotate the system arrow downward")
         if 'data-c="56"] .oil-icon' not in text or "rotate(180deg)" not in text:
             errors.append("process-rail.html: return-row connectors must rotate the system arrow left")
+
+    cycle = TEMPLATES / "cycle.html"
+    if cycle.is_file():
+        text = cycle.read_text(encoding="utf-8")
+        if text.count('data-step="') != 4 or "data-visual-edge" not in text:
+            errors.append("cycle.html: requires exactly four stages and a visible program-owned cycle edge")
+        if 'data-slot="statement"' not in text or 'data-slot="statement-body"' not in text:
+            errors.append("cycle.html: requires a center statement and supporting body")
+
+    quadrant = TEMPLATES / "quadrant.html"
+    if quadrant.is_file():
+        text = quadrant.read_text(encoding="utf-8")
+        if text.count('data-quadrant="') != 4:
+            errors.append("quadrant.html: requires exactly four semantic groups")
+        if 'data-slot="axis-x"' not in text or 'data-slot="axis-y"' not in text:
+            errors.append("quadrant.html: requires program-owned x and y axes")
+
+    tier_stack = TEMPLATES / "tier-stack.html"
+    if tier_stack.is_file():
+        text = tier_stack.read_text(encoding="utf-8")
+        if text.count('data-step="') != 4:
+            errors.append("tier-stack.html: requires exactly four tiers")
+        if 'data-variant="__VARIANT__"' not in text:
+            errors.append("tier-stack.html: must render the selected semantic variant")
+        if '[data-variant="pyramid"]' not in text or "clip-path:polygon" not in text:
+            errors.append("tier-stack.html: requires distinct funnel and pyramid silhouettes")
     text_sources = [SKILL, *sorted((ROOT / "scripts").glob("*.py"))]
     for source in text_sources:
         source_text = source.read_text(encoding="utf-8")

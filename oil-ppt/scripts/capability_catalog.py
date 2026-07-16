@@ -15,7 +15,7 @@ FAMILY_GUIDANCE = {
         "reading_path": "单焦点",
     },
     "sequence": {
-        "question": "内容是否有明确的先后、阶段或多步路径？",
+        "question": "内容是否有明确的先后、阶段、多步路径，或四个阶段构成闭环？",
         "reading_path": "顺序推进",
     },
     "cards": {
@@ -23,7 +23,7 @@ FAMILY_GUIDANCE = {
         "reading_path": "主次聚合",
     },
     "comparison": {
-        "question": "两个对象是否需要沿同一维度对照，或同一对象是否需要切换状态？",
+        "question": "对象是否需要沿共享维度对照、在两个概念维度中定位，或切换同一对象的状态？",
         "reading_path": "左右对照",
     },
     "data": {
@@ -31,7 +31,7 @@ FAMILY_GUIDANCE = {
         "reading_path": "数据关系",
     },
     "canvas": {
-        "question": "信息是否需要在开放画布中展陈、汇聚或被批注？",
+        "question": "信息是否需要在开放画布中展陈、汇聚、被批注，或形成清楚的层级轮廓？",
         "reading_path": "空间关系",
     },
     "split": {
@@ -60,11 +60,14 @@ TEMPLATE_DISCOVERY = {
     "timeline": {"aliases": ["时间线", "四阶段", "里程碑"], "effects": ["temporal-sequence"], "avoid_when": "没有时间或阶段推进"},
     "process-rail": {"aliases": ["六步流程", "八步流程", "完整路径"], "effects": ["serpentine-sequence"], "avoid_when": "六步需要长段落，或八步仍需要解释正文"},
     "process-cards": {"aliases": ["四步流程", "解释型流程", "交付路径", "结果收束"], "effects": ["four-step-cards", "terminal-focus"], "avoid_when": "步骤少于四个、超过四个，或每步只有短标签"},
+    "cycle": {"aliases": ["循环", "飞轮", "闭环"], "effects": ["closed-cycle"], "avoid_when": "最后一步不会重新供给第一步，或内容只是一次性线性流程"},
     "card-trio": {"aliases": ["一主两辅", "三块卡片", "饭盒卡片", "三类路由"], "effects": ["feature-support", "evidence-routing"], "avoid_when": "三项完全等权或存在顺序"},
     "recap": {"aliases": ["总结", "三条原则", "结论回顾"], "effects": ["thesis-support"], "avoid_when": "没有总领判断"},
     "comparison": {"aliases": ["二选一", "两方案", "左右对比", "证据对比"], "effects": ["paired-comparison", "evidence-comparison"], "avoid_when": "两侧维度不同"},
     "comparison-list": {"aliases": ["逐项对照", "责任边界", "对比清单"], "effects": ["aligned-comparison"], "avoid_when": "每侧不足三项或没有共享维度"},
+    "quadrant": {"aliases": ["四象限", "二维矩阵", "优先级矩阵"], "effects": ["conceptual-quadrant"], "avoid_when": "只有一个判断维度、对象需要精确数值坐标，或没有重点象限"},
     "tabs": {"aliases": ["状态切换", "前后视图", "两个模式"], "effects": ["interactive-state"], "avoid_when": "两个对象需要同时可见"},
+    "tier-stack": {"aliases": ["层级堆叠", "漏斗", "金字塔"], "effects": ["tier-funnel", "tier-pyramid"], "avoid_when": "四层只是并列清单，或不存在筛选收窄与基础支撑关系"},
     "converge": {"aliases": ["汇聚", "合流", "输入到结果"], "effects": ["merge-diagram"], "avoid_when": "内容是顺序流程"},
     "editorial-canvas": {"aliases": ["展陈", "素材画布", "局部批注"], "effects": ["editorial-canvas"], "avoid_when": "只有一张普通照片与一句说明"},
     "split-visual": {"aliases": ["图文并排", "配图说明", "通用分栏", "融页插画"], "effects": ["inset-media", "page-blend-illustration"], "avoid_when": "图片值得全屏或需要浏览器壳"},
@@ -92,6 +95,9 @@ VARIANT_HELP = {
     "comparison-list": {"focus-right": "右侧结论更重要", "focus-left": "左侧结论更重要", "balanced": "两侧完全等权"},
     "process-rail": {"steps-6": "两行折返的六步详解", "steps-8": "两行折返的八个短动作总览"},
     "process-cards": {"linear": "四个解释型步骤等权推进", "terminal-focus": "第四步以深色结果块收束"},
+    "cycle": {"default": "四个阶段顺时针推进，最后一段回到第一阶段"},
+    "quadrant": {"default": "四组内容按两个概念维度定位，并强调一个象限"},
+    "tier-stack": {"funnel": "从广泛输入逐层收窄到聚焦结果", "pyramid": "从宽阔基础逐层支撑到顶层结果"},
     "photo-gradient": {"copy-left": "文字落在左侧渐变区", "copy-right": "文字落在右侧渐变区"},
     "photo-split": {"media-right": "照片在右、文字在左", "media-left": "照片在左、文字在右"},
     "recap": {"thesis-left": "结论在左", "thesis-right": "结论在右"},
@@ -125,6 +131,7 @@ VARIANT_UI_LABELS = {
     "focus-left": "左侧重点",
     "focus-middle": "中间重点",
     "focus-right": "右侧重点",
+    "funnel": "漏斗",
     "hero-collage": "主副图拼贴",
     "line": "单句收束",
     "line-artifact": "单句加物件",
@@ -135,6 +142,7 @@ VARIANT_UI_LABELS = {
     "media-evidence": "图片证据",
     "media-left": "视觉在左",
     "media-right": "视觉在右",
+    "pyramid": "金字塔",
     "statement": "纯文字",
     "steps-6": "六步流程",
     "steps-8": "八步流程",
@@ -219,6 +227,10 @@ PROGRAM_OWNED_CAPABILITIES = {
         "relationships": ["类别大小", "时间变化", "整体构成", "两指标关系与样本分布"],
         "automatic": "Agent 提交真实 JSON 数值、单位、结论与来源；程序统一生成坐标轴、标签、几何、主题色序列和数值格式，不使用 CDN。",
         "component": "data-story",
+    },
+    "relationship_expression": {
+        "components": ["cycle", "quadrant", "tier-stack"],
+        "automatic": "Agent 只提交阶段、象限、轴和层级内容；程序拥有环形箭头、二维坐标、强调象限、漏斗与金字塔轮廓。",
     },
     "icons": {
         "family": "Phosphor regular",
