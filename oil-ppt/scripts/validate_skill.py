@@ -76,6 +76,19 @@ def gradient_design_issues(text: str) -> list[str]:
     return issues
 
 
+def clipped_circle_selectors(text: str) -> list[str]:
+    """Find circular CSS decorations that destroy their geometry with clip-path."""
+    normalized = text.replace("{{", "{").replace("}}", "}")
+    selectors: list[str] = []
+    for selector, declarations in re.findall(r"([^{}]+)\{([^{}]*)\}", normalized, re.S):
+        if (
+            re.search(r"border-radius\s*:\s*50%(?:\s|;|$)", declarations, re.I)
+            and re.search(r"clip-path\s*:\s*(?!none\b)", declarations, re.I)
+        ):
+            selectors.append(" ".join(selector.split()))
+    return selectors
+
+
 class TemplateTextCollector(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -120,6 +133,7 @@ def validate_skill() -> None:
         "scripts/media_frame.py",
         "scripts/media_plan.py",
         "scripts/render_programmatic_visual.py",
+        "scripts/render_component_catalog.py",
         "scripts/render_outline_review.py",
         "scripts/sync_runtime.py",
         "scripts/text_editor.py",
@@ -198,8 +212,15 @@ def validate_skill() -> None:
             errors.append(f"visible field contract for {template} contains unknown fields: {', '.join(unknown)}")
 
     runtime_css = ROOT / "assets" / "runtime" / "deck.css"
-    for problem in gradient_design_issues(runtime_css.read_text(encoding="utf-8")):
+    runtime_text = runtime_css.read_text(encoding="utf-8")
+    for problem in gradient_design_issues(runtime_text):
         errors.append(f"{runtime_css.name}: {problem}")
+    for selector in clipped_circle_selectors(runtime_text):
+        errors.append(f"{runtime_css.name}: circular decoration may not use clip-path: {selector}")
+
+    catalog_renderer = ROOT / "scripts" / "render_component_catalog.py"
+    for selector in clipped_circle_selectors(catalog_renderer.read_text(encoding="utf-8")):
+        errors.append(f"{catalog_renderer.name}: circular decoration may not use clip-path: {selector}")
 
     for path in sorted(TEMPLATES.glob("*.html")):
         text = path.read_text(encoding="utf-8")
@@ -211,6 +232,8 @@ def validate_skill() -> None:
                 errors.append(f"{path.name}: clipping requires one explicit data-clip role (media, browser, or shape): {selector}")
         for problem in gradient_design_issues(text):
             errors.append(f"{path.name}: {problem}")
+        for selector in clipped_circle_selectors(text):
+            errors.append(f"{path.name}: circular decoration may not use clip-path: {selector}")
         if "placeholder" in text.lower():
             errors.append(f"{path.name}: bundled templates must not contain visible placeholder visuals")
         collector = TemplateTextCollector()
