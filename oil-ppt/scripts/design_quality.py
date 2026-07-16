@@ -25,6 +25,15 @@ def has_media(slide: dict) -> bool:
     return bool(outline_media_bindings(slide))
 
 
+def has_native_visual(slide: dict) -> bool:
+    """Count program-owned data/relationship graphics as visual evidence, not as image media."""
+    template = slide.get("template")
+    return bool(
+        template in {"data-story", "metric", "converge"}
+        or (template == "case-study-board" and slide.get("variant") == "chart")
+    )
+
+
 def slide_quality(slide: dict) -> dict:
     return quality_for(slide["template"], slide.get("variant"))
 
@@ -268,12 +277,13 @@ def audit_outline(data: dict) -> list[dict]:
                 blocking=True,
             ))
     require_media = data.get("media_policy", "required") != "text-only"
+    visible_media_slides = [slide for slide in slides if has_media(slide) or has_native_visual(slide)]
     media_slides = [slide for slide in content if has_media(slide)]
-    if require_media and not media_slides:
+    if require_media and not visible_media_slides:
         results.append(issue(
             "error", "media-required",
-            "media_policy='required' needs at least one visible media slide in the content deck; use a real local asset or explicitly confirm text-only.",
-            [slide["id"] for slide in content],
+            "media_policy='required' needs at least one visible image, native data chart, or programmatic relationship visual; otherwise explicitly confirm text-only.",
+            [slide["id"] for slide in slides],
             blocking=True,
         ))
     if not content:
@@ -578,16 +588,6 @@ def audit_summary(data: dict) -> dict:
 
 def enforce_outline_quality(data: dict) -> list[dict]:
     results = audit_outline(data)
-    for item in results:
-        if item["level"] == "warning":
-            suffix = f" Slides: {', '.join(item['slides'])}." if item["slides"] else ""
-            signals = (item.get("suggestion") or {}).get("signals") or []
-            suggestion = (
-                f" Signals: {', '.join(str(signal.get('code')) for signal in signals)}."
-                if signals
-                else f" Suggestion: {json.dumps(item['suggestion'], ensure_ascii=False)}" if item.get("suggestion") else ""
-            )
-            print(f"[WARN] {item['code']}: {item['message']}{suffix}{suggestion}")
     errors = [item for item in results if item["blocking"]]
     if errors:
         lines = []

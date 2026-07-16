@@ -26,13 +26,13 @@ def _screenshot_browser() -> str | None:
     """Find the same local Chromium family used by build validation."""
     candidates = [
         os.environ.get("CHROME_BIN") or "",
-        chrome_binary() or "",
         "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
         "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
         "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
         shutil.which("google-chrome") or "",
         shutil.which("chromium") or "",
         shutil.which("msedge") or "",
+        chrome_binary() or "",
     ]
     return next((value for value in candidates if value and Path(value).is_file()), None)
 

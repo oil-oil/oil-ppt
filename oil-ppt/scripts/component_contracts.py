@@ -24,6 +24,11 @@ COMPONENT_CONTRACTS = {
         "variants": ("statement", "media"),
         "decorations": ("none",),
     },
+    "data-story": {
+        "use_when": "真实数值需要回答一个关系问题：哪些类别更大、如何随时间变化、各部分如何组成整体，或两个指标是否共同变化/样本如何分布。",
+        "variants": ("category-comparison", "trend", "composition", "relationship"),
+        "decorations": ("none",),
+    },
     "diagonal-split": {"use_when": "内容表达转向、过渡、边界、对立或冲突，并有一张可裁切主视觉；斜切方向应跟随内容动势。", "variants": ("media-right", "media-left"), "decorations": ("none",)},
     "editorial-canvas": {"use_when": "一段说明与素材、局部或批注共同组成展陈式页面。", "variants": ("default",), "decorations": ("none",)},
     "end": {
@@ -79,6 +84,7 @@ COMPONENT_QUALITY = {
     "comparison-list": {"silhouette": "matrix", "surface_density": "light", "frame_owner": "none"},
     "converge": {"silhouette": "diagram", "surface_density": "light", "frame_owner": "none"},
     "cover": {"silhouette": "focal", "surface_density": "none", "frame_owner": "none"},
+    "data-story": {"silhouette": "data-story", "surface_density": "light", "frame_owner": "none"},
     "diagonal-split": {"silhouette": "bleed", "surface_density": "none", "frame_owner": "media"},
     "editorial-canvas": {"silhouette": "canvas", "surface_density": "light", "frame_owner": "template"},
     "end": {"silhouette": "focal", "surface_density": "none", "frame_owner": "template"},
@@ -127,6 +133,12 @@ VARIANT_QUALITY = {
     "cover": {
         "statement": {"layout_signature": "focal-statement", "visual_energy": "anchor"},
         "media": {"layout_signature": "cover-media-split", "visual_energy": "anchor"},
+    },
+    "data-story": {
+        "category-comparison": {"layout_signature": "data-category-comparison", "visual_energy": "structured"},
+        "trend": {"layout_signature": "data-trend", "visual_energy": "anchor"},
+        "composition": {"layout_signature": "data-composition", "visual_energy": "structured"},
+        "relationship": {"layout_signature": "data-relationship", "visual_energy": "structured"},
     },
     "end": {
         "line": {"layout_signature": "focal-closing", "visual_energy": "anchor"},
@@ -198,6 +210,7 @@ CLOSED_STRUCTURE_TEMPLATES = frozenset({
     "timeline",
     "converge",
     "card-trio",
+    "data-story",
     "editorial-feature",
     "catalog-board",
     "case-study-board",

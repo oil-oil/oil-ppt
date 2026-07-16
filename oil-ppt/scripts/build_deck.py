@@ -29,6 +29,9 @@ SLIDE_TITLE = re.compile(r"data-title=[\"']([^\"']+)[\"']")
 SLIDE_VARIANT = re.compile(r"data-variant=[\"']([^\"']+)[\"']")
 SLIDE_DECOR = re.compile(r"data-component-decor=[\"']([^\"']+)[\"']")
 VALIDATION_STATE_NAME = ".oil-ppt-validation.json"
+BLOCKING_VISUAL_CATEGORIES = frozenset({
+    "content-bounds", "surface-clipping", "decoration", "ring-geometry",
+})
 LOCAL_PATHS = [
     re.compile(r"file://", re.I),
     re.compile(r"/(?:Users|home)/[^/\s<>'\"]+", re.I),
@@ -242,6 +245,17 @@ def _validation_issues(report: dict, project: Path) -> list[dict]:
                 item.setdefault("page", index + 1)
                 item.setdefault("path", f"/slides/{index}")
             issues.append(item)
+    for raw in report.get("visualFindings") or []:
+        if not isinstance(raw, dict) or raw.get("category") not in BLOCKING_VISUAL_CATEGORIES:
+            continue
+        item = dict(raw)
+        item["kind"] = "visual-structure"
+        slide_id = str(item.get("slide") or "unknown")
+        index = slide_indexes.get(slide_id)
+        if index is not None:
+            item.setdefault("page", index + 1)
+            item.setdefault("path", f"/slides/{index}")
+        issues.append(item)
     return issues
 
 

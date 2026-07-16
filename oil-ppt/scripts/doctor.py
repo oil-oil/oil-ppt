@@ -76,6 +76,7 @@ def smoke_slides() -> list[dict]:
         {"id": "photo-gradient", "title": "照片与文字融合", "template": "photo-gradient", "variant": "copy-left", "decor": "none", "content": "渐变保证文字区域稳定可读", "image": image, "media_frame": "content"},
         {"id": "photo-split", "title": "照片与解释并重", "template": "photo-split", "variant": "media-right", "decor": "none", "content": "两侧信息权重保持接近", "image": image, "media_frame": "content"},
         {"id": "metric", "title": "一个数字是页面焦点", "template": "metric", "variant": "default", "decor": "dots", "content": "用一句话解释数字的意义", "metric": {"value": "86", "unit": "%", "caption": "样本范围与时间口径保持一致"}},
+        {"id": "data-story", "title": "真实数据回答一个关系问题", "template": "data-story", "variant": "category-comparison", "decor": "none", "content": "直接比较各渠道带来的有效线索", "source": "示例数据 · 2026 Q2", "data": {"unit": "条", "items": [{"label": "自然搜索", "value": 42}, {"label": "内容活动", "value": 68}, {"label": "客户转介", "value": 31}]}},
         {"id": "recap", "title": "三条原则支撑一个结论", "template": "recap", "variant": "thesis-left", "decor": "dots", "content": "最后回到一个清楚的判断", "cards": cards},
         {"id": "tabs", "title": "同一对象的两个视角", "template": "tabs", "variant": "default", "decor": "dots", "sides": [{"title": "视角 A", "body": "从使用者任务理解界面"}, {"title": "视角 B", "body": "从系统实现理解界面"}]},
         {"id": "converge", "title": "两组输入汇聚为结果", "template": "converge", "variant": "default", "decor": "none", "groups": [{"title": "内容输入", "items": ["明确目标", "整理材料"]}, {"title": "设计输入", "items": ["选择组件", "准备视觉"]}], "outcome": "共同形成可交付的演示"},
@@ -119,6 +120,13 @@ def render_component_matrix(root: Path, browser: str) -> int:
                 slide["decor"] = decor
                 if template == "cover" and variant == "media":
                     slide.update({"image": "assets/smoke.svg", "media_frame": "content", "image_alt": "程序验证图"})
+                if template == "data-story":
+                    if variant == "trend":
+                        slide["data"] = {"unit": "万", "items": [{"label": "一月", "value": 12}, {"label": "二月", "value": 18}, {"label": "三月", "value": 27}, {"label": "四月", "value": 24}]}
+                    elif variant == "composition":
+                        slide["data"] = {"items": [{"label": "核心业务", "value": 55}, {"label": "增长业务", "value": 30}, {"label": "探索业务", "value": 15}]}
+                    elif variant == "relationship":
+                        slide["data"] = {"x_label": "投入", "y_label": "回报", "items": [{"label": "方案 A", "x": 2, "y": 4}, {"label": "方案 B", "x": 4, "y": 7}, {"label": "方案 C", "x": 6, "y": 5}]}
                 if template == "end" and variant == "line-note":
                     slide.update({"aside": "保留一句收束说明", "aside_label": "NOTE"})
                 if template == "end" and variant == "line-artifact":
@@ -223,7 +231,7 @@ def verify_optional_region_guard(root: Path, browser: str) -> None:
 
 
 def verify_visual_quality_guards(root: Path, browser: str) -> None:
-    """Prove maintenance-only visual findings catch semantic regressions without blocking user builds."""
+    """Block structural defects while keeping purely aesthetic advice non-blocking."""
     probe = root / "invalid-visual-quality-probe.html"
     probe.write_text(
         "<!doctype html><html data-oil-validated='ok'><head><style>"
@@ -235,6 +243,7 @@ def verify_visual_quality_guards(root: Path, browser: str) -> None:
         .bad-ring::after{right:0!important;top:0!important;width:220px!important;height:130px!important;
           border:24px solid rgba(0,0,0,.08)!important;border-radius:36px!important;background:none!important;clip-path:none!important}
         .bad-overflow::after{right:-2100px!important;top:0!important}
+        .bad-transform::after{right:0!important;top:0!important;transform:translateX(2100px)!important}
         .bad-paint{background-image:linear-gradient(90deg,transparent,rgba(0,0,0,.03)),
           linear-gradient(0deg,transparent,rgba(0,0,0,.03)),linear-gradient(45deg,transparent,rgba(0,0,0,.03))!important}
         .spilling-copy{position:absolute;left:380px;top:80px;width:90px;height:40px}
@@ -249,6 +258,8 @@ def verify_visual_quality_guards(root: Path, browser: str) -> None:
           "<article class='oil-surface bad-ring' data-tone='neutral' data-motif='ring'></article></div></section>"
         + "<section class='oil-slide quality-probe' data-slide-id='motif-overflow'><div class='slide-safe'>"
           "<article class='oil-surface bad-overflow' data-tone='neutral' data-motif='triangle'></article></div></section>"
+        + "<section class='oil-slide quality-probe' data-slide-id='motif-transform-overflow'><div class='slide-safe'>"
+          "<article class='oil-surface bad-transform' data-tone='neutral' data-motif='triangle'></article></div></section>"
         + "<section class='oil-slide quality-probe' data-slide-id='surface-paint'><div class='slide-safe'>"
           "<article class='oil-surface bad-paint' data-tone='neutral'></article></div></section>"
         + "<section class='oil-slide quality-probe' data-slide-id='content-bounds'><div class='slide-safe'>"
@@ -269,8 +280,54 @@ def verify_visual_quality_guards(root: Path, browser: str) -> None:
         "decoration-outside-slide", "excessive-gradient-layers", "content-outside-semantic-container",
         "excessive-unowned-hairlines",
     }
-    if report.get("status") != "ok" or not expected.issubset(reasons) or categories != set(VISUAL_FINDING_CATEGORIES):
+    if report.get("status") != "error" or not expected.issubset(reasons) or categories != set(VISUAL_FINDING_CATEGORIES):
         raise RuntimeError(f"visual quality guards missed semantic regressions: expected={sorted(expected)}, report={report}")
+    if not any(
+        item.get("slide") == "motif-transform-overflow" and item.get("reason") == "decoration-outside-slide"
+        for item in findings
+    ):
+        raise RuntimeError(f"transformed decoration overflow bypassed visual validation: {report}")
+
+    advisory = root / "advisory-visual-quality-probe.html"
+    advisory.write_text(
+        "<!doctype html><html data-oil-validated='ok'><head><style>" + RUNTIME_CSS + """
+        .quality-probe .oil-surface{position:relative;width:420px;height:220px;margin:20px}
+        .bad-paint{background-image:linear-gradient(90deg,transparent,rgba(0,0,0,.03)),
+          linear-gradient(0deg,transparent,rgba(0,0,0,.03)),linear-gradient(45deg,transparent,rgba(0,0,0,.03))!important}
+        .hairline{display:block;width:180px;height:1px;margin:8px;background:rgba(0,0,0,.2)}
+        """ + "</style></head><body><main class='slide-preview-stage'>"
+        "<section class='oil-slide quality-probe' data-slide-id='advisory-only'><div class='slide-safe'>"
+        "<article class='oil-surface bad-paint' data-tone='neutral'>"
+        + "".join("<span class='hairline'></span>" for _ in range(5))
+        + "</article></div></section></main></body></html>",
+        encoding="utf-8",
+    )
+    advisory_report = validate_file(browser, advisory, timeout=10)
+    advisory.unlink(missing_ok=True)
+    if advisory_report.get("status") != "ok":
+        raise RuntimeError(f"aesthetic advice became a user-facing build blocker: {advisory_report}")
+
+
+def verify_semantic_text_guard(root: Path, browser: str) -> None:
+    """Every rendered text slot must be checked even when it does not opt into font fitting."""
+    probe = root / "semantic-text-overflow-probe.html"
+    probe.write_text(
+        "<!doctype html><html data-oil-validated='ok'><body><main class='slide-preview-stage'>"
+        "<section class='oil-slide' data-slide-id='semantic-overflow'><div class='slide-safe'>"
+        "<article class='oil-surface' style='width:500px;height:220px'>"
+        "<p data-slot='outcome' style='display:block;width:160px;height:32px;font-size:28px;white-space:nowrap'>"
+        + "真实文字不能因为缺少 data-fit 就绕过浏览器溢出检查" * 8
+        + "</p></article></div></section></main></body></html>",
+        encoding="utf-8",
+    )
+    report = validate_file(browser, probe, timeout=10)
+    probe.unlink(missing_ok=True)
+    invalid = report.get("invalidText") or []
+    if report.get("status") != "error" or not any(
+        item.get("slide") == "semantic-overflow" and item.get("reason") == "text-overflow"
+        for item in invalid
+    ):
+        raise RuntimeError(f"semantic text without data-fit bypassed overflow validation: {report}")
 
 
 def verify_specialized_capability_advice() -> None:
@@ -331,9 +388,13 @@ def verify_batch_confirmation_boundary() -> None:
 
         def fake_status(target: Path) -> dict:
             phase = phases[target]
+            if phase == "needs_outline":
+                next_step = {"action": "edit_outline", "command": None, "path": str(target / "outline.md")}
+            else:
+                next_step = {"action": "start_editor" if phase == "needs_preview" else "ask_user_to_confirm_preview"}
             return {
                 "phase": phase,
-                "next": {"action": "start_editor" if phase == "needs_preview" else "ask_user_to_confirm_preview"},
+                "next": next_step,
             }
 
         def fake_step(command: str, target: Path, *arguments: str) -> dict:
@@ -367,15 +428,22 @@ def verify_batch_confirmation_boundary() -> None:
             calls.clear()
             relative_targets = [Path("relative-one"), Path("relative-two")]
             multi = workflow.batch_projects(relative_targets, user_confirmed_preview=False)
-            command = shlex.split(str(multi["next"]["command"]))
+            command = shlex.split(str(multi["next"]["command_on_confirm"]))
             expected_targets = [str(target.resolve()) for target in relative_targets]
             if (
                 calls
                 or multi["next"]["action"] != "ask_user_to_confirm_previews"
+                or multi["next"]["command"] is not None
                 or command[-1] != "--user-confirmed-preview"
                 or command[-3:-1] != expected_targets
             ):
                 raise RuntimeError(f"multi-project batch did not return one portable confirmation command: {multi}")
+
+            phases[project] = "needs_outline"
+            workflow.discover_projects = lambda _: [project]
+            pending = workflow.batch_projects([project], user_confirmed_preview=False)
+            if not pending["ok"] or pending["next"]["action"] != "edit_outline":
+                raise RuntimeError(f"an actionable project gate was misreported as a batch execution failure: {pending}")
         finally:
             workflow.discover_projects, workflow.status_payload, workflow.run_batch_step = originals
 
@@ -408,6 +476,11 @@ def verify_regression_guards(entry: Path) -> None:
     dirty_gradient = ".surface{background:linear-gradient(90deg,#ff3355,#33ccff)}"
     if gradient_design_issues(clean_gradient) or not gradient_design_issues(dirty_gradient):
         raise RuntimeError("gradient token guard did not distinguish theme-owned paint from hardcoded chromatic paint")
+    runtime_css = (Path(__file__).resolve().parent.parent / "assets" / "runtime" / "deck.css").read_text(encoding="utf-8")
+    if gradient_design_issues(runtime_css):
+        raise RuntimeError("runtime CSS contains hardcoded chromatic gradient paint")
+    if not gradient_design_issues(runtime_css + "\n.probe{background:linear-gradient(90deg,#ff3355,#33ccff)}"):
+        raise RuntimeError("runtime gradient regression probe was not detected")
     rhythm_slide = {
         "id": "auto-backdrop", "title": "把重点留给重点", "highlight": "重点",
         "template": "section", "variant": "default", "decor": "none",
@@ -427,6 +500,28 @@ def verify_regression_guards(entry: Path) -> None:
         except SystemExit:
             return
         raise RuntimeError(reason)
+
+    expect_outline_rejected(
+        {
+            "id": "extreme-data", "title": "极值", "template": "data-story",
+            "variant": "category-comparison", "decor": "none", "content": "极值必须在渲染前拒绝",
+            "source": "测试数据", "data": {"items": [
+                {"label": "甲", "value": 1e308}, {"label": "乙", "value": 1},
+            ]},
+        },
+        "data-story accepted a finite value too large for stable chart geometry",
+    )
+    expect_outline_rejected(
+        {
+            "id": "long-label", "title": "长标签", "template": "data-story",
+            "variant": "trend", "decor": "none", "content": "标签必须适配固定图表几何",
+            "source": "测试数据", "data": {"items": [
+                {"label": "这是一个过长时间标签", "value": 1},
+                {"label": "第二季度", "value": 2}, {"label": "第三季度", "value": 3},
+            ]},
+        },
+        "data-story accepted a trend label wider than its program-owned geometry",
+    )
 
     mutually_exclusive = subprocess.run(
         [sys.executable, str(entry), "contract", "--schema", "--list"],
@@ -639,6 +734,16 @@ def verify_regression_guards(entry: Path) -> None:
         raise RuntimeError("short media-required decks can still pass with zero visible media")
     if any(item.get("code") == "media-rhythm" for item in no_media.get("issues") or []):
         raise RuntimeError("zero-media decks report both media-required and media-rhythm for the same defect")
+
+    cover_media = audit_summary({
+        "media_policy": "required",
+        "slides": [
+            {"id": "cover", "title": "开场", "template": "cover", "variant": "media", "decor": "none", "image": "assets/smoke.svg", "media_frame": "content"},
+            {"id": "end", "title": "结束", "template": "end", "variant": "line", "decor": "none"},
+        ],
+    })
+    if any(item.get("code") == "media-required" for item in cover_media.get("issues") or []):
+        raise RuntimeError("visible cover media was ignored by the hard media gate")
 
     sparse_visual_slides = [
         {"id": "m1", "title": "媒体", "template": "split-visual", "variant": "balanced", "decor": "none", "image": "assets/smoke.svg", "media_frame": "content", "background": "soft-spotlight"},
@@ -997,6 +1102,7 @@ def main() -> None:
                 verify_layout_containment_guard(root, browser)
                 verify_optional_region_guard(root, browser)
                 verify_visual_quality_guards(root, browser)
+                verify_semantic_text_guard(root, browser)
                 matrix_count = render_component_matrix(root, browser)
                 matrix_ok = matrix_count > 0
             smoke_deck_slides = smoke_slides()

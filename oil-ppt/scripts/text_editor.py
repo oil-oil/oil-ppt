@@ -25,7 +25,10 @@ from media_assets import verify_outline_media
 from oil_ppt import (
     EDIT_LOCK_NAME,
     TEMPLATES,
+    active_editor_pid,
     atomic_write_json,
+    editor_lock_owned_by_current_process,
+    editor_lock_payload,
     generate_preview,
     json_digest,
     outline_confirmation_valid,
@@ -104,6 +107,7 @@ class EditorSession:
         self.future: list[dict] = []
         self.last_edit_path = ""
         self.last_edit_at = 0.0
+        self.startup_notices: list[str] = []
         if not self.project.is_dir() or not self.outline.is_file():
             raise ValueError(f"Text editing requires an existing oil-ppt project with outline.json: {self.project}")
         self._acquire_project_lock()
@@ -119,7 +123,15 @@ class EditorSession:
             self.data = copy.deepcopy(self.base_data)
             has_draft = self.draft_path.is_file()
             if has_draft:
-                self._load_draft()
+                try:
+                    self._load_draft()
+                except ValueError as error:
+                    backup = self._quarantine_invalid_draft()
+                    has_draft = False
+                    self.data = copy.deepcopy(self.base_data)
+                    self.startup_notices.append(
+                        f"无法恢复的旧草稿已保留到 {backup.name}，编辑器已从当前正式内容重新打开。原因：{error}"
+                    )
             if not has_draft and not outline_confirmation_valid(self.project):
                 raise ValueError("Text editing requires the current Markdown outline to remain confirmed.")
             if not has_draft and not visual_plan_valid(self.project, self.outline):
@@ -136,21 +148,14 @@ class EditorSession:
             try:
                 descriptor = os.open(self.lock_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             except FileExistsError:
-                try:
-                    pid = int(self.lock_path.read_text(encoding="utf-8").strip())
-                    os.kill(pid, 0)
-                except ProcessLookupError:
-                    self.lock_path.unlink(missing_ok=True)
+                pid = active_editor_pid(self.project)
+                if pid is None:
                     continue
-                except (OSError, ValueError):
-                    raise ValueError(
-                        f"Another text editor may already own this project: {self.lock_path}. "
-                        "Close it before retrying."
-                    ) from None
                 raise ValueError(f"Another text editor is already open for this project (pid {pid}).")
             else:
                 with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-                    stream.write(str(os.getpid()))
+                    json.dump(editor_lock_payload(self.project), stream, ensure_ascii=False)
+                    stream.write("\n")
                     stream.flush()
                     os.fsync(stream.fileno())
                 self.lock_owned = True
@@ -160,7 +165,7 @@ class EditorSession:
     def close(self) -> None:
         if self.lock_owned:
             try:
-                if self.lock_path.read_text(encoding="utf-8").strip() == str(os.getpid()):
+                if editor_lock_owned_by_current_process(self.project):
                     self.lock_path.unlink(missing_ok=True)
             except OSError:
                 pass
@@ -210,6 +215,15 @@ class EditorSession:
                 "Reopen with --discard-draft only after deciding to delete that draft."
             ) from error
         self.data = envelope["data"]
+
+    def _quarantine_invalid_draft(self) -> Path:
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        backup = self.draft_path.with_name(
+            f"{self.draft_path.stem}.invalid-{timestamp}-{os.getpid()}{self.draft_path.suffix}"
+        )
+        os.replace(self.draft_path, backup)
+        self._clear_active_edit()
+        return backup
 
     def _is_unchanged(self) -> bool:
         return _digest(self.data) == _digest(self.base_data)
@@ -273,7 +287,7 @@ class EditorSession:
             "can_undo": bool(self.history),
             "can_redo": bool(self.future),
             "draft": self.draft_path.is_file(),
-            "notices": notices or [],
+            "notices": [*self.startup_notices, *(notices or [])],
         }
 
     def apply_edit(self, path: str, value: object) -> dict:

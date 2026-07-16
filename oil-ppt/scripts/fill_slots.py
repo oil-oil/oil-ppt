@@ -11,8 +11,10 @@ from pathlib import Path
 from background_presets import effective_background
 from component_contracts import effective_media_fit, effective_media_surface
 from editor_bindings import annotate_editable_fragment
+from fill_templates import render_data_story
 from icon_registry import CONNECTOR_ICON, icon_svg_markup
 from media_assets import outline_media_bindings
+from outline_schema import DATA_STORY_QUESTIONS
 
 
 MEDIA_FIT_DEFAULTS = {
@@ -603,6 +605,14 @@ def fill_case_study_board(fragment: str, slide: dict) -> str:
     return fragment
 
 
+def fill_data_story(fragment: str, slide: dict) -> str:
+    fragment = fill_common_slots(fragment, slide)
+    variant = str(slide.get("variant") or "")
+    fragment = set_slot_text_force(fragment, "source", str(slide.get("source") or ""))
+    fragment = set_slot_text_force(fragment, "data-question", DATA_STORY_QUESTIONS.get(variant, ""))
+    return set_slot_html_force(fragment, "data-visual", render_data_story(slide))
+
+
 def fill_annotated_showcase(fragment: str, slide: dict) -> str:
     fragment = fill_common_slots(fragment, slide)
     for index, item in enumerate((slide.get("annotations") or [])[:3], start=1):
@@ -729,6 +739,7 @@ FILLERS = {
     "recap": fill_recap,
     "tabs": fill_tabs,
     "converge": fill_converge,
+    "data-story": fill_data_story,
     "editorial-canvas": fill_editorial,
     "editorial-feature": fill_editorial_feature,
     "catalog-board": fill_catalog_board,

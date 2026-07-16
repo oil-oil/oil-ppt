@@ -12,8 +12,9 @@ from capability_catalog import DECOR_UI_LABELS, PROGRAM_OWNED_CAPABILITIES, TEMP
 from cdp_validate import VISUAL_FINDING_CATEGORIES
 from component_contracts import COMPONENT_CONTRACTS, COMPONENT_QUALITY, PAGE_BLEND_TEMPLATES, VARIANT_QUALITY, effective_media_fit, effective_media_surface
 from fill_slots import FILLERS, MEDIA_FIT_DEFAULTS
+from fill_templates import format_number
 from icon_registry import ICON_CATALOG, verify_icons
-from outline_schema import DECK_FIELDS, SHARED_SLIDE_FIELDS, SLIDE_ALLOWED_FIELDS, TEMPLATE_CONTENT_HELP, TEMPLATE_FAMILIES, TEMPLATE_VISIBLE_FIELDS, VARIANT_INPUT_GUIDANCE
+from outline_schema import DATA_STORY_QUESTIONS, DECK_FIELDS, SHARED_SLIDE_FIELDS, SLIDE_ALLOWED_FIELDS, TEMPLATE_CONTENT_HELP, TEMPLATE_FAMILIES, TEMPLATE_VISIBLE_FIELDS, VARIANT_INPUT_GUIDANCE
 from palette_tokens import PALETTES
 from media_plan import MEDIA_SLOTS, MEDIA_VARIANT_SLOTS
 
@@ -114,6 +115,7 @@ def validate_skill() -> None:
         "scripts/design_quality.py",
         "scripts/editor_bindings.py",
         "scripts/fill_slots.py",
+        "scripts/fill_templates.py",
         "scripts/media_assets.py",
         "scripts/media_frame.py",
         "scripts/media_plan.py",
@@ -195,6 +197,10 @@ def validate_skill() -> None:
         if unknown:
             errors.append(f"visible field contract for {template} contains unknown fields: {', '.join(unknown)}")
 
+    runtime_css = ROOT / "assets" / "runtime" / "deck.css"
+    for problem in gradient_design_issues(runtime_css.read_text(encoding="utf-8")):
+        errors.append(f"{runtime_css.name}: {problem}")
+
     for path in sorted(TEMPLATES.glob("*.html")):
         text = path.read_text(encoding="utf-8")
         contract = COMPONENT_CONTRACTS.get(path.stem)
@@ -255,7 +261,7 @@ def validate_skill() -> None:
                 if 'data-decor="__DECOR__"' not in text:
                     errors.append(f"{path.name}: declares decorations but has no rendered data-decor slot")
             quality = COMPONENT_QUALITY.get(path.stem) or {}
-            if quality.get("silhouette") not in {"bleed", "browser", "canvas", "card-grid", "diagram", "editorial-list", "focal", "matrix", "metric", "rail", "split", "state-panel", "step-grid", "step-cards", "timeline", "two-panel", "editorial-feature", "catalog", "case-board", "annotated", "bento", "gallery"}:
+            if quality.get("silhouette") not in {"bleed", "browser", "canvas", "card-grid", "data-story", "diagram", "editorial-list", "focal", "matrix", "metric", "rail", "split", "state-panel", "step-grid", "step-cards", "timeline", "two-panel", "editorial-feature", "catalog", "case-board", "annotated", "bento", "gallery"}:
                 errors.append(f"{path.name}: invalid or missing silhouette metadata")
             if quality.get("surface_density") not in {"none", "light", "heavy"}:
                 errors.append(f"{path.name}: invalid or missing surface_density metadata")
@@ -377,6 +383,19 @@ def validate_skill() -> None:
         errors.append("copy-dominant split media must expose its portrait slot ratio")
     if set((DECK_FIELDS.get("media_policy") or {}).get("allowed") or ()) != {"required", "text-only"}:
         errors.append("contract must expose both media policies")
+    data_variants = set((COMPONENT_CONTRACTS.get("data-story") or {}).get("variants") or ())
+    if data_variants != set(DATA_STORY_QUESTIONS):
+        errors.append("data-story relationship questions must cover every public variant")
+    if (
+        format_number(12500, compact=True) != "12.5k"
+        or format_number(42.0) != "42"
+        or format_number(0.0049) != "0.0049"
+        or format_number(1e-10) == "0"
+    ):
+        errors.append("data-story number formatting is not deterministic")
+    data_template = TEMPLATES / "data-story.html"
+    if data_template.is_file() and re.search(r"https?://|//cdn\.", data_template.read_text(encoding="utf-8"), re.I):
+        errors.append("data-story must render without CDN or remote runtime dependencies")
     companion_keys = {"accent_alt", "accent_alt_soft", "accent_warm", "accent_warm_soft"}
     for name, palette in PALETTES.items():
         if not companion_keys.issubset(palette):
