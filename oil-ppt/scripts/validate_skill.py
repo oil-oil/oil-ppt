@@ -77,15 +77,20 @@ def gradient_design_issues(text: str) -> list[str]:
 
 
 def clipped_circle_selectors(text: str) -> list[str]:
-    """Find circular CSS decorations that destroy their geometry with clip-path."""
+    """Find circular pseudo-element decorations whose clip-path destroys the circle."""
     normalized = text.replace("{{", "{").replace("}}", "}")
     selectors: list[str] = []
     for selector, declarations in re.findall(r"([^{}]+)\{([^{}]*)\}", normalized, re.S):
-        if (
-            re.search(r"border-radius\s*:\s*50%(?:\s|;|$)", declarations, re.I)
-            and re.search(r"clip-path\s*:\s*(?!none\b)", declarations, re.I)
-        ):
-            selectors.append(" ".join(selector.split()))
+        clip = re.search(r"\bclip-path\s*:\s*([^;}]+)", declarations, re.I)
+        if not re.search(r"border-radius\s*:\s*50%(?:\s|;|$)", declarations, re.I) or not clip:
+            continue
+        if re.match(r"\s*(?:none\b|circle\s*\()", clip.group(1), re.I):
+            continue
+        selectors.extend(
+            " ".join(branch.split())
+            for branch in selector.split(",")
+            if re.search(r"::(?:before|after)\b", branch, re.I)
+        )
     return selectors
 
 
@@ -111,6 +116,10 @@ class TemplateTextCollector(HTMLParser):
 
 def validate_skill() -> None:
     errors: list[str] = []
+    if clipped_circle_selectors('.avatar{border-radius:50%;clip-path:circle(50%)}'):
+        errors.append("circular media must not be mistaken for a clipped decoration")
+    if not clipped_circle_selectors('.decor::after{border-radius:50%;clip-path:inset(50% 0 0)}'):
+        errors.append("destructively clipped circular pseudo-elements must be rejected")
     required_files = (
         "SKILL.md",
         "agents/openai.yaml",
@@ -547,7 +556,8 @@ def validate_skill() -> None:
     if "invalidCopyFlows" not in cdp_source or "reason:'copy-gap'" not in cdp_source:
         errors.append("browser validation must reject excessive title-to-body gaps")
     expected_visual_categories = {
-        "content-bounds", "surface-clipping", "decoration", "ring-geometry", "surface-paint", "line-density",
+        "content-bounds", "surface-clipping", "decoration", "relationship-edge", "ring-geometry",
+        "surface-paint", "line-density",
     }
     if set(VISUAL_FINDING_CATEGORIES) != expected_visual_categories:
         errors.append("browser visual maintenance finding categories are incomplete")
@@ -563,6 +573,8 @@ def validate_skill() -> None:
         errors.append("runtime grid system must use twelve minmax(0,1fr) tracks")
     for path in sorted(TEMPLATES.glob("*.html")):
         text = path.read_text(encoding="utf-8")
+        if path.name == "cycle.html" and len(re.findall(r'\bdata-cycle-arrow=["\'][^"\']+["\']', text)) != 4:
+            errors.append("cycle.html: four directional arrows must expose browser-validation hooks")
         if len(re.findall(r'data-bg=["\'][^"\']+["\']', text)) != 1:
             errors.append(f"{path.name}: template must expose exactly one data-bg")
         elif template_background(path.stem) not in ALL_BACKGROUNDS:

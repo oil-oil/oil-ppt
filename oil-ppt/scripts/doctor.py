@@ -24,7 +24,7 @@ from outline_schema import text_budgets_for, validate_outline
 from render_programmatic_visual import render_html_visual
 from render_outline_review import EDITOR_FRAME_CSS, PREVIEW_SHELL_CSS, RUNTIME_CSS, RUNTIME_JS, prepared_slide, render, theme_css
 from text_editor import EditorSession
-from validate_skill import gradient_design_issues, validate_skill
+from validate_skill import clipped_circle_selectors, gradient_design_issues, validate_skill
 import oil_ppt as workflow
 
 
@@ -281,8 +281,14 @@ def verify_visual_quality_guards(root: Path, browser: str) -> None:
         .bad-ring-clip>.oil-shape-window::after{right:0!important;top:0!important;clip-path:inset(50% 50% 0 0)!important}
         .bad-ring-full>.oil-shape-window::after{right:20px!important;top:20px!important;width:120px!important;height:120px!important;border-width:18px!important}
         .bad-ring-window>.oil-shape-window{overflow:visible!important}
+        .bad-ring-hidden>.oil-shape-window::after{transform:translateX(2000px)!important}
+        .bad-ring-scaled>.oil-shape-window::after{transform:scaleX(1.5)!important}
+        .bad-ring-rotated-scaled>.oil-shape-window::after{transform:rotate(45deg) scaleX(1.5)!important}
         .bad-overflow::after{right:-2100px!important;top:0!important}
         .bad-transform::after{right:0!important;top:0!important;transform:translateX(2100px)!important}
+        .relationship-probe{position:relative;width:420px;height:220px;margin:20px}
+        .relationship-probe svg{position:absolute;inset:0;width:420px;height:220px}
+        .quality-probe .arrow-blocker{position:absolute!important;z-index:2!important;left:50px;top:50px;width:52px!important;height:70px!important;margin:0!important}
         .bad-paint{background-image:linear-gradient(90deg,transparent,rgba(0,0,0,.03)),
           linear-gradient(0deg,transparent,rgba(0,0,0,.03)),linear-gradient(45deg,transparent,rgba(0,0,0,.03))!important}
         .spilling-copy{position:absolute;left:380px;top:80px;width:90px;height:40px}
@@ -303,6 +309,16 @@ def verify_visual_quality_guards(root: Path, browser: str) -> None:
           "<article class='oil-surface bad-ring-window' data-tone='neutral' data-motif='ring'><span class='oil-shape-window' data-clip='shape'></span></article></div></section>"
         + "<section class='oil-slide quality-probe' data-slide-id='ring-full'><div class='slide-safe'>"
           "<article class='oil-surface bad-ring-full' data-tone='neutral' data-motif='ring'><span class='oil-shape-window' data-clip='shape'></span></article></div></section>"
+        + "<section class='oil-slide quality-probe' data-slide-id='ring-hidden'><div class='slide-safe'>"
+          "<article class='oil-surface bad-ring-hidden' data-tone='neutral' data-motif='ring'><span class='oil-shape-window' data-clip='shape'></span></article></div></section>"
+        + "<section class='oil-slide quality-probe' data-slide-id='ring-scaled'><div class='slide-safe'>"
+          "<article class='oil-surface bad-ring-scaled' data-tone='neutral' data-motif='ring'><span class='oil-shape-window' data-clip='shape'></span></article></div></section>"
+        + "<section class='oil-slide quality-probe' data-slide-id='ring-rotated-scaled'><div class='slide-safe'>"
+          "<article class='oil-surface bad-ring-rotated-scaled' data-tone='neutral' data-motif='ring'><span class='oil-shape-window' data-clip='shape'></span></article></div></section>"
+        + "<section class='oil-slide quality-probe' data-slide-id='relationship-edge'><div class='slide-safe'>"
+          "<div class='relationship-probe' data-layout data-relationship-visual><svg viewBox='0 0 420 220' data-visual-edge>"
+          "<polygon data-cycle-arrow='probe' points='60,60 110,80 60,100'></polygon></svg>"
+          "<article class='oil-surface arrow-blocker' data-tone='neutral' data-visual-node></article></div></div></section>"
         + "<section class='oil-slide quality-probe' data-slide-id='motif-overflow'><div class='slide-safe'>"
           "<article class='oil-surface bad-overflow' data-tone='neutral' data-motif='triangle'></article></div></section>"
         + "<section class='oil-slide quality-probe' data-slide-id='motif-transform-overflow'><div class='slide-safe'>"
@@ -324,7 +340,8 @@ def verify_visual_quality_guards(root: Path, browser: str) -> None:
     categories = {item.get("category") for item in findings}
     expected = {
         "surface-clips-content", "decoration-anchor-mismatch", "ring-is-not-circular", "ring-is-clipped",
-        "ring-window-missing", "ring-window-not-clipping", "ring-is-fully-exposed",
+        "ring-window-missing", "ring-window-not-clipping", "ring-is-fully-exposed", "ring-is-not-visible",
+        "relationship-arrow-occluded",
         "decoration-outside-slide", "excessive-gradient-layers", "content-outside-semantic-container",
         "excessive-unowned-hairlines",
     }
@@ -335,6 +352,14 @@ def verify_visual_quality_guards(root: Path, browser: str) -> None:
         for item in findings
     ):
         raise RuntimeError(f"transformed decoration overflow bypassed visual validation: {report}")
+    for slide_id, reason in (
+        ("ring-hidden", "ring-is-not-visible"),
+        ("ring-scaled", "ring-is-not-circular"),
+        ("ring-rotated-scaled", "ring-is-not-circular"),
+        ("relationship-edge", "relationship-arrow-occluded"),
+    ):
+        if not any(item.get("slide") == slide_id and item.get("reason") == reason for item in findings):
+            raise RuntimeError(f"{slide_id} bypassed {reason} validation: {report}")
 
     advisory = root / "advisory-visual-quality-probe.html"
     advisory.write_text(
@@ -524,6 +549,10 @@ def verify_regression_guards(entry: Path) -> None:
     dirty_gradient = ".surface{background:linear-gradient(90deg,#ff3355,#33ccff)}"
     if gradient_design_issues(clean_gradient) or not gradient_design_issues(dirty_gradient):
         raise RuntimeError("gradient token guard did not distinguish theme-owned paint from hardcoded chromatic paint")
+    if clipped_circle_selectors('.avatar{border-radius:50%;clip-path:circle(50%)}'):
+        raise RuntimeError("clip-path guard misclassified legitimate circular media")
+    if not clipped_circle_selectors('.decor::after{border-radius:50%;clip-path:inset(50% 0 0)}'):
+        raise RuntimeError("clip-path guard missed a destructively clipped circular decoration")
     runtime_css = (Path(__file__).resolve().parent.parent / "assets" / "runtime" / "deck.css").read_text(encoding="utf-8")
     if gradient_design_issues(runtime_css):
         raise RuntimeError("runtime CSS contains hardcoded chromatic gradient paint")
@@ -570,12 +599,14 @@ def verify_regression_guards(entry: Path) -> None:
         },
         "data-story accepted a trend label wider than its program-owned geometry",
     )
-    relationship_seeds = {
+    budgeted_component_seeds = {
         slide["template"]: slide
         for slide in smoke_slides()
-        if slide["template"] in {"cycle", "quadrant", "tier-stack"}
+        if slide["template"] in {
+            "annotated-showcase", "catalog-board", "cycle", "data-story", "metric", "quadrant", "tier-stack",
+        }
     }
-    for template, seed in relationship_seeds.items():
+    for template, seed in budgeted_component_seeds.items():
         for probe_index, (path, maximum) in enumerate(
             text_budgets_for(template, seed["variant"]).items(), start=1
         ):
@@ -586,6 +617,19 @@ def verify_regression_guards(entry: Path) -> None:
                 invalid,
                 f"{template} accepted {path} beyond its public non-space budget",
             )
+    for template, path in (
+        ("cycle", "steps[].title"),
+        ("quadrant", "groups[].meta"),
+        ("tier-stack", "steps[].body"),
+    ):
+        invalid = json.loads(json.dumps(budgeted_component_seeds[template], ensure_ascii=False))
+        set_text_budget_path(invalid, path, 123)
+        expect_outline_rejected(invalid, f"{template} accepted numeric copy at {path}")
+    for template, key in (("cycle", "steps"), ("quadrant", "groups"), ("tier-stack", "steps")):
+        invalid = json.loads(json.dumps(budgeted_component_seeds[template], ensure_ascii=False))
+        item = invalid[key][0]
+        item["label" if "title" in item else "title"] = item.get("title") or item.get("label") or "冲突别名"
+        expect_outline_rejected(invalid, f"{template} accepted both title and label aliases")
     expect_outline_rejected(
         {
             "id": "cycle-three", "title": "错误循环", "template": "cycle", "variant": "default", "decor": "none",
@@ -636,7 +680,8 @@ def verify_regression_guards(entry: Path) -> None:
         not {
             "card", "plainCard", "iconCard", "evidenceCard", "decisionCard",
             "step", "stepBody", "stepIconBody", "stepMediaBody", "stepLabel", "cycleStep", "tierStep",
-            "side", "plainSide", "visualSide", "tabSide", "group", "convergeGroup", "quadrantGroup", "axes", "measurement", "annotation",
+            "side", "plainSide", "visualSide", "tabSide", "group", "convergeGroup", "quadrantGroup", "axes",
+            "measurement", "catalogMeasurement", "catalogGroup", "catalogGroupItem", "annotation",
         }.issubset(definitions)
         or set((slide_properties.get("metric") or {}).get("required") or ()) != {"value", "unit", "caption"}
         or not (slide_properties.get("cards") or {}).get("items")
@@ -654,6 +699,31 @@ def verify_regression_guards(entry: Path) -> None:
         or "emphasis" not in ((definitions.get("quadrantGroup") or {}).get("properties") or {})
     ):
         raise RuntimeError("public JSON Schema leaked quadrant emphasis into generic groups")
+    alias_definitions = {
+        "card", "plainCard", "iconCard", "evidenceCard", "decisionCard", "step", "stepBody",
+        "cycleStep", "tierStep", "stepIconBody", "stepMediaBody", "stepLabel", "side", "plainSide",
+        "visualSide", "tabSide", "group", "convergeGroup", "quadrantGroup", "catalogGroup",
+        "catalogGroupItem", "annotation",
+    }
+    if any("oneOf" not in (definitions.get(name) or {}) or "anyOf" in (definitions.get(name) or {}) for name in alias_definitions):
+        raise RuntimeError("public JSON Schema does not enforce exactly one title/label alias")
+    budgeted_schema_fields = (
+        ("catalogMeasurement", "label", "metrics[].label"),
+        ("catalogGroup", "title", "groups[].title"),
+        ("catalogGroup", "meta", "groups[].meta"),
+        ("catalogGroupItem", "title", "groups[].items[].title"),
+        ("catalogGroupItem", "body", "groups[].items[].body"),
+        ("annotation", "title", "annotations[].title"),
+        ("annotation", "body", "annotations[].body"),
+    )
+    for definition_name, field, budget_path in budgeted_schema_fields:
+        template = "annotated-showcase" if definition_name == "annotation" else "catalog-board"
+        maximum = text_budgets_for(template)[budget_path]
+        pattern = (((definitions.get(definition_name) or {}).get("properties") or {}).get(field) or {}).get("pattern")
+        within = " ".join("界" * maximum)
+        beyond = " ".join("界" * (maximum + 1))
+        if not pattern or re.fullmatch(pattern, within) is None or re.fullmatch(pattern, beyond) is not None:
+            raise RuntimeError(f"public JSON Schema drifted from {template} budget {budget_path}")
 
     replaced = set_slot_text_force('<p data-slot="value"></p>', "value", r"C:\Users\oil\deck")
     if r"C:\Users\oil\deck" not in replaced:
@@ -1101,6 +1171,7 @@ def verify_contract_fill_plans(entry: Path) -> None:
         guidance = plan.get("variants") or {}
         if (
             plan.get("schema_version") != "oil-ppt.component-fill-plan/v1"
+            or plan.get("authoritative_constraints") != "input_schema+plan/check"
             or template_schema.get("const") != template
             or set(variant_schema.get("enum") or []) != set(contract["variants"])
             or set(guidance) != set(contract["variants"])

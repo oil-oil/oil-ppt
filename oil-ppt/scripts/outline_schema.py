@@ -467,7 +467,18 @@ SHARED_SLIDE_FIELDS = {
 
 
 def _text(value: object) -> str:
-    return "" if value is None or isinstance(value, bool) else str(value).strip()
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _display_text(value: object) -> str:
+    """Normalize display values while keeping ordinary copy strictly string-only."""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value).strip()
+    if isinstance(value, float) and math.isfinite(value):
+        return str(value).strip()
+    return ""
 
 
 def _items(slide: dict, key: str) -> list:
@@ -512,7 +523,7 @@ def _reject_alias_conflicts(value: object, index: int, path: str) -> None:
 
 
 def _max_chars(value: object, index: int, field: str, maximum: int) -> None:
-    length = len(re.sub(r"\s+", "", _text(value)))
+    length = len(re.sub(r"\s+", "", _display_text(value)))
     if length > maximum:
         raise SystemExit(
             f"Outline slide {index} {field} is too long for its fixed component "
@@ -592,7 +603,7 @@ def _require_metrics(slide: dict, index: int, count: int) -> list:
     if len(metrics) != count:
         raise SystemExit(f"Outline slide {index} template {slide['template']!r} requires exactly {count} metrics.")
     for metric_index, metric in enumerate(metrics, start=1):
-        if not isinstance(metric, dict) or not _text(metric.get("label")) or not _text(metric.get("value")):
+        if not isinstance(metric, dict) or not _text(metric.get("label")) or not _display_text(metric.get("value")):
             raise SystemExit(f"Outline slide {index} metrics[{metric_index}] requires label and value.")
         hidden = sorted(set(metric) - {"label", "value"})
         if hidden:
@@ -1104,7 +1115,11 @@ def validate_slide_content(slide: dict, index: int) -> None:
         budgets = text_budgets_for("metric", variant)
         _require_content(slide, index)
         metric = slide.get("metric")
-        if not isinstance(metric, dict) or any(not _text(metric.get(key)) for key in ("value", "unit", "caption")):
+        if (
+            not isinstance(metric, dict)
+            or not _display_text(metric.get("value"))
+            or any(not _text(metric.get(key)) for key in ("unit", "caption"))
+        ):
             raise SystemExit(f"Outline slide {index} template 'metric' requires metric.value, metric.unit and metric.caption.")
         hidden = sorted(set(metric) - {"value", "unit", "caption"})
         if hidden:

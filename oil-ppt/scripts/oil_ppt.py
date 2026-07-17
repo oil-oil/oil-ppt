@@ -446,7 +446,7 @@ def contract_schema() -> dict:
         },
         "card": {
             "type": "object", "required": ["body"], "additionalProperties": False,
-            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "oneOf": [{"required": ["title"]}, {"required": ["label"]}],
             "properties": {
                 "title": {"type": "string", "minLength": 1},
                 "label": {"type": "string", "minLength": 1},
@@ -458,7 +458,7 @@ def contract_schema() -> dict:
         },
         "plainCard": {
             "type": "object", "required": ["body"], "additionalProperties": False,
-            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "oneOf": [{"required": ["title"]}, {"required": ["label"]}],
             "properties": {
                 "title": {"type": "string", "minLength": 1},
                 "label": {"type": "string", "minLength": 1},
@@ -467,7 +467,7 @@ def contract_schema() -> dict:
         },
         "iconCard": {
             "type": "object", "required": ["body"], "additionalProperties": False,
-            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "oneOf": [{"required": ["title"]}, {"required": ["label"]}],
             "properties": {
                 "title": {"type": "string", "minLength": 1},
                 "label": {"type": "string", "minLength": 1},
@@ -477,7 +477,7 @@ def contract_schema() -> dict:
         },
         "evidenceCard": {
             "type": "object", "required": ["body", "images"], "additionalProperties": False,
-            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "oneOf": [{"required": ["title"]}, {"required": ["label"]}],
             "properties": {
                 "title": {"type": "string", "minLength": 1},
                 "label": {"type": "string", "minLength": 1},
@@ -487,7 +487,7 @@ def contract_schema() -> dict:
         },
         "decisionCard": {
             "type": "object", "required": ["body"], "additionalProperties": False,
-            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "oneOf": [{"required": ["title"]}, {"required": ["label"]}],
             "properties": {
                 "title": {"type": "string", "minLength": 1},
                 "label": {"type": "string", "minLength": 1},
@@ -497,7 +497,7 @@ def contract_schema() -> dict:
         },
         "step": {
             "type": "object", "additionalProperties": False,
-            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "oneOf": [{"required": ["title"]}, {"required": ["label"]}],
             "properties": {
                 "title": {"type": "string", "minLength": 1},
                 "label": {"type": "string", "minLength": 1},
@@ -511,7 +511,7 @@ def contract_schema() -> dict:
         },
         "stepBody": {
             "type": "object", "required": ["body"], "additionalProperties": False,
-            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "oneOf": [{"required": ["title"]}, {"required": ["label"]}],
             "properties": {
                 "title": {"type": "string", "minLength": 1},
                 "label": {"type": "string", "minLength": 1},
@@ -520,7 +520,7 @@ def contract_schema() -> dict:
         },
         "cycleStep": {
             "type": "object", "required": ["body"], "additionalProperties": False,
-            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "oneOf": [{"required": ["title"]}, {"required": ["label"]}],
             "properties": {
                 "title": bounded_text("cycle", "steps[].title"),
                 "label": bounded_text("cycle", "steps[].title"),
@@ -529,7 +529,7 @@ def contract_schema() -> dict:
         },
         "tierStep": {
             "type": "object", "required": ["body"], "additionalProperties": False,
-            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "oneOf": [{"required": ["title"]}, {"required": ["label"]}],
             "properties": {
                 "title": bounded_text("tier-stack", "steps[].title"),
                 "label": bounded_text("tier-stack", "steps[].title"),
@@ -538,7 +538,7 @@ def contract_schema() -> dict:
         },
         "stepIconBody": {
             "type": "object", "required": ["body"], "additionalProperties": False,
-            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "oneOf": [{"required": ["title"]}, {"required": ["label"]}],
             "properties": {
                 "title": {"type": "string", "minLength": 1},
                 "label": {"type": "string", "minLength": 1},
@@ -548,7 +548,7 @@ def contract_schema() -> dict:
         },
         "stepMediaBody": {
             "type": "object", "required": ["body", "image"], "additionalProperties": False,
-            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "oneOf": [{"required": ["title"]}, {"required": ["label"]}],
             "properties": {
                 "title": {"type": "string", "minLength": 1},
                 "label": {"type": "string", "minLength": 1},
@@ -561,7 +561,7 @@ def contract_schema() -> dict:
         },
         "stepLabel": {
             "type": "object", "additionalProperties": False,
-            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "oneOf": [{"required": ["title"]}, {"required": ["label"]}],
             "properties": {
                 "title": {"type": "string", "minLength": 1},
                 "label": {"type": "string", "minLength": 1},
@@ -593,6 +593,7 @@ def contract_schema() -> dict:
                 {"type": "string", "minLength": 1},
                 {
                     "type": "object", "required": ["body"], "additionalProperties": False,
+                    "not": {"required": ["title", "label"]},
                     "properties": {
                         "title": {"type": "string", "minLength": 1},
                         "label": {"type": "string", "minLength": 1},
@@ -603,7 +604,7 @@ def contract_schema() -> dict:
         },
         "side": {
             "type": "object", "additionalProperties": False,
-            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "oneOf": [{"required": ["title"]}, {"required": ["label"]}],
             "properties": {
                 "title": {"type": "string", "minLength": 1},
                 "label": {"type": "string", "minLength": 1},
@@ -615,7 +616,7 @@ def contract_schema() -> dict:
         },
         "plainSide": {
             "type": "object", "required": ["points"], "additionalProperties": False,
-            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "oneOf": [{"required": ["title"]}, {"required": ["label"]}],
             "properties": {
                 "title": {"type": "string", "minLength": 1},
                 "label": {"type": "string", "minLength": 1},
@@ -624,7 +625,7 @@ def contract_schema() -> dict:
         },
         "visualSide": {
             "type": "object", "required": ["points", "evidence"], "additionalProperties": False,
-            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "oneOf": [{"required": ["title"]}, {"required": ["label"]}],
             "properties": {
                 "title": {"type": "string", "minLength": 1},
                 "label": {"type": "string", "minLength": 1},
@@ -635,7 +636,7 @@ def contract_schema() -> dict:
         },
         "tabSide": {
             "type": "object", "required": ["body"], "additionalProperties": False,
-            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "oneOf": [{"required": ["title"]}, {"required": ["label"]}],
             "properties": {
                 "title": {"type": "string", "minLength": 1},
                 "label": {"type": "string", "minLength": 1},
@@ -651,7 +652,7 @@ def contract_schema() -> dict:
         },
         "group": {
             "type": "object", "required": ["items"], "additionalProperties": False,
-            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "oneOf": [{"required": ["title"]}, {"required": ["label"]}],
             "properties": {
                 "title": {"type": "string", "minLength": 1},
                 "label": {"type": "string", "minLength": 1},
@@ -663,7 +664,7 @@ def contract_schema() -> dict:
         },
         "convergeGroup": {
             "type": "object", "required": ["items"], "additionalProperties": False,
-            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "oneOf": [{"required": ["title"]}, {"required": ["label"]}],
             "properties": {
                 "title": {"type": "string", "minLength": 1},
                 "label": {"type": "string", "minLength": 1},
@@ -672,7 +673,7 @@ def contract_schema() -> dict:
         },
         "quadrantGroup": {
             "type": "object", "required": ["meta", "items"], "additionalProperties": False,
-            "anyOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "oneOf": [{"required": ["title"]}, {"required": ["label"]}],
             "properties": {
                 "title": bounded_text("quadrant", "groups[].title"),
                 "label": bounded_text("quadrant", "groups[].title"),
@@ -700,26 +701,60 @@ def contract_schema() -> dict:
                 "label": {"type": "string", "minLength": 1},
             },
         },
+        "catalogMeasurement": {
+            "type": "object", "required": ["value", "label"], "additionalProperties": False,
+            "properties": {
+                "value": {
+                    "oneOf": [bounded_text("catalog-board", "metrics[].value"), {"type": "number"}],
+                    "x-oil-nonspace-max": text_budgets_for("catalog-board")["metrics[].value"],
+                },
+                "label": bounded_text("catalog-board", "metrics[].label"),
+            },
+        },
+        "catalogGroupItem": {
+            "type": "object", "required": ["body"], "additionalProperties": False,
+            "oneOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "properties": {
+                "title": bounded_text("catalog-board", "groups[].items[].title"),
+                "label": bounded_text("catalog-board", "groups[].items[].title"),
+                "body": bounded_text("catalog-board", "groups[].items[].body"),
+            },
+        },
+        "catalogGroup": {
+            "type": "object", "required": ["meta", "items"], "additionalProperties": False,
+            "oneOf": [{"required": ["title"]}, {"required": ["label"]}],
+            "properties": {
+                "title": bounded_text("catalog-board", "groups[].title"),
+                "label": bounded_text("catalog-board", "groups[].title"),
+                "meta": bounded_text("catalog-board", "groups[].meta"),
+                "items": {
+                    "type": "array", "minItems": 3, "maxItems": 3,
+                    "items": {"$ref": "#/$defs/catalogGroupItem"},
+                },
+            },
+        },
         "dataValueItem": {
             "type": "object", "required": ["label", "value"], "additionalProperties": False,
             "properties": {
-                "label": {"type": "string", "minLength": 1, "maxLength": 12},
+                "label": {"type": "string", "minLength": 1},
                 "value": {"type": "number", "minimum": -MAX_ABS_DATA_VALUE, "maximum": MAX_ABS_DATA_VALUE},
             },
         },
         "dataRelationshipItem": {
             "type": "object", "required": ["label", "x", "y"], "additionalProperties": False,
             "properties": {
-                "label": {"type": "string", "minLength": 1, "maxLength": 12},
+                "label": bounded_text("data-story", "data.items[].label", "relationship"),
                 "x": {"type": "number", "minimum": -MAX_ABS_DATA_VALUE, "maximum": MAX_ABS_DATA_VALUE},
                 "y": {"type": "number", "minimum": -MAX_ABS_DATA_VALUE, "maximum": MAX_ABS_DATA_VALUE},
             },
         },
         "annotation": {
-            "type": "object", "required": ["title", "body"], "additionalProperties": False,
+            "type": "object", "required": ["body"], "additionalProperties": False,
+            "oneOf": [{"required": ["title"]}, {"required": ["label"]}],
             "properties": {
-                "title": {"type": "string", "minLength": 1},
-                "body": {"type": "string", "minLength": 1},
+                "title": bounded_text("annotated-showcase", "annotations[].title"),
+                "label": bounded_text("annotated-showcase", "annotations[].title"),
+                "body": bounded_text("annotated-showcase", "annotations[].body"),
             },
         },
         "mediaSource": {
@@ -755,16 +790,18 @@ def contract_schema() -> dict:
             "type": "object", "required": ["value", "unit", "caption"], "additionalProperties": False,
             "properties": {
                 "value": {"oneOf": [
-                    {"type": "string", "minLength": 1, "maxLength": 12, "pattern": ".*\\S.*"}, {"type": "number"},
+                    bounded_text("metric", "metric.value"), {"type": "number"},
                 ]},
-                "unit": {"type": "string", "minLength": 1, "maxLength": 8},
-                "caption": {"type": "string", "minLength": 1, "maxLength": 36},
+                "unit": bounded_text("metric", "metric.unit"),
+                "caption": bounded_text("metric", "metric.caption"),
             },
         },
         "insight": {
-            "type": "object", "required": ["title", "body"], "additionalProperties": False,
+            "type": "object", "required": ["body"], "additionalProperties": False,
+            "oneOf": [{"required": ["title"]}, {"required": ["label"]}],
             "properties": {
                 "title": {"type": "string", "minLength": 1},
+                "label": {"type": "string", "minLength": 1},
                 "body": {"type": "string", "minLength": 1},
                 "icon": {"type": "string", "minLength": 1},
             },
@@ -782,7 +819,7 @@ def contract_schema() -> dict:
                     "type": "object", "required": ["items"], "additionalProperties": False,
                     "properties": {
                         "items": {"type": "array", "minItems": 2, "maxItems": 8, "items": {"$ref": "#/$defs/dataValueItem"}},
-                        "unit": {"type": "string", "minLength": 1, "maxLength": 10},
+                        "unit": bounded_text("data-story", "data.unit", "category-comparison"),
                         "precision": {"type": "integer", "minimum": 0, "maximum": 6},
                     },
                 },
@@ -790,10 +827,10 @@ def contract_schema() -> dict:
                     "type": "object", "required": ["items", "x_label", "y_label"], "additionalProperties": False,
                     "properties": {
                         "items": {"type": "array", "minItems": 3, "maxItems": 12, "items": {"$ref": "#/$defs/dataRelationshipItem"}},
-                        "x_label": {"type": "string", "minLength": 1, "maxLength": 18},
-                        "y_label": {"type": "string", "minLength": 1, "maxLength": 18},
-                        "x_unit": {"type": "string", "minLength": 1, "maxLength": 10},
-                        "y_unit": {"type": "string", "minLength": 1, "maxLength": 10},
+                        "x_label": bounded_text("data-story", "data.x_label", "relationship"),
+                        "y_label": bounded_text("data-story", "data.y_label", "relationship"),
+                        "x_unit": bounded_text("data-story", "data.x_unit", "relationship"),
+                        "y_unit": bounded_text("data-story", "data.y_unit", "relationship"),
                         "precision": {"type": "integer", "minimum": 0, "maximum": 6},
                     },
                 },
@@ -863,7 +900,15 @@ def contract_schema() -> dict:
             "properties": {"sides": {"minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/tabSide"}}},
         },
         "metric": {"required": ["metric"], "allOf": [copy_required]},
-        "data-story": {"required": ["source", "data"], "allOf": [copy_required]},
+        "data-story": {
+            "required": ["source", "data"],
+            "allOf": [copy_required],
+            "properties": {
+                "content": bounded_text("data-story", "content"),
+                "note": bounded_text("data-story", "content"),
+                "source": bounded_text("data-story", "source"),
+            },
+        },
         "converge": {
             "required": ["groups", "outcome"],
             "properties": {"groups": {"minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/convergeGroup"}}},
@@ -883,16 +928,23 @@ def contract_schema() -> dict:
         "catalog-board": {
             "required": ["metrics", "groups"],
             "properties": {
-                "metrics": {"minItems": 3, "maxItems": 3},
-                "groups": {"minItems": 4, "maxItems": 4, "items": {"allOf": [
-                    {"$ref": "#/$defs/group"},
-                    {"required": ["meta"], "properties": {"items": {
-                        "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/groupItem"},
-                    }}},
-                ]}},
+                "metrics": {
+                    "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/catalogMeasurement"},
+                },
+                "groups": {
+                    "minItems": 4, "maxItems": 4, "items": {"$ref": "#/$defs/catalogGroup"},
+                },
             },
         },
-        "annotated-showcase": {"required": ["media_frame", "annotations"], "allOf": [copy_required, image_required], "properties": {"annotations": {"minItems": 3, "maxItems": 3}}},
+        "annotated-showcase": {
+            "required": ["media_frame", "annotations"],
+            "allOf": [copy_required, image_required],
+            "properties": {
+                "annotations": {
+                    "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/annotation"},
+                },
+            },
+        },
         "narrative-bento": {"required": ["statement", "statement_body", "quote", "cards"], "allOf": [copy_required], "properties": {"cards": {"minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/iconCard"}}}},
         "sequence-gallery": {
             "required": ["conclusion", "media_frame", "steps"],
@@ -1039,21 +1091,30 @@ def contract_schema() -> dict:
                 },
             ])
         elif name == "data-story":
-            for variant, minimum, maximum, label_maximum in (
-                ("category-comparison", 2, 6, 8),
-                ("trend", 3, 8, 6),
-                ("composition", 2, 5, 12),
+            for variant, minimum, maximum in (
+                ("category-comparison", 2, 6),
+                ("trend", 3, 8),
+                ("composition", 2, 5),
             ):
                 variant_rules.append({
                     "if": {"properties": {"variant": {"const": variant}}},
-                    "then": {"properties": {"data": {"properties": {
-                        "items": {
-                            "minItems": minimum,
-                            "maxItems": maximum,
-                            "items": {"properties": {"label": {"maxLength": label_maximum}}},
+                    "then": {"properties": {"data": {
+                        "not": {"anyOf": [{"required": ["x_label"]}, {"required": ["y_label"]}]},
+                        "properties": {
+                            "items": {
+                                "minItems": minimum,
+                                "maxItems": maximum,
+                                "items": {"properties": {
+                                    "label": bounded_text("data-story", "data.items[].label", variant),
+                                }},
+                            },
                         },
-                    }}}},
+                    }}},
                 })
+            variant_rules.append({
+                "if": {"properties": {"variant": {"const": "relationship"}}},
+                "then": {"properties": {"data": {"required": ["x_label", "y_label"]}}},
+            })
         elif name == "comparison":
             then.update({"required": ["sides"], "properties": {**then["properties"], "sides": {"minItems": 2, "maxItems": 2}}})
             variant_rules.extend([
@@ -1261,7 +1322,7 @@ def component_fill_plan(template: str) -> dict:
     return {
         "schema_version": "oil-ppt.component-fill-plan/v1",
         "template": template,
-        "authoritative_constraints": "input_schema",
+        "authoritative_constraints": "input_schema+plan/check",
         "content_fields": sorted(set(allowed_fields) - set(base_required)),
         "variants": variants,
         "schema_digest": "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
