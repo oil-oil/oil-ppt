@@ -8,6 +8,7 @@ from pathlib import Path
 
 from background_presets import BACKGROUND_PRESETS
 from component_contracts import COMPONENT_CONTRACTS, PAGE_BLEND_TEMPLATES, normalize_component_choices
+from component_registry import DATA_STORY_QUESTIONS, MEDIA_TEMPLATES, TEMPLATE_FAMILIES
 from icon_registry import ICON_CATALOG
 from media_assets import outline_media_bindings
 from palette_tokens import PALETTES, TOKEN_KEYS, canonical_name, normalize_palette
@@ -15,28 +16,6 @@ from profile_tokens import SHAPE_PROFILES, TYPE_PROFILES
 
 
 MAX_ABS_DATA_VALUE = 1_000_000_000_000_000
-
-DATA_STORY_QUESTIONS = {
-    "category-comparison": "哪些类别更大或更小？",
-    "trend": "数值如何随时间变化？",
-    "composition": "各部分如何组成整体？",
-    "relationship": "两个指标是否共同变化，样本分布在哪里？",
-}
-
-
-TEMPLATE_FAMILIES = {
-    "bleed-split": "bleed", "browser-showcase": "split", "card-trio": "cards",
-    "comparison": "comparison", "comparison-list": "comparison", "converge": "canvas", "cycle": "sequence",
-    "cover": "focal", "data-story": "data", "diagonal-split": "bleed", "editorial-canvas": "canvas",
-    "end": "focal", "metric": "focal", "photo-gradient": "bleed",
-    "photo-split": "split", "process-rail": "sequence", "quote": "focal", "recap": "cards",
-    "quadrant": "comparison", "section": "focal", "split-visual": "split", "tabs": "comparison",
-    "three-steps": "sequence", "timeline": "sequence",
-    "editorial-feature": "compound", "catalog-board": "compound",
-    "case-study-board": "compound", "annotated-showcase": "compound",
-    "narrative-bento": "compound", "sequence-gallery": "compound",
-    "process-cards": "sequence", "tier-stack": "canvas",
-}
 
 TEMPLATE_CONTENT_HELP = {
     "cover": "content optional; media variant also requires image",
@@ -50,7 +29,7 @@ TEMPLATE_CONTENT_HELP = {
     "comparison": "default uses sides[2] with title + points[2]; visual-evidence additionally requires evidence[2] per side",
     "comparison-list": "sides[2], each with title + points[3]",
     "tabs": "sides[2], each with title + body",
-    "metric": "content + metric.value + metric.unit + metric.caption",
+    "metric": "content + metric.value + metric.unit + metric.caption; delta also requires metric.change + metric.change_label; progress also requires numeric metric.target",
     "recap": "content + cards[3] with title + body",
     "converge": "groups[2], each with title + items[2], plus outcome",
     "cycle": "content + statement + statement_body + steps[4] with title + body; step 4 visibly feeds back into step 1",
@@ -71,6 +50,8 @@ TEMPLATE_CONTENT_HELP = {
     "process-cards": "steps[4] with title + body; icons are all-or-none; optional measurements[4] require measurement_note + measurement_meta",
     "quadrant": "content + axes.x + axes.y + groups[4] in top-left, top-right, bottom-left, bottom-right order; each group has title + meta + items[1..3], and exactly one group has emphasis=true",
     "tier-stack": "content + steps[4] with title + body, ordered from broad/base input to focused/apex result; funnel and pyramid reuse the same input",
+    "relationship-map": "content + nodes[4..6] with id + title + body and exactly one emphasis=true; links use source→target + label to connect every peripheral node to the center",
+    "decision-matrix": "content + source + criteria[3] + options[3], each option with title + scores[3] integers from 1 to 5 where 5 is better; totals must produce one unique recommendation",
 }
 
 
@@ -162,6 +143,43 @@ VARIANT_INPUT_GUIDANCE = {
             "minimum": ["content", "source", "data.x_label + data.y_label", "data.items[3..12]: label + numeric x + numeric y"],
             "optional": ["data.x_unit", "data.y_unit", "data.precision (0..6)"],
             "question": DATA_STORY_QUESTIONS["relationship"],
+        },
+    },
+    "metric": {
+        "default": {
+            "minimum": ["content", "metric.value + metric.unit + metric.caption"],
+            "optional": [],
+            "field_shape": {"metric": {"value": "text-or-number", "unit": "text", "caption": "text"}},
+        },
+        "delta": {
+            "minimum": ["content", "metric.value + metric.unit + metric.caption", "metric.change + metric.change_label"],
+            "optional": [],
+            "field_shape": {"metric": {"value": "text-or-number", "unit": "text", "caption": "text", "change": "text-or-number", "change_label": "text"}},
+        },
+        "progress": {
+            "minimum": ["content", "metric.value (number) + metric.target (positive number)", "metric.unit + metric.caption"],
+            "optional": [],
+            "field_shape": {"metric": {"value": "number >= 0", "target": "number > 0", "unit": "text", "caption": "text"}},
+        },
+    },
+    "relationship-map": {
+        "default": {
+            "minimum": ["content", "nodes[4..6]: id + title + body", "exactly one nodes[].emphasis=true", "one labeled center link per peripheral node; source→target sets arrow direction"],
+            "optional": [],
+            "field_shape": {
+                "nodes[]": {"id": "lowercase-id", "title": "text", "body": "text", "emphasis": "boolean; exactly one true"},
+                "links[]": {"source": "node-id", "target": "node-id", "label": "text"},
+            },
+        },
+    },
+    "decision-matrix": {
+        "default": {
+            "minimum": ["content", "source", "criteria[3]", "options[3]: title + scores[3] integers 1..5 (5 is better)", "one unique highest total"],
+            "optional": [],
+            "field_shape": {
+                "criteria[]": "text",
+                "options[]": {"title": "text", "scores[]": "3 integers, each 1..5"},
+            },
         },
     },
     "catalog-board": {
@@ -256,9 +274,16 @@ COMPONENT_TEXT_BUDGETS = {
     },
     "metric": {
         "*": {
-            "metric.value": 12,
+            "metric.value": 6,
             "metric.unit": 8,
             "metric.caption": 36,
+        },
+        "delta": {
+            "metric.change": 12,
+            "metric.change_label": 24,
+        },
+        "progress": {
+            "metric.target": 12,
         },
     },
     "quadrant": {
@@ -278,6 +303,22 @@ COMPONENT_TEXT_BUDGETS = {
             "steps[].body": 36,
         },
     },
+    "relationship-map": {
+        "*": {
+            "content": 48,
+            "nodes[].title": 12,
+            "nodes[].body": 30,
+            "links[].label": 10,
+        },
+    },
+    "decision-matrix": {
+        "*": {
+            "content": 56,
+            "source": 80,
+            "criteria[]": 12,
+            "options[].title": 16,
+        },
+    },
 }
 
 
@@ -287,13 +328,6 @@ def text_budgets_for(template: str, variant: str | None = None) -> dict[str, int
         **(groups.get("*") or {}),
         **(groups.get(str(variant or "")) or {}),
     }
-
-MEDIA_TEMPLATES = {
-    "bleed-split", "browser-showcase", "diagonal-split", "photo-gradient",
-    "photo-split", "split-visual", "editorial-canvas",
-    "editorial-feature", "annotated-showcase",
-}
-
 
 DECK_FIELDS = {
     "title": {"type": "string", "required": True},
@@ -321,7 +355,7 @@ SLIDE_ALLOWED_FIELDS = frozenset({
     "secondary_image", "secondary_image_alt", "badge", "media_note",
     "media_frame", "media_fit", "media_position", "media_treatment", "media_surface",
     "media_role", "media_fidelity", "media_question", "media_source",
-    "cards", "steps", "sides", "groups", "outcome",
+    "cards", "steps", "sides", "groups", "nodes", "links", "criteria", "options", "outcome",
     "quote", "source", "metric", "metrics", "insight", "chart", "data", "axes", "annotations",
     "statement", "statement_body", "statement_icon", "quote_icon", "conclusion",
     "measurements", "measurement_note", "measurement_meta",
@@ -375,6 +409,8 @@ TEMPLATE_VISIBLE_FIELDS = {
     "process-cards": {"content", "note", "kicker", "steps", "measurements", "measurement_note", "measurement_meta"},
     "quadrant": {"content", "note", "axes", "groups"},
     "tier-stack": {"content", "note", "steps"},
+    "relationship-map": {"content", "note", "nodes", "links"},
+    "decision-matrix": {"content", "note", "source", "criteria", "options"},
 }
 
 SHARED_SLIDE_FIELDS = {
@@ -624,6 +660,137 @@ def _real_number(value: object, index: int, path: str) -> float:
     return number
 
 
+def _validate_relationship_map(slide: dict, index: int) -> None:
+    budgets = text_budgets_for("relationship-map")
+    _require_bounded_content(slide, index, budgets["content"])
+    nodes = _items(slide, "nodes")
+    if not 4 <= len(nodes) <= 6:
+        raise SystemExit(f"Outline slide {index} relationship-map requires 4–6 nodes.")
+    node_ids: list[str] = []
+    center_id = ""
+    for node_index, node in enumerate(nodes, start=1):
+        if not isinstance(node, dict) or set(node) - {"id", "title", "body", "emphasis"}:
+            raise SystemExit(
+                f"Outline slide {index} nodes[{node_index}] accepts only id, title, body, and emphasis."
+            )
+        raw_node_id = node.get("id")
+        node_id = _text(raw_node_id)
+        if raw_node_id != node_id:
+            raise SystemExit(
+                f"Outline slide {index} nodes[{node_index}].id must be canonical with no surrounding whitespace."
+            )
+        if re.fullmatch(r"[a-z][a-z0-9-]*", node_id) is None:
+            raise SystemExit(
+                f"Outline slide {index} nodes[{node_index}].id must use lowercase letters, digits, and hyphens."
+            )
+        if not _text(node.get("title")) or not _text(node.get("body")):
+            raise SystemExit(f"Outline slide {index} nodes[{node_index}] requires title and body.")
+        if "emphasis" in node and not isinstance(node.get("emphasis"), bool):
+            raise SystemExit(f"Outline slide {index} nodes[{node_index}].emphasis must be boolean.")
+        if node.get("emphasis") is True:
+            if center_id:
+                raise SystemExit(f"Outline slide {index} relationship-map requires exactly one emphasized center node.")
+            center_id = node_id
+        node_ids.append(node_id)
+        _max_chars(node.get("title"), index, f"nodes[{node_index}].title", budgets["nodes[].title"])
+        _max_chars(node.get("body"), index, f"nodes[{node_index}].body", budgets["nodes[].body"])
+    if len(set(node_ids)) != len(node_ids):
+        raise SystemExit(f"Outline slide {index} relationship-map node ids must be unique.")
+    if not center_id:
+        raise SystemExit(f"Outline slide {index} relationship-map requires exactly one nodes[].emphasis=true.")
+
+    links = _items(slide, "links")
+    if len(links) != len(nodes) - 1:
+        raise SystemExit(
+            f"Outline slide {index} relationship-map requires exactly one center link per peripheral node."
+        )
+    peripheral_ids = set(node_ids) - {center_id}
+    linked_peripherals: set[str] = set()
+    for link_index, link in enumerate(links, start=1):
+        if not isinstance(link, dict) or set(link) != {"source", "target", "label"}:
+            raise SystemExit(
+                f"Outline slide {index} links[{link_index}] requires exactly source, target, and label."
+            )
+        raw_source = link.get("source")
+        raw_target = link.get("target")
+        source = _text(raw_source)
+        target = _text(raw_target)
+        label = _text(link.get("label"))
+        if raw_source != source or raw_target != target:
+            raise SystemExit(
+                f"Outline slide {index} links[{link_index}] source and target must be canonical ids with no surrounding whitespace."
+            )
+        if source not in node_ids or target not in node_ids or source == target:
+            raise SystemExit(
+                f"Outline slide {index} links[{link_index}] must connect two different declared node ids."
+            )
+        if center_id not in {source, target}:
+            raise SystemExit(
+                f"Outline slide {index} links[{link_index}] must connect the emphasized center node."
+            )
+        peripheral = target if source == center_id else source
+        if peripheral in linked_peripherals:
+            raise SystemExit(
+                f"Outline slide {index} relationship-map peripheral node {peripheral!r} has more than one center link."
+            )
+        if not label:
+            raise SystemExit(f"Outline slide {index} links[{link_index}].label must be non-empty.")
+        _max_chars(label, index, f"links[{link_index}].label", budgets["links[].label"])
+        linked_peripherals.add(peripheral)
+    if linked_peripherals != peripheral_ids:
+        missing = ", ".join(sorted(peripheral_ids - linked_peripherals))
+        raise SystemExit(f"Outline slide {index} relationship-map leaves peripheral node(s) unlinked: {missing}.")
+
+
+def _validate_decision_matrix(slide: dict, index: int) -> None:
+    budgets = text_budgets_for("decision-matrix")
+    _require_bounded_content(slide, index, budgets["content"])
+    source = _text(slide.get("source"))
+    if not source:
+        raise SystemExit(f"Outline slide {index} decision-matrix requires source text for the scoring basis.")
+    _max_chars(source, index, "source", budgets["source"])
+    criteria = _items(slide, "criteria")
+    if len(criteria) != 3 or any(not isinstance(item, str) or not item.strip() for item in criteria):
+        raise SystemExit(f"Outline slide {index} decision-matrix requires exactly 3 non-empty criteria strings.")
+    folded_criteria = [item.strip().casefold() for item in criteria]
+    if len(set(folded_criteria)) != 3:
+        raise SystemExit(f"Outline slide {index} decision-matrix criteria must be unique.")
+    for criterion_index, criterion in enumerate(criteria, start=1):
+        _max_chars(criterion, index, f"criteria[{criterion_index}]", budgets["criteria[]"])
+
+    options = _items(slide, "options")
+    if len(options) != 3:
+        raise SystemExit(f"Outline slide {index} decision-matrix requires exactly 3 options.")
+    titles: list[str] = []
+    totals: list[int] = []
+    for option_index, option in enumerate(options, start=1):
+        if not isinstance(option, dict) or set(option) != {"title", "scores"}:
+            raise SystemExit(
+                f"Outline slide {index} options[{option_index}] requires exactly title and scores."
+            )
+        title = _text(option.get("title"))
+        scores = option.get("scores")
+        if not title:
+            raise SystemExit(f"Outline slide {index} options[{option_index}].title must be non-empty.")
+        if (
+            not isinstance(scores, list)
+            or len(scores) != 3
+            or any(isinstance(score, bool) or not isinstance(score, int) or not 1 <= score <= 5 for score in scores)
+        ):
+            raise SystemExit(
+                f"Outline slide {index} options[{option_index}].scores requires exactly 3 integers from 1 to 5."
+            )
+        _max_chars(title, index, f"options[{option_index}].title", budgets["options[].title"])
+        titles.append(title.casefold())
+        totals.append(sum(scores))
+    if len(set(titles)) != 3:
+        raise SystemExit(f"Outline slide {index} decision-matrix option titles must be unique.")
+    if totals.count(max(totals)) != 1:
+        raise SystemExit(
+            f"Outline slide {index} decision-matrix totals must produce one unique recommendation; found a tie."
+        )
+
+
 def _validate_data_story(slide: dict, index: int) -> None:
     variant = str(slide.get("variant") or "")
     budgets = text_budgets_for("data-story", variant)
@@ -839,7 +1006,11 @@ def validate_slide_content(slide: dict, index: int) -> None:
     if _text(slide.get("content")) and _text(slide.get("note")):
         raise SystemExit(f"Outline slide {index} accepts content or note as aliases, not both.")
 
-    if template == "data-story":
+    if template == "relationship-map":
+        _validate_relationship_map(slide, index)
+    elif template == "decision-matrix":
+        _validate_decision_matrix(slide, index)
+    elif template == "data-story":
         _validate_data_story(slide, index)
     elif template == "cycle":
         budgets = text_budgets_for("cycle", variant)
@@ -1115,18 +1286,48 @@ def validate_slide_content(slide: dict, index: int) -> None:
         budgets = text_budgets_for("metric", variant)
         _require_content(slide, index)
         metric = slide.get("metric")
+        required_fields = {"value", "unit", "caption"}
+        if variant == "delta":
+            required_fields.update({"change", "change_label"})
+        elif variant == "progress":
+            required_fields.add("target")
         if (
             not isinstance(metric, dict)
             or not _display_text(metric.get("value"))
             or any(not _text(metric.get(key)) for key in ("unit", "caption"))
         ):
             raise SystemExit(f"Outline slide {index} template 'metric' requires metric.value, metric.unit and metric.caption.")
-        hidden = sorted(set(metric) - {"value", "unit", "caption"})
+        missing = sorted(required_fields - set(metric))
+        if missing:
+            raise SystemExit(
+                f"Outline slide {index} metric/{variant} requires field(s) {', '.join(missing)}."
+            )
+        hidden = sorted(set(metric) - required_fields)
         if hidden:
-            raise SystemExit(f"Outline slide {index} metric field(s) {', '.join(hidden)} are not rendered.")
+            raise SystemExit(f"Outline slide {index} metric/{variant} field(s) {', '.join(hidden)} are not rendered.")
         _max_chars(metric.get("value"), index, "metric.value", budgets["metric.value"])
         _max_chars(metric.get("unit"), index, "metric.unit", budgets["metric.unit"])
         _max_chars(metric.get("caption"), index, "metric.caption", budgets["metric.caption"])
+        if variant == "delta":
+            if not _display_text(metric.get("change")) or not _text(metric.get("change_label")):
+                raise SystemExit(
+                    f"Outline slide {index} metric/delta requires non-empty metric.change and metric.change_label."
+                )
+            _max_chars(metric.get("change"), index, "metric.change", budgets["metric.change"])
+            _max_chars(metric.get("change_label"), index, "metric.change_label", budgets["metric.change_label"])
+        elif variant == "progress":
+            value = _real_number(metric.get("value"), index, "metric.value")
+            target = _real_number(metric.get("target"), index, "metric.target")
+            if value < 0 or target <= 0:
+                raise SystemExit(
+                    f"Outline slide {index} metric/progress requires metric.value >= 0 and metric.target > 0."
+                )
+            percentage = value / target * 100
+            if not math.isfinite(percentage):
+                raise SystemExit(
+                    f"Outline slide {index} metric/progress value-to-target percentage must remain finite."
+                )
+            _max_chars(metric.get("target"), index, "metric.target", budgets["metric.target"])
     elif template == "converge":
         groups = _items(slide, "groups")
         if len(groups) != 2 or not _text(slide.get("outcome")):

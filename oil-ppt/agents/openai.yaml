@@ -1,4 +1,4 @@
 interface:
   display_name: "oil-ppt"
-  short_description: "先确认 Markdown 大纲，再设计并构建 oil 风格演示"
-  default_prompt: "使用 $oil-ppt。先问我是想通过对话共同梳理大纲，还是由你直接生成第一版；初始化项目并完成 outline.md。处理现有项目、验收或构建时默认运行 CLI batch，一次推进全部可自动阶段并汇总问题；多个项目不要逐套执行。需要单项目交互时才按 status 的 next.action 前进：run_command 执行命令，edit/write 只改给定路径，ask_user 展示产物并在我明确确认后执行 command_on_confirm，start_editor 启动后交给我操作且不要等待服务退出。不要替我确认。"
+  short_description: "创建、续做和批量构建 oil 风格 HTML 演示文稿"
+  default_prompt: "使用 $oil-ppt 根据我提供的主题或材料创建一份 16:9 HTML 演示文稿。"

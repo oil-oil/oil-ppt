@@ -469,7 +469,7 @@ def validate_file(
               decoration:surface.dataset.motif || 'unknown'
             }] : [];
           });
-          const invalidRelationshipEdges = all('[data-cycle-arrow]').flatMap(arrow => {
+          const invalidRelationshipEdges = all('[data-cycle-arrow], [data-relationship-arrow]').flatMap(arrow => {
             if (!visible(arrow)) return [];
             const relationship = arrow.closest('.cycle, [data-relationship-visual]');
             const matrix = arrow.getScreenCTM?.();
@@ -488,7 +488,8 @@ def validate_file(
             });
             return blocker ? [{
               slide:arrow.closest('.oil-slide')?.dataset.slideId || 'unknown',
-              reason:'relationship-arrow-occluded', edge:arrow.dataset.cycleArrow || 'unknown',
+              reason:'relationship-arrow-occluded',
+              edge:arrow.dataset.cycleArrow || arrow.dataset.relationshipArrow || 'unknown',
               blocker:blocker.className || blocker.tagName.toLowerCase(),
               overlapRatio:Number(overlapRatio.toFixed(3))
             }] : [];

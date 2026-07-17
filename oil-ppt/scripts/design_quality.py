@@ -8,6 +8,7 @@ from collections import Counter
 from background_presets import effective_background
 from capability_recommender import recommend_outline
 from component_contracts import COMPONENT_CONTRACTS, effective_frame_owner, effective_media_surface, quality_for
+from component_registry import COMPONENT_SPECS
 from media_assets import outline_media_bindings
 from outline_schema import TEMPLATE_FAMILIES
 
@@ -27,10 +28,10 @@ def has_media(slide: dict) -> bool:
 
 def has_native_visual(slide: dict) -> bool:
     """Count program-owned data/relationship graphics as visual evidence, not as image media."""
-    template = slide.get("template")
+    spec = COMPONENT_SPECS.get(str(slide.get("template") or ""))
     return bool(
-        template in {"data-story", "metric", "converge", "cycle", "quadrant", "tier-stack"}
-        or (template == "case-study-board" and slide.get("variant") == "chart")
+        spec
+        and (spec.native_visual or slide.get("variant") in spec.native_visual_variants)
     )
 
 

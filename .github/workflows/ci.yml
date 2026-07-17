@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify package manifest
+        run: python oil-ppt/scripts/package_manifest.py --verify --json
+
+      - name: Validate skill
+        run: python oil-ppt/scripts/validate_skill.py
+
+      - name: Run unit tests
+        run: python -m unittest discover -s oil-ppt/tests -p "test_*.py" -v

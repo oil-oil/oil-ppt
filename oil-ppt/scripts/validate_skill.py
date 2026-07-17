@@ -11,10 +11,11 @@ from background_presets import ALL_BACKGROUNDS, BACKGROUND_PRESETS, BACKGROUND_U
 from capability_catalog import DECOR_UI_LABELS, PROGRAM_OWNED_CAPABILITIES, TEMPLATE_DISCOVERY, VARIANT_HELP, VARIANT_UI_LABELS
 from cdp_validate import VISUAL_FINDING_CATEGORIES
 from component_contracts import COMPONENT_CONTRACTS, COMPONENT_QUALITY, PAGE_BLEND_TEMPLATES, VARIANT_QUALITY, effective_media_fit, effective_media_surface
+from component_registry import COMPONENT_SPECS, DATA_STORY_QUESTIONS
 from fill_slots import FILLERS, MEDIA_FIT_DEFAULTS
 from fill_templates import format_number
 from icon_registry import ICON_CATALOG, verify_icons
-from outline_schema import DATA_STORY_QUESTIONS, DECK_FIELDS, SHARED_SLIDE_FIELDS, SLIDE_ALLOWED_FIELDS, TEMPLATE_CONTENT_HELP, TEMPLATE_FAMILIES, TEMPLATE_VISIBLE_FIELDS, VARIANT_INPUT_GUIDANCE
+from outline_schema import DECK_FIELDS, SHARED_SLIDE_FIELDS, SLIDE_ALLOWED_FIELDS, TEMPLATE_CONTENT_HELP, TEMPLATE_FAMILIES, TEMPLATE_VISIBLE_FIELDS, VARIANT_INPUT_GUIDANCE
 from palette_tokens import PALETTES
 from media_plan import MEDIA_SLOTS, MEDIA_VARIANT_SLOTS
 
@@ -123,15 +124,18 @@ def validate_skill() -> None:
     required_files = (
         "SKILL.md",
         "agents/openai.yaml",
+        "manifest.json",
         "scripts/oil-ppt",
         "scripts/oil-ppt.cmd",
         "scripts/oil_ppt.py",
+        "scripts/package_manifest.py",
         "scripts/init_deck.py",
         "scripts/add_slide.py",
         "scripts/build_deck.py",
         "scripts/background_presets.py",
         "scripts/capability_catalog.py",
         "scripts/capability_recommender.py",
+        "scripts/component_registry.py",
         "scripts/doctor.py",
         "scripts/cdp_validate.py",
         "scripts/design_quality.py",
@@ -164,6 +168,7 @@ def validate_skill() -> None:
         errors.append("scripts/oil-ppt must be executable")
     template_names = {path.stem for path in TEMPLATES.glob("*.html")}
     contract_names = set(COMPONENT_CONTRACTS)
+    registry_names = set(COMPONENT_SPECS)
     quality_names = set(COMPONENT_QUALITY)
     family_names = set(TEMPLATE_FAMILIES)
     filler_names = set(FILLERS)
@@ -172,6 +177,7 @@ def validate_skill() -> None:
     visible_field_names = set(TEMPLATE_VISIBLE_FIELDS)
 
     for label, names in (
+        ("component registry", registry_names),
         ("component contracts", contract_names),
         ("component quality metadata", quality_names),
         ("template families", family_names),
@@ -309,7 +315,7 @@ def validate_skill() -> None:
                 if 'data-decor="__DECOR__"' not in text:
                     errors.append(f"{path.name}: declares decorations but has no rendered data-decor slot")
             quality = COMPONENT_QUALITY.get(path.stem) or {}
-            if quality.get("silhouette") not in {"bleed", "browser", "canvas", "card-grid", "cycle", "data-story", "diagram", "editorial-list", "focal", "matrix", "metric", "quadrant", "rail", "split", "state-panel", "step-grid", "step-cards", "tier-stack", "timeline", "two-panel", "editorial-feature", "catalog", "case-board", "annotated", "bento", "gallery"}:
+            if quality.get("silhouette") not in {"bleed", "browser", "canvas", "card-grid", "cycle", "data-story", "decision-table", "diagram", "editorial-list", "focal", "matrix", "metric", "quadrant", "rail", "relationship-map", "split", "state-panel", "step-grid", "step-cards", "tier-stack", "timeline", "two-panel", "editorial-feature", "catalog", "case-board", "annotated", "bento", "gallery"}:
                 errors.append(f"{path.name}: invalid or missing silhouette metadata")
             if quality.get("surface_density") not in {"none", "light", "heavy"}:
                 errors.append(f"{path.name}: invalid or missing surface_density metadata")
@@ -387,7 +393,7 @@ def validate_skill() -> None:
     public_files = [*docs, ROOT / "agents" / "openai.yaml"]
     if repo_readme.is_file():
         public_files.append(repo_readme)
-    commands = r"(?:init|batch|status|plan|check|doctor|audit|recommend|contract|preview|edit|confirm|scaffold|build|list|add|remove|sync|media|icon)"
+    commands = r"(?:init|batch|status|plan|check|doctor|version|audit|recommend|contract|preview|edit|confirm|scaffold|build|list|add|remove|sync|media|icon)"
     bare_cli = re.compile(rf"(?<![/\w-])oil-ppt\s+{commands}\b")
     hardcoded_install = re.compile(r"(?:\$HOME|~|/Users/[^/]+)/(?:\.codex|\.agents|\.claude|\.workbuddy)/.*?/oil-ppt")
     old_public_name = re.compile(r"\boil-slides\b|\$oil-slides")
@@ -409,9 +415,21 @@ def validate_skill() -> None:
     agent_file = ROOT / "agents" / "openai.yaml"
     if agent_file.is_file():
         agent_text = agent_file.read_text(encoding="utf-8")
-        for required in ('display_name: "oil-ppt"', "next.action", "command_on_confirm", "start_editor"):
-            if required not in agent_text:
-                errors.append(f"agents/openai.yaml must include {required!r}")
+        fields = {
+            key: value
+            for key, value in re.findall(r'^\s{2}([a-z_]+):\s+"([^"]*)"\s*$', agent_text, re.M)
+        }
+        if fields.get("display_name") != "oil-ppt":
+            errors.append('agents/openai.yaml display_name must be "oil-ppt"')
+        short_description = fields.get("short_description") or ""
+        if not 25 <= len(short_description) <= 64:
+            errors.append("agents/openai.yaml short_description must contain 25-64 characters")
+        default_prompt = fields.get("default_prompt") or ""
+        if "$oil-ppt" not in default_prompt or not default_prompt.strip().endswith(("。", ".", "？", "?")):
+            errors.append("agents/openai.yaml default_prompt must be one complete request mentioning $oil-ppt")
+        for internal_term in ("next.action", "command_on_confirm", "start_editor"):
+            if internal_term in default_prompt:
+                errors.append(f"agents/openai.yaml default_prompt must not duplicate internal dispatch term {internal_term!r}")
     if in_source_repository and not repo_readme.is_file():
         errors.append("repository README.md is missing")
     if ROOT.name != "oil-ppt":

@@ -6,7 +6,7 @@ contract instead of hunting through templates, runtime CSS, and references.
 """
 from __future__ import annotations
 
-from outline_schema import DATA_STORY_QUESTIONS
+from component_registry import TEMPLATE_DISCOVERY, VARIANT_HELP
 
 
 FAMILY_GUIDANCE = {
@@ -23,15 +23,15 @@ FAMILY_GUIDANCE = {
         "reading_path": "主次聚合",
     },
     "comparison": {
-        "question": "对象是否需要沿共享维度对照、在两个概念维度中定位，或切换同一对象的状态？",
-        "reading_path": "左右对照",
+        "question": "对象是否需要沿共享维度对照、评分决策、在两个概念维度中定位，或切换同一对象的状态？",
+        "reading_path": "共享维度判断",
     },
     "data": {
         "question": "真实数值要回答哪一种关系：类别大小、时间变化、整体构成，还是两个指标的共同变化与分布？",
         "reading_path": "数据关系",
     },
     "canvas": {
-        "question": "信息是否需要在开放画布中展陈、汇聚、被批注，或形成清楚的层级轮廓？",
+        "question": "信息是否需要在开放画布中展陈、汇聚、被批注、围绕中心形成关系，或形成清楚的层级轮廓？",
         "reading_path": "空间关系",
     },
     "split": {
@@ -49,70 +49,6 @@ FAMILY_GUIDANCE = {
 }
 
 
-TEMPLATE_DISCOVERY = {
-    "cover": {"aliases": ["封面", "开场", "首屏"], "effects": ["opening-focal", "open-full-slot-media"], "avoid_when": "普通内容页"},
-    "end": {"aliases": ["结尾", "收束", "行动页"], "effects": ["closing-focal"], "avoid_when": "尚未完成论证"},
-    "section": {"aliases": ["章节页", "转场", "分隔页"], "effects": ["section-pause"], "avoid_when": "没有真实章节变化"},
-    "quote": {"aliases": ["引言", "原话", "金句"], "effects": ["editorial-quote"], "avoid_when": "没有可核验来源的改写句"},
-    "metric": {"aliases": ["大数字", "指标", "单一数据"], "effects": ["numeric-focal"], "avoid_when": "多个数字同等重要"},
-    "data-story": {"aliases": ["数据关系", "量化证据", "原生数据图"], "effects": ["category-comparison", "trend", "composition", "relationship-distribution"], "avoid_when": "没有真实数值、没有来源，或页面只需强调一个数字"},
-    "three-steps": {"aliases": ["三步", "短流程", "三个动作"], "effects": ["linear-sequence"], "avoid_when": "三项只是并列而非顺序"},
-    "timeline": {"aliases": ["时间线", "四阶段", "里程碑"], "effects": ["temporal-sequence"], "avoid_when": "没有时间或阶段推进"},
-    "process-rail": {"aliases": ["六步流程", "八步流程", "完整路径"], "effects": ["serpentine-sequence"], "avoid_when": "六步需要长段落，或八步仍需要解释正文"},
-    "process-cards": {"aliases": ["四步流程", "解释型流程", "交付路径", "结果收束"], "effects": ["four-step-cards", "terminal-focus"], "avoid_when": "步骤少于四个、超过四个，或每步只有短标签"},
-    "cycle": {"aliases": ["循环", "飞轮", "闭环"], "effects": ["closed-cycle"], "avoid_when": "最后一步不会重新供给第一步，或内容只是一次性线性流程"},
-    "card-trio": {"aliases": ["一主两辅", "三块卡片", "饭盒卡片", "三类路由"], "effects": ["feature-support", "evidence-routing"], "avoid_when": "三项完全等权或存在顺序"},
-    "recap": {"aliases": ["总结", "三条原则", "结论回顾"], "effects": ["thesis-support"], "avoid_when": "没有总领判断"},
-    "comparison": {"aliases": ["二选一", "两方案", "左右对比", "证据对比"], "effects": ["paired-comparison", "evidence-comparison"], "avoid_when": "两侧维度不同"},
-    "comparison-list": {"aliases": ["逐项对照", "责任边界", "对比清单"], "effects": ["aligned-comparison"], "avoid_when": "每侧不足三项或没有共享维度"},
-    "quadrant": {"aliases": ["四象限", "二维矩阵", "优先级矩阵"], "effects": ["conceptual-quadrant"], "avoid_when": "只有一个判断维度、对象需要精确数值坐标，或没有重点象限"},
-    "tabs": {"aliases": ["状态切换", "前后视图", "两个模式"], "effects": ["interactive-state"], "avoid_when": "两个对象需要同时可见"},
-    "tier-stack": {"aliases": ["层级堆叠", "漏斗", "金字塔"], "effects": ["tier-funnel", "tier-pyramid"], "avoid_when": "四层只是并列清单，或不存在筛选收窄与基础支撑关系"},
-    "converge": {"aliases": ["汇聚", "合流", "输入到结果"], "effects": ["merge-diagram"], "avoid_when": "内容是顺序流程"},
-    "editorial-canvas": {"aliases": ["展陈", "素材画布", "局部批注"], "effects": ["editorial-canvas"], "avoid_when": "只有一张普通照片与一句说明"},
-    "split-visual": {"aliases": ["图文并排", "配图说明", "通用分栏", "融页插画"], "effects": ["inset-media", "page-blend-illustration"], "avoid_when": "图片值得全屏或需要浏览器壳"},
-    "photo-split": {"aliases": ["照片分栏", "图文等权", "半屏照片"], "effects": ["balanced-photo"], "avoid_when": "UI 截图或不可裁切材料"},
-    "browser-showcase": {"aliases": ["网页截图", "产品界面", "浏览器壳"], "effects": ["browser-frame"], "avoid_when": "窗口语境本身不是证据"},
-    "bleed-split": {"aliases": ["边缘出血", "破框主视觉", "半屏铺满"], "effects": ["edge-bleed"], "avoid_when": "素材不可裁切或已有重要外框"},
-    "diagonal-split": {"aliases": ["斜切", "斜杠分区", "方向冲突", "转向", "过渡", "边界"], "effects": ["diagonal-bleed"], "avoid_when": "页面语气平静且无方向、过渡、边界或冲突关系"},
-    "photo-gradient": {"aliases": ["全屏照片", "照片铺底", "图上叠字", "满屏样式"], "effects": ["full-bleed", "text-overlay"], "avoid_when": "文字较多或主体落在文字区"},
-    "editorial-feature": {"aliases": ["编辑式主视觉", "主视觉加三条支撑", "主副图拼贴", "融页概念图"], "effects": ["editorial-feature", "editorial-hero-collage", "page-blend-illustration"], "avoid_when": "没有主视觉或三项支撑并不共同解释标题"},
-    "catalog-board": {"aliases": ["结构化目录", "知识地图", "分类展板"], "effects": ["catalog-density"], "avoid_when": "条目无法稳定分成四组或每组不是三项"},
-    "case-study-board": {"aliases": ["案例证据板", "项目复盘", "案例指标"], "effects": ["case-evidence", "native-chart"], "avoid_when": "没有真实证据、真实数据或明确洞察"},
-    "annotated-showcase": {"aliases": ["标注式展示", "局部说明", "界面解读"], "effects": ["annotated-evidence"], "avoid_when": "标注无法对应图片中的明确位置"},
-    "narrative-bento": {"aliases": ["叙事饭盒", "一主两辅", "主次卡片"], "effects": ["narrative-bento"], "avoid_when": "所有内容完全等权"},
-    "sequence-gallery": {"aliases": ["序列画廊", "三帧过程", "前中后"], "effects": ["visual-sequence"], "avoid_when": "没有三个真实画面或步骤没有顺序"},
-}
-
-
-VARIANT_HELP = {
-    "bleed-split": {"media-right": "主视觉从右侧出血", "media-left": "主视觉从左侧出血"},
-    "browser-showcase": {"media-right": "界面证据在右", "media-left": "界面证据在左"},
-    "cover": {"statement": "纯大字开场", "media": "标题与真实主视觉共同开场"},
-    "end": {"line": "一句话结束", "line-note": "一句话加余韵", "line-artifact": "一句话加二维码或物件"},
-    "diagonal-split": {"media-right": "斜切主视觉在右", "media-left": "斜切主视觉在左"},
-    "card-trio": {"feature-left": "左侧纵向主卡", "feature-right": "右侧纵向主卡", "feature-top": "上方横向总领、下方两项支撑", "media-evidence": "两组图片证据与一个文字决策块"},
-    "comparison-list": {"focus-right": "右侧结论更重要", "focus-left": "左侧结论更重要", "balanced": "两侧完全等权"},
-    "process-rail": {"steps-6": "两行折返的六步详解", "steps-8": "两行折返的八个短动作总览"},
-    "process-cards": {"linear": "四个解释型步骤等权推进", "terminal-focus": "第四步以深色结果块收束"},
-    "cycle": {"default": "四个阶段顺时针推进，最后一段回到第一阶段"},
-    "quadrant": {"default": "四组内容按两个概念维度定位，并强调一个象限"},
-    "tier-stack": {"funnel": "从广泛输入逐层收窄到聚焦结果", "pyramid": "从宽阔基础逐层支撑到顶层结果"},
-    "photo-gradient": {"copy-left": "文字落在左侧渐变区", "copy-right": "文字落在右侧渐变区"},
-    "photo-split": {"media-right": "照片在右、文字在左", "media-left": "照片在左、文字在右"},
-    "recap": {"thesis-left": "结论在左", "thesis-right": "结论在右"},
-    "split-visual": {"media-dominant": "图片约占七栏", "balanced": "图文各半", "copy-dominant": "文字约占七栏"},
-    "three-steps": {"linear": "三步连续推进", "focus-middle": "第二步是关键转折"},
-    "comparison": {"default": "纯文字双栏对比", "visual-evidence": "每侧两张真实图片证据与两条判断"},
-    "editorial-feature": {"default": "单主视觉与三条支撑", "hero-collage": "主图、辅助图与三项支撑共同形成编辑式主视觉"},
-    "case-study-board": {"evidence": "左侧展示真实截图或作品", "chart": "左侧由真实数值生成原生柱状图"},
-    "data-story": {
-        variant: f"回答“{question.rstrip('？')}”"
-        for variant, question in DATA_STORY_QUESTIONS.items()
-    },
-}
-
-
 # Compact labels are owned by the preview UI. Internal identifiers stay stable
 # for JSON and CLI contracts, while users only see readable Chinese names.
 VARIANT_UI_LABELS = {
@@ -124,6 +60,7 @@ VARIANT_UI_LABELS = {
     "copy-left": "文字在左",
     "copy-right": "文字在右",
     "default": "默认",
+    "delta": "较前变化",
     "evidence": "真实证据",
     "feature-left": "左侧主卡",
     "feature-right": "右侧主卡",
@@ -143,6 +80,7 @@ VARIANT_UI_LABELS = {
     "media-left": "视觉在左",
     "media-right": "视觉在右",
     "pyramid": "金字塔",
+    "progress": "目标进度",
     "statement": "纯文字",
     "steps-6": "六步流程",
     "steps-8": "八步流程",
@@ -228,9 +166,18 @@ PROGRAM_OWNED_CAPABILITIES = {
         "automatic": "Agent 提交真实 JSON 数值、单位、结论与来源；程序统一生成坐标轴、标签、几何、主题色序列和数值格式，不使用 CDN。",
         "component": "data-story",
     },
+    "metric_expression": {
+        "variants": ["default", "delta", "progress"],
+        "automatic": "Agent 提交指标口径；程序负责变化信息与目标进度的稳定布局和进度计算。",
+        "component": "metric",
+    },
     "relationship_expression": {
-        "components": ["cycle", "quadrant", "tier-stack"],
-        "automatic": "Agent 只提交阶段、象限、轴和层级内容；程序拥有环形箭头、二维坐标、强调象限、漏斗与金字塔轮廓。",
+        "components": ["cycle", "quadrant", "tier-stack", "relationship-map"],
+        "automatic": "Agent 只提交阶段、象限、轴、层级、节点与命名关系；程序拥有环形箭头、二维坐标、强调象限、漏斗/金字塔轮廓，以及中心关系图的布局与连线。",
+    },
+    "decision_expression": {
+        "components": ["decision-matrix"],
+        "automatic": "Agent 提交三个候选项、三个共享准则与 1–5 分；程序汇总总分并只突出唯一推荐项。",
     },
     "icons": {
         "family": "Phosphor regular",

@@ -67,6 +67,10 @@ def slide_recommendation(slide: dict) -> dict | None:
     groups = slide.get("groups") if isinstance(slide.get("groups"), list) else []
     metrics = slide.get("metrics") if isinstance(slide.get("metrics"), list) else []
     annotations = slide.get("annotations") if isinstance(slide.get("annotations"), list) else []
+    nodes = slide.get("nodes") if isinstance(slide.get("nodes"), list) else []
+    links = slide.get("links") if isinstance(slide.get("links"), list) else []
+    criteria = slide.get("criteria") if isinstance(slide.get("criteria"), list) else []
+    options = slide.get("options") if isinstance(slide.get("options"), list) else []
     image = slide.get("image") or slide.get("media") or slide.get("artifact_image")
     secondary_image = slide.get("secondary_image")
     data = slide.get("data") if isinstance(slide.get("data"), dict) else None
@@ -81,7 +85,21 @@ def slide_recommendation(slide: dict) -> dict | None:
         if isinstance(card, dict) and isinstance(card.get("images"), list) and len(card["images"]) == 2
     ]
 
-    if selected == "cycle" and len(steps) == 4 and slide.get("statement") and slide.get("statement_body"):
+    if (
+        selected == "relationship-map"
+        and 4 <= len(nodes) <= 6
+        and len(links) == len(nodes) - 1
+        and sum(isinstance(node, dict) and node.get("emphasis") is True for node in nodes) == 1
+    ):
+        candidates.append(_candidate("relationship-map", "ONE_CENTER_THREE_TO_FIVE_NAMED_RELATIONSHIPS"))
+    elif (
+        selected == "decision-matrix"
+        and len(criteria) == 3
+        and len(options) == 3
+        and all(isinstance(option, dict) and len(option.get("scores") or []) == 3 for option in options)
+    ):
+        candidates.append(_candidate("decision-matrix", "THREE_OPTIONS_THREE_SHARED_CRITERIA"))
+    elif selected == "cycle" and len(steps) == 4 and slide.get("statement") and slide.get("statement_body"):
         candidates.append(_candidate("cycle", "FOUR_STAGES_WITH_FEEDBACK_LOOP"))
     elif axes is not None and len(groups) == 4 and sum(
         isinstance(group, dict) and group.get("emphasis") is True for group in groups
@@ -116,7 +134,13 @@ def slide_recommendation(slide: dict) -> dict | None:
     elif slide.get("quote") and slide.get("source"):
         candidates.append(_candidate("quote", "EXPLICIT_QUOTE_SOURCE"))
     elif isinstance(slide.get("metric"), dict):
-        candidates.append(_candidate("metric", "EXPLICIT_SINGLE_METRIC"))
+        metric_variant = str(slide.get("variant") or "default")
+        reason = {
+            "default": "EXPLICIT_SINGLE_METRIC",
+            "delta": "EXPLICIT_METRIC_WITH_PRIOR_CHANGE",
+            "progress": "EXPLICIT_METRIC_AGAINST_TARGET",
+        }.get(metric_variant, "EXPLICIT_SINGLE_METRIC")
+        candidates.append(_candidate("metric", reason, variant=metric_variant))
     elif len(groups) == 2 and slide.get("outcome"):
         candidates.append(_candidate("converge", "TWO_GROUPS_TO_OUTCOME"))
     elif steps:

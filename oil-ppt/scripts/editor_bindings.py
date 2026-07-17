@@ -100,6 +100,49 @@ def slot_pointer(slide: dict, slide_index: int, slot: str) -> str | None:
             return None
         return _slide_pointer(slide_index, *parts)
 
+    metric_slot = {
+        "metric-change": "change",
+        "metric-change-label": "change_label",
+    }.get(slot)
+    if metric_slot:
+        metric = slide.get("metric")
+        if isinstance(metric, dict) and metric_slot in metric:
+            return _slide_pointer(slide_index, "metric", metric_slot)
+        return None
+
+    match = re.fullmatch(r"node-(title|body)-(\d+)", slot)
+    if match:
+        index = int(match.group(2)) - 1
+        nodes = slide.get("nodes") or []
+        key = match.group(1)
+        if index >= len(nodes) or not isinstance(nodes[index], dict) or key not in nodes[index]:
+            return None
+        return _slide_pointer(slide_index, "nodes", index, key)
+
+    match = re.fullmatch(r"link-label-(\d+)", slot)
+    if match:
+        index = int(match.group(1)) - 1
+        links = slide.get("links") or []
+        if index >= len(links) or not isinstance(links[index], dict) or "label" not in links[index]:
+            return None
+        return _slide_pointer(slide_index, "links", index, "label")
+
+    match = re.fullmatch(r"criterion-(\d+)", slot)
+    if match:
+        index = int(match.group(1)) - 1
+        criteria = slide.get("criteria") or []
+        if index >= len(criteria) or not isinstance(criteria[index], str):
+            return None
+        return _slide_pointer(slide_index, "criteria", index)
+
+    match = re.fullmatch(r"option-title-(\d+)", slot)
+    if match:
+        index = int(match.group(1)) - 1
+        options = slide.get("options") or []
+        if index >= len(options) or not isinstance(options[index], dict) or "title" not in options[index]:
+            return None
+        return _slide_pointer(slide_index, "options", index, "title")
+
     match = re.fullmatch(r"card-(title|body)-(\d+)", slot)
     if match:
         index = int(match.group(2)) - 1
@@ -380,10 +423,11 @@ def annotate_editable_fragment(fragment: str, slide: dict, slide_index: int) -> 
     if template == "metric" and isinstance(slide.get("metric"), dict):
         metric = slide["metric"]
         for class_name, key in (("value", "value"), ("unit", "unit"), ("caption", "caption")):
+            editable = key != "value" or slide.get("variant") != "progress"
             fragment = _annotate_first(
                 fragment,
                 rf'<[a-z][a-z0-9]*\b(?=[^>]*class="[^"]*\b{class_name}\b)[^>]*>',
-                _slide_pointer(slide_index, "metric", key) if key in metric else None,
+                _slide_pointer(slide_index, "metric", key) if editable and key in metric else None,
             )
 
     if template == "catalog-board":
@@ -482,10 +526,31 @@ def iter_editable_values(data: dict) -> Iterator[tuple[str, str]]:
             item = slide.get(collection)
             if not isinstance(item, dict):
                 continue
-            allowed = ("value", "unit", "caption") if collection == "metric" else (("title", "body") if collection == "insight" else ("label",))
+            if collection == "metric":
+                allowed = ["unit", "caption"]
+                if slide.get("variant") != "progress":
+                    allowed.insert(0, "value")
+                if slide.get("variant") == "delta":
+                    allowed.extend(("change", "change_label"))
+            else:
+                allowed = ["title", "body"] if collection == "insight" else ["label"]
             for key in allowed:
                 if key in item:
                     candidates.add(_slide_pointer(slide_index, collection, key))
+        for node_index, node in enumerate(slide.get("nodes") or []):
+            if isinstance(node, dict):
+                for key in ("title", "body"):
+                    if key in node:
+                        candidates.add(_slide_pointer(slide_index, "nodes", node_index, key))
+        for link_index, link in enumerate(slide.get("links") or []):
+            if isinstance(link, dict) and "label" in link:
+                candidates.add(_slide_pointer(slide_index, "links", link_index, "label"))
+        for criterion_index, criterion in enumerate(slide.get("criteria") or []):
+            if isinstance(criterion, str):
+                candidates.add(_slide_pointer(slide_index, "criteria", criterion_index))
+        for option_index, option in enumerate(slide.get("options") or []):
+            if isinstance(option, dict) and "title" in option:
+                candidates.add(_slide_pointer(slide_index, "options", option_index, "title"))
         axes = slide.get("axes")
         if isinstance(axes, dict):
             for key in ("x", "y"):

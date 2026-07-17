@@ -10,11 +10,11 @@ from pathlib import Path
 
 from background_presets import effective_background
 from component_contracts import effective_media_fit, effective_media_surface
+from component_registry import DATA_STORY_QUESTIONS
 from editor_bindings import annotate_editable_fragment
-from fill_templates import render_data_story
+from fill_templates import format_number, render_data_story
 from icon_registry import CONNECTOR_ICON, icon_svg_markup
 from media_assets import outline_media_bindings
-from outline_schema import DATA_STORY_QUESTIONS
 
 
 MEDIA_FIT_DEFAULTS = {
@@ -486,6 +486,26 @@ def fill_metric(fragment: str, slide: dict) -> str:
             0,
             metric.get(key, ""),
         )
+    fragment = set_slot_text_force(fragment, "metric-change", display_value(metric.get("change")))
+    fragment = set_slot_text_force(fragment, "metric-change-label", str(metric.get("change_label") or ""))
+    fragment = set_slot_text_force(fragment, "metric-target", display_value(metric.get("target")))
+    if slide.get("variant") == "progress":
+        value = float(metric["value"])
+        target = float(metric["target"])
+        percentage = value / target * 100
+        fragment = set_slot_text_force(
+            fragment,
+            "metric-progress-label",
+            f"{format_number(percentage, precision=1)}%",
+        )
+        clamped = max(0.0, min(100.0, percentage))
+        fragment = re.sub(
+            r'(<rect\b[^>]*\bdata-progress-fill\b[^>]*\bwidth=")[^"]*(")',
+            lambda match: match.group(1) + f"{clamped:.2f}" + match.group(2),
+            fragment,
+            count=1,
+            flags=re.I,
+        )
     return fragment
 
 
@@ -562,6 +582,156 @@ def fill_quadrant(fragment: str, slide: dict) -> str:
 def fill_tier_stack(fragment: str, slide: dict) -> str:
     fragment = fill_common_slots(fragment, slide)
     return _fill_relationship_steps(fragment, slide)
+
+
+def _relationship_positions(count: int) -> list[tuple[float, float]]:
+    positions = {
+        3: [(0.18, 0.19), (0.82, 0.19), (0.50, 0.82)],
+        4: [(0.16, 0.18), (0.84, 0.18), (0.84, 0.80), (0.16, 0.80)],
+        5: [(0.50, 0.11), (0.84, 0.31), (0.72, 0.82), (0.28, 0.82), (0.16, 0.31)],
+    }
+    return positions[count]
+
+
+def _rect_edge(
+    source: tuple[float, float], target: tuple[float, float], *, half_width: float, half_height: float,
+) -> tuple[float, float]:
+    dx = target[0] - source[0]
+    dy = target[1] - source[1]
+    scales = [
+        half_width / abs(dx) if dx else float("inf"),
+        half_height / abs(dy) if dy else float("inf"),
+    ]
+    scale = min(scales)
+    return source[0] + dx * scale, source[1] + dy * scale
+
+
+def _arrowhead_points(
+    source: tuple[float, float], target: tuple[float, float], *, length: float = 22, half_width: float = 11,
+) -> str:
+    dx = target[0] - source[0]
+    dy = target[1] - source[1]
+    distance = (dx * dx + dy * dy) ** 0.5
+    unit_x, unit_y = dx / distance, dy / distance
+    base_x = target[0] - unit_x * length
+    base_y = target[1] - unit_y * length
+    perpendicular_x, perpendicular_y = -unit_y, unit_x
+    left = (base_x + perpendicular_x * half_width, base_y + perpendicular_y * half_width)
+    right = (base_x - perpendicular_x * half_width, base_y - perpendicular_y * half_width)
+    return " ".join(
+        f"{x:.1f},{y:.1f}"
+        for x, y in (target, left, right)
+    )
+
+
+def fill_relationship_map(fragment: str, slide: dict) -> str:
+    fragment = fill_common_slots(fragment, slide)
+    nodes = [node for node in (slide.get("nodes") or []) if isinstance(node, dict)]
+    center = next(node for node in nodes if node.get("emphasis") is True)
+    peripherals = [node for node in nodes if node is not center]
+    ordered = [center, *peripherals]
+    fragment = fragment.replace(
+        'class="relationship-canvas" data-layout',
+        f'class="relationship-canvas" data-peripheral-count="{len(peripherals)}" data-layout',
+        1,
+    )
+    width, height = 1760.0, 718.0
+    positions: dict[str, tuple[float, float]] = {str(center["id"]): (width / 2, height / 2)}
+    for node, (x_ratio, y_ratio) in zip(peripherals, _relationship_positions(len(peripherals))):
+        positions[str(node["id"])] = (width * x_ratio, height * y_ratio)
+
+    node_markup: list[str] = []
+    original_indexes = {str(node["id"]): index for index, node in enumerate(nodes, start=1)}
+    for display_index, node in enumerate(ordered):
+        node_id = str(node["id"])
+        original_index = original_indexes[node_id]
+        role = "center" if node is center else "peripheral"
+        position = "center" if role == "center" else str(display_index)
+        tone = "soft" if role == "center" else "neutral"
+        index_label = "CORE" if role == "center" else f"{display_index:02d}"
+        node_markup.append(
+            f'<article class="relationship-node oil-surface" data-tone="{tone}" '
+            f'data-node-role="{role}" data-node-id="{html.escape(node_id, quote=True)}" '
+            f'data-node-position="{position}" data-visual-node data-bound>'
+            f'<span class="node-index" data-small-ok>{index_label}</span>'
+            f'<h2 data-slot="node-title-{original_index}" data-fit data-min-size="25">{esc(str(node["title"]))}</h2>'
+            f'<p data-slot="node-body-{original_index}" data-sentence data-fit data-min-size="17">{esc(str(node["body"]))}</p>'
+            f'</article>'
+        )
+    fragment = set_slot_html_force(fragment, "relationship-nodes", "".join(node_markup))
+
+    link_markup: list[str] = []
+    for link_index, link in enumerate(slide.get("links") or [], start=1):
+        source_id = str(link["source"])
+        target_id = str(link["target"])
+        source_center = positions[source_id]
+        target_center = positions[target_id]
+        source_is_center = source_id == str(center["id"])
+        target_is_center = target_id == str(center["id"])
+        start = _rect_edge(
+            source_center, target_center,
+            half_width=213 if source_is_center else 184,
+            half_height=114,
+        )
+        end_from_target = _rect_edge(
+            target_center, source_center,
+            half_width=213 if target_is_center else 184,
+            half_height=114,
+        )
+        midpoint = ((start[0] + end_from_target[0]) / 2, (start[1] + end_from_target[1]) / 2)
+        label = str(link["label"])
+        label_width = min(196, max(76, len(re.sub(r"\s+", "", label)) * 20 + 32))
+        link_markup.append(
+            f'<line class="relationship-link" data-visual-edge x1="{start[0]:.1f}" y1="{start[1]:.1f}" '
+            f'x2="{end_from_target[0]:.1f}" y2="{end_from_target[1]:.1f}"/>'
+            f'<polygon class="relationship-arrow" data-relationship-arrow="{link_index}" '
+            f'points="{_arrowhead_points(start, end_from_target)}"/>'
+        )
+        label_x = midpoint[0] - label_width / 2
+        label_y = midpoint[1] - 20
+        link_markup.append(
+            f'<g class="relationship-label" aria-hidden="true">'
+            f'<rect x="{label_x:.1f}" y="{label_y:.1f}" width="{label_width}" height="40" rx="20"/>'
+            f'<text x="{midpoint[0]:.1f}" y="{midpoint[1] + 1:.1f}" data-slot="link-label-{link_index}" '
+            f'data-overflow-ok data-small-ok>{esc(label)}</text></g>'
+        )
+    fragment = set_slot_html_force(fragment, "relationship-links", "".join(link_markup))
+    return fragment
+
+
+def fill_decision_matrix(fragment: str, slide: dict) -> str:
+    fragment = fill_common_slots(fragment, slide)
+    fragment = set_slot_text_force(fragment, "source", str(slide.get("source") or ""))
+    criteria = slide.get("criteria") or []
+    head = ['<span data-small-ok>候选方案</span>']
+    head.extend(
+        f'<span data-slot="criterion-{index}" data-fit data-min-size="16">{esc(str(criterion))}</span>'
+        for index, criterion in enumerate(criteria, start=1)
+    )
+    head.append('<span data-small-ok>总分 / 15</span>')
+    fragment = set_slot_html_force(fragment, "decision-head", "".join(head))
+
+    options = slide.get("options") or []
+    totals = [sum(option["scores"]) for option in options]
+    recommended = totals.index(max(totals))
+    rows: list[str] = []
+    for option_index, (option, total) in enumerate(zip(options, totals), start=1):
+        is_recommended = option_index - 1 == recommended
+        status = "推荐" if is_recommended else f"候选 {option_index:02d}"
+        tone = "soft" if is_recommended else "neutral"
+        scores = "".join(
+            f'<span class="criterion-score" data-score="{score}" aria-label="{score} / 5">'
+            f'<b>{score}</b><small>/5</small></span>'
+            for score in option["scores"]
+        )
+        rows.append(
+            f'<article class="decision-row oil-surface" data-tone="{tone}" data-visual-node data-bound '
+            f'data-recommended="{str(is_recommended).lower()}"><div>'
+            f'<h2 data-slot="option-title-{option_index}" data-fit data-min-size="23">{esc(str(option["title"]))}</h2>'
+            f'<p data-small-ok>{status}</p></div>{scores}'
+            f'<strong class="total-score">{total}<small>/15</small></strong></article>'
+        )
+    return set_slot_html_force(fragment, "decision-rows", "".join(rows))
 
 
 def fill_editorial(fragment: str, slide: dict) -> str:
@@ -795,6 +965,8 @@ FILLERS = {
     "sequence-gallery": fill_sequence_gallery,
     "quadrant": fill_quadrant,
     "tier-stack": fill_tier_stack,
+    "relationship-map": fill_relationship_map,
+    "decision-matrix": fill_decision_matrix,
 }
 
 

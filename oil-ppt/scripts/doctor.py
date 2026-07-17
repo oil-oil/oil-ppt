@@ -21,6 +21,7 @@ from media_assets import inspect_image, inspect_outline_media, verify_outline_me
 from media_frame import frame_media
 from media_plan import build_media_plan
 from outline_schema import text_budgets_for, validate_outline
+from package_manifest import verify_manifest
 from render_programmatic_visual import render_html_visual
 from render_outline_review import EDITOR_FRAME_CSS, PREVIEW_SHELL_CSS, RUNTIME_CSS, RUNTIME_JS, prepared_slide, render, theme_css
 from text_editor import EditorSession
@@ -80,6 +81,8 @@ def smoke_slides() -> list[dict]:
         {"id": "cycle", "title": "四个动作形成持续循环", "template": "cycle", "variant": "default", "decor": "none", "content": "每个动作都为下一阶段提供输入，末段重新供给起点", "statement": "持续复利", "statement_body": "让每一次完成都成为下一轮的起点", "steps": [{"title": "捕捉信号", "body": "从真实行为里发现问题"}, {"title": "形成方案", "body": "把需要转成可验证假设"}, {"title": "交付价值", "body": "让结果真正抵达使用者"}, {"title": "积累反馈", "body": "沉淀下一轮判断依据"}]},
         {"id": "quadrant", "title": "两个维度共同决定优先级", "template": "quadrant", "variant": "default", "decor": "none", "content": "同时判断影响范围与实施确定性，再决定不同事项的行动方式", "axes": {"x": "影响范围", "y": "实施确定性"}, "groups": [{"title": "长期布局", "meta": "价值较高但关键条件仍需补足", "items": ["技术雷达", "组织能力"]}, {"title": "优先推进", "meta": "价值与确定性同时成立", "items": ["新手引导", "检索路径"], "emphasis": True}, {"title": "保留观察", "meta": "暂时没有足够证据", "items": ["自定义动效"]}, {"title": "快速试验", "meta": "成本可控并能换取确定性", "items": ["文案缩短", "页内提示"]}]},
         {"id": "tier-stack", "title": "四层内容逐步形成结果", "template": "tier-stack", "variant": "funnel", "decor": "none", "content": "同一组层级既可以表达筛选收窄，也可以表达基础支撑", "steps": [{"title": "收集", "body": "把事实、反馈和异常信号放到同一张桌面"}, {"title": "归并", "body": "去掉重复噪音并形成可讨论主题"}, {"title": "判断", "body": "用统一标准比较价值、风险与时机"}, {"title": "承诺", "body": "把关键判断转成有期限的行动"}]},
+        {"id": "relationship-map", "title": "围绕核心看清协作关系", "template": "relationship-map", "variant": "default", "decor": "none", "content": "每个外围角色都通过一条命名关系连接同一个核心对象", "nodes": [{"id": "platform", "title": "产品平台", "body": "统一能力、规则与交付边界", "emphasis": True}, {"id": "research", "title": "用户研究", "body": "持续提供真实问题与行为证据"}, {"id": "delivery", "title": "交付团队", "body": "把稳定方案带入实际场景"}, {"id": "operations", "title": "运营团队", "body": "反馈使用效果与增长信号"}, {"id": "data", "title": "数据团队", "body": "统一指标口径并验证关键变化"}, {"id": "governance", "title": "治理团队", "body": "维护规则边界与长期一致性"}], "links": [{"source": "platform", "target": "research", "label": "吸收洞察"}, {"source": "platform", "target": "delivery", "label": "提供能力"}, {"source": "platform", "target": "operations", "label": "支持运营"}, {"source": "platform", "target": "data", "label": "共享口径"}, {"source": "platform", "target": "governance", "label": "遵循规则"}]},
+        {"id": "decision-matrix", "title": "用共享准则做出选型", "template": "decision-matrix", "variant": "default", "decor": "none", "content": "三个候选方案使用同一组准则评分，再由总分给出唯一推荐", "source": "示例评分 · 评审共识", "criteria": ["用户价值", "实施确定性", "投入效率"], "options": [{"title": "方案 A · 聚焦路径", "scores": [5, 5, 4]}, {"title": "方案 B · 平衡路径", "scores": [4, 3, 3]}, {"title": "方案 C · 探索路径", "scores": [3, 4, 2]}]},
         {"id": "recap", "title": "三条原则支撑一个结论", "template": "recap", "variant": "thesis-left", "decor": "dots", "content": "最后回到一个清楚的判断", "cards": cards},
         {"id": "tabs", "title": "同一对象的两个视角", "template": "tabs", "variant": "default", "decor": "dots", "sides": [{"title": "视角 A", "body": "从使用者任务理解界面"}, {"title": "视角 B", "body": "从系统实现理解界面"}]},
         {"id": "converge", "title": "两组输入汇聚为结果", "template": "converge", "variant": "default", "decor": "none", "groups": [{"title": "内容输入", "items": ["明确目标", "整理材料"]}, {"title": "设计输入", "items": ["选择组件", "准备视觉"]}], "outcome": "共同形成可交付的演示"},
@@ -125,8 +128,10 @@ def set_text_budget_path(node: object, path: str, value: str) -> None:
     replace(node, path.split("."))
 
 
-def apply_text_budget_boundary(slide: dict) -> None:
+def apply_text_budget_boundary(slide: dict, *, skip_paths: frozenset[str] = frozenset()) -> None:
     for path, maximum in text_budgets_for(slide["template"], slide["variant"]).items():
+        if path in skip_paths:
+            continue
         set_text_budget_path(slide, path, "界" * maximum)
 
 
@@ -160,6 +165,10 @@ def render_component_matrix(root: Path, browser: str) -> int:
                         slide["data"] = {"items": [{"label": "核心业务", "value": 55}, {"label": "增长业务", "value": 30}, {"label": "探索业务", "value": 15}]}
                     elif variant == "relationship":
                         slide["data"] = {"x_label": "投入", "y_label": "回报", "items": [{"label": "方案 A", "x": 2, "y": 4}, {"label": "方案 B", "x": 4, "y": 7}, {"label": "方案 C", "x": 6, "y": 5}]}
+                if template == "metric" and variant == "delta":
+                    slide["metric"].update({"change": "+12", "change_label": "较上月"})
+                if template == "metric" and variant == "progress":
+                    slide["metric"] = {"value": 86, "target": 100, "unit": "%", "caption": "当前值与目标值使用同一统计口径"}
                 if template == "end" and variant == "line-note":
                     slide.update({"aside": "保留一句收束说明", "aside_label": "NOTE"})
                 if template == "end" and variant == "line-artifact":
@@ -169,8 +178,20 @@ def render_component_matrix(root: Path, browser: str) -> int:
                     })
                 if template == "process-rail" and variant == "steps-8":
                     slide["steps"] = [{"label": f"动作{i}"} for i in range(1, 9)]
-                if template in {"cycle", "quadrant", "tier-stack"}:
+                if template in {"cycle", "quadrant", "tier-stack", "relationship-map"}:
                     apply_text_budget_boundary(slide)
+                    validate_outline({**base, "media_policy": "text-only", "slides": [slide]}, templates)
+                elif template == "metric":
+                    if variant == "progress":
+                        slide["metric"].update({"value": 999999, "target": 999999999999})
+                        apply_text_budget_boundary(
+                            slide,
+                            skip_paths=frozenset({"metric.value", "metric.target"}),
+                        )
+                    else:
+                        apply_text_budget_boundary(slide)
+                    validate_outline({**base, "media_policy": "text-only", "slides": [slide]}, templates)
+                elif template == "decision-matrix":
                     validate_outline({**base, "media_policy": "text-only", "slides": [slide]}, templates)
                 css, fragment = prepared_slide(slide, index)
                 css_parts.append(css)
@@ -319,6 +340,10 @@ def verify_visual_quality_guards(root: Path, browser: str) -> None:
           "<div class='relationship-probe' data-layout data-relationship-visual><svg viewBox='0 0 420 220' data-visual-edge>"
           "<polygon data-cycle-arrow='probe' points='60,60 110,80 60,100'></polygon></svg>"
           "<article class='oil-surface arrow-blocker' data-tone='neutral' data-visual-node></article></div></div></section>"
+        + "<section class='oil-slide quality-probe' data-slide-id='relationship-map-edge'><div class='slide-safe'>"
+          "<div class='relationship-probe' data-layout data-relationship-visual><svg viewBox='0 0 420 220' data-visual-edge>"
+          "<polygon data-relationship-arrow='probe' points='60,60 110,80 60,100'></polygon></svg>"
+          "<article class='oil-surface arrow-blocker' data-tone='neutral' data-visual-node></article></div></div></section>"
         + "<section class='oil-slide quality-probe' data-slide-id='motif-overflow'><div class='slide-safe'>"
           "<article class='oil-surface bad-overflow' data-tone='neutral' data-motif='triangle'></article></div></section>"
         + "<section class='oil-slide quality-probe' data-slide-id='motif-transform-overflow'><div class='slide-safe'>"
@@ -357,6 +382,7 @@ def verify_visual_quality_guards(root: Path, browser: str) -> None:
         ("ring-scaled", "ring-is-not-circular"),
         ("ring-rotated-scaled", "ring-is-not-circular"),
         ("relationship-edge", "relationship-arrow-occluded"),
+        ("relationship-map-edge", "relationship-arrow-occluded"),
     ):
         if not any(item.get("slide") == slide_id and item.get("reason") == reason for item in findings):
             raise RuntimeError(f"{slide_id} bypassed {reason} validation: {report}")
@@ -430,6 +456,22 @@ def verify_specialized_capability_advice() -> None:
     })
     if keyword_only.get("review_count") != 0:
         raise RuntimeError(f"free-text keywords became a forced recommendation: {keyword_only}")
+
+    for template in ("relationship-map", "decision-matrix"):
+        slide = next(item for item in smoke_slides() if item["template"] == template)
+        recommendation = recommend_outline({"slides": [slide]})
+        candidates = ((recommendation.get("slides") or [{}])[0].get("candidates") or [])
+        if recommendation.get("review_count") != 0 or not candidates or candidates[0]["template"] != template:
+            raise RuntimeError(f"typed {template} input did not preserve its specialized component: {recommendation}")
+
+    metric_progress = next(item for item in smoke_slides() if item["template"] == "metric")
+    metric_progress = json.loads(json.dumps(metric_progress, ensure_ascii=False))
+    metric_progress["variant"] = "progress"
+    metric_progress["metric"] = {"value": 86, "target": 100, "unit": "%", "caption": "同一口径"}
+    recommendation = recommend_outline({"slides": [metric_progress]})
+    choice = recommendation["slides"][0]["candidates"][0]["choice_patch"]
+    if choice.get("template") != "metric" or choice.get("variant") != "progress":
+        raise RuntimeError(f"metric recommendation discarded its typed semantic variant: {recommendation}")
 
     summary = audit_summary({
         "media_policy": "text-only",
@@ -603,7 +645,8 @@ def verify_regression_guards(entry: Path) -> None:
         slide["template"]: slide
         for slide in smoke_slides()
         if slide["template"] in {
-            "annotated-showcase", "catalog-board", "cycle", "data-story", "metric", "quadrant", "tier-stack",
+            "annotated-showcase", "catalog-board", "cycle", "data-story", "decision-matrix", "metric",
+            "quadrant", "relationship-map", "tier-stack",
         }
     }
     for template, seed in budgeted_component_seeds.items():
@@ -682,6 +725,7 @@ def verify_regression_guards(entry: Path) -> None:
             "step", "stepBody", "stepIconBody", "stepMediaBody", "stepLabel", "cycleStep", "tierStep",
             "side", "plainSide", "visualSide", "tabSide", "group", "convergeGroup", "quadrantGroup", "axes",
             "measurement", "catalogMeasurement", "catalogGroup", "catalogGroupItem", "annotation",
+            "relationshipNode", "relationshipLink", "decisionOption",
         }.issubset(definitions)
         or set((slide_properties.get("metric") or {}).get("required") or ()) != {"value", "unit", "caption"}
         or not (slide_properties.get("cards") or {}).get("items")
@@ -1165,13 +1209,22 @@ def verify_contract_fill_plans(entry: Path) -> None:
         )
         payload = json.loads(result.stdout)
         plan = payload.get("fill_plan") or {}
-        schema = plan.get("input_schema") or {}
+        schema_result = subprocess.run(
+            [sys.executable, str(entry), "contract", "--id", template, "--schema", "--compact"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        schema = json.loads(schema_result.stdout)
         template_schema = (schema.get("properties") or {}).get("template") or {}
         variant_schema = (schema.get("properties") or {}).get("variant") or {}
         guidance = plan.get("variants") or {}
         if (
             plan.get("schema_version") != "oil-ppt.component-fill-plan/v1"
             or plan.get("authoritative_constraints") != "input_schema+plan/check"
+            or not str(plan.get("input_schema_command") or "").endswith(
+                f"contract --id {template} --schema --compact"
+            )
             or template_schema.get("const") != template
             or set(variant_schema.get("enum") or []) != set(contract["variants"])
             or set(guidance) != set(contract["variants"])
@@ -1188,6 +1241,15 @@ def verify_contract_fill_plans(entry: Path) -> None:
 def main() -> None:
     required_ok = True
     entry = Path(__file__).resolve().parent / "oil_ppt.py"
+
+    package = verify_manifest(root=Path(__file__).resolve().parent.parent)
+    if not package["ok"]:
+        details = {
+            key: package.get(key) or []
+            for key in ("errors", "missing", "changed", "unexpected")
+        }
+        raise RuntimeError(f"oil-ppt package integrity failed: {details}")
+    print(f"[OK] Package manifest {package.get('tree_sha256')}")
 
     validate_skill()
     verify_specialized_capability_advice()
@@ -1424,10 +1486,12 @@ def main() -> None:
                 raise RuntimeError("preview did not expose the program-owned click-to-enlarge viewer")
             if 'class=&quot;hl&quot;' not in preview_text:
                 raise RuntimeError("preview did not render the exposed highlight field")
-            if 'class="rhythm-panel"' not in preview_text:
-                raise RuntimeError("preview did not render the deck rhythm panel")
-            if '<span title="版式">封面</span>' not in preview_text or '<span title="背景">柔光聚焦</span>' not in preview_text:
-                raise RuntimeError("preview did not translate internal metadata into concise Chinese labels")
+            if 'class="rhythm-panel"' in preview_text:
+                raise RuntimeError("preview exposed the internal deck rhythm audit")
+            if 'title="版式"' in preview_text or 'title="布局"' in preview_text or 'title="装饰"' in preview_text:
+                raise RuntimeError("preview exposed internal slide metadata as pills")
+            if '<div class="meta"><b>01</b><strong>' not in preview_text:
+                raise RuntimeError("preview did not keep the compact page number and title header")
             base_edit_rule = re.search(r"\[data-edit-path\]\{([^}]*)\}", EDITOR_FRAME_CSS)
             hover_edit_rule = re.search(r'\[data-edit-path\]\[contenteditable="plaintext-only"\]:hover\{([^}]*)\}', EDITOR_FRAME_CSS)
             focus_rule = re.search(r"\[data-edit-path\]:focus\{([^}]*)\}", EDITOR_FRAME_CSS)
@@ -1500,6 +1564,8 @@ def main() -> None:
             )
             if "放大编辑" in authoring_text:
                 raise RuntimeError("text editor still exposed the removed enlarge-edit button")
+            if 'class="settings"' in authoring_text or 'aria-label="选择配色"' in authoring_text:
+                raise RuntimeError("text editor exposed read-only design settings")
             if authoring_text.count('class="preview-open"') != len(smoke_slides()):
                 raise RuntimeError("text editor did not make every thumbnail a click-to-open target")
             if authoring_text.count('tabindex="-1" aria-hidden="true"') != len(smoke_slides()):
