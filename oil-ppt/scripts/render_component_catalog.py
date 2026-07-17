@@ -119,6 +119,15 @@ def catalog_slide(seed: dict, template: str, variant: str, decor: str, index: in
                     {"label": "样本 E", "x": 38, "y": 71}, {"label": "样本 F", "x": 44, "y": 83},
                 ],
             }
+    elif template == "metric" and variant == "delta":
+        slide["metric"].update({"change": "+12", "change_label": "较上月"})
+    elif template == "metric" and variant == "progress":
+        slide["metric"] = {
+            "value": 86,
+            "target": 100,
+            "unit": "%",
+            "caption": "当前值与目标值使用同一统计口径",
+        }
 
     normalize_component_choices(slide, index)
     return slide

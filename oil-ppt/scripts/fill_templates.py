@@ -5,7 +5,7 @@ from __future__ import annotations
 import html
 import math
 
-from outline_schema import DATA_STORY_QUESTIONS
+from component_registry import DATA_STORY_QUESTIONS
 
 
 def _esc(value: object) -> str:

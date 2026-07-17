@@ -11,11 +11,9 @@ import tempfile
 import webbrowser
 from pathlib import Path
 
-from background_presets import background_ui_label, effective_background
-from capability_catalog import decor_ui_label, template_ui_label, variant_ui_label
-from design_quality import audit_summary, has_media, slide_quality
+from background_presets import effective_background
 from editor_bindings import annotate_editable_fragment
-from fill_slots import FILLERS, apply_media_attributes, effective_backdrop_text, inject_backdrop_text
+from fill_slots import FILLERS, apply_media_attributes, inject_backdrop_text
 from media_assets import verify_outline_media
 from outline_schema import validate_outline
 from palette_tokens import PALETTES, canonical_name, named_palette, normalize_palette
@@ -537,121 +535,25 @@ def visual_label(slide: dict) -> str:
     return f"视觉计划：{task}" if task else "纯排版 / 程序化结构"
 
 
-def palette_controls(data: dict, *, readonly: bool = False) -> str:
+def palette_controls(data: dict) -> str:
     raw = data["palette"]
     if not isinstance(raw, str):
         palette = palette_for(data)
         return f'<span class="swatch" style="--swatch:{esc(palette["accent"])}">品牌配色 {esc(palette["name"])}</span>'
     selected = canonical_name(raw)
     buttons = []
-    disabled = " disabled" if readonly else ""
     for name, tokens in PALETTES.items():
         state = " is-selected" if name == selected else ""
         buttons.append(
             f'<button type="button" class="palette-option{state}" data-palette="{esc(name)}" '
-            f'style="--swatch:{esc(tokens["accent"])}" aria-pressed="{str(name == selected).lower()}"{disabled}>{esc(name)}</button>'
+            f'style="--swatch:{esc(tokens["accent"])}" aria-pressed="{str(name == selected).lower()}">{esc(name)}</button>'
         )
     return (
         '<div class="palette-picker" aria-label="选择配色">'
-        f'<span class="setting-label">配色{"（文字编辑时只读）" if readonly else ""}</span>'
+        '<span class="setting-label">配色</span>'
         f'{"".join(buttons)}'
         '</div>'
     )
-
-
-def rhythm_panel(data: dict, slides: list[dict]) -> str:
-    background_codes = {
-        "grid-fade": "GF", "grid-wide": "GW", "soft-spotlight": "SS",
-        "block-field": "BF", "media-owned": "MO",
-    }
-    silhouette_codes = {
-        "bleed": "BL", "browser": "BR", "canvas": "CV", "card-grid": "CG", "diagram": "DG",
-        "editorial-list": "EL", "focal": "FC", "metric": "MT", "rail": "RL", "split": "SP",
-        "matrix": "MX",
-        "state-panel": "SW", "step-grid": "ST", "timeline": "TL", "two-panel": "TP",
-    }
-
-    def cells(kind: str) -> str:
-        items = []
-        for index, slide in enumerate(slides, start=1):
-            background = effective_background(slide)
-            silhouette = slide_quality(slide)["silhouette"]
-            if kind == "background":
-                value = background_codes[background]
-                title = background
-                class_name = f"bg-{background}"
-            elif kind == "silhouette":
-                value = silhouette_codes.get(silhouette, silhouette[:2].upper())
-                title = silhouette
-                class_name = ""
-            elif kind == "backdrop":
-                backdrop = effective_backdrop_text(slide)
-                value = "Aa" if backdrop else "·"
-                title = backdrop or "无背景大字"
-                class_name = "is-highlight" if backdrop else ""
-            elif kind == "media":
-                if not has_media(slide):
-                    value, title, class_name = "·", "无媒体", ""
-                elif silhouette == "bleed":
-                    value, title, class_name = "满", "全屏 / 出血媒体", "is-highlight"
-                else:
-                    value, title, class_name = "框", "安全区内媒体", ""
-            else:
-                value = "●" if slide.get("highlight") else "·"
-                title = slide.get("highlight") or "无标题划线强调"
-                class_name = "is-highlight" if slide.get("highlight") else ""
-            items.append(
-                f'<span class="rhythm-cell {class_name}" title="{index:02d} · {esc(slide["title"])} · {esc(title)}">'
-                f'<small>{index:02d}</small><i>{esc(value)}</i></span>'
-            )
-        return "".join(items)
-
-    def issue_hint(item: dict) -> str:
-        suggestion = item.get("suggestion") or {}
-        signals = suggestion.get("signals") or []
-        if signals:
-            return "信号：" + "、".join(str(signal.get("code") or "") for signal in signals)
-        changes = suggestion.get("set_background") or {}
-        if changes:
-            return "建议：" + "，".join(f"{slide_id} → {background}" for slide_id, background in changes.items())
-        candidates = suggestion.get("candidate_slides") or []
-        templates = suggestion.get("templates") or []
-        if templates and candidates:
-            return "候选页：" + "、".join(candidates) + "；可选：" + " / ".join(templates)
-        if templates:
-            return "可选：" + " / ".join(templates)
-        if candidates:
-            return "候选页：" + "、".join(candidates)
-        return str(suggestion.get("action") or "")
-
-    summary = audit_summary(data)
-    aesthetic_codes = {
-        "layout-rhythm", "media-rhythm", "media-composition", "background-rhythm", "emphasis-rhythm",
-        "background-monotony", "background-class-monotony", "background-run", "highlight-absence", "highlight-saturation",
-        "backdrop-saturation", "component-dominance", "missing-focal-beat",
-        "missing-cinematic-beat", "media-energy-concentration", "media-shape-monotony", "inset-media-run", "specialized-capability-suggestion",
-    }
-    issues = [item for item in summary["issues"] if item["code"] in aesthetic_codes]
-    review_html = "".join(
-        f'<li><span>{esc(item["message"])}</span><em>{esc(issue_hint(item))}</em></li>'
-        for item in issues
-    )
-    if review_html:
-        review = (
-            f'<details class="rhythm-review"><summary>可选设计复核 · {len(issues)} 项</summary>'
-            '<p>仅供用户判断，不影响预览与构建；模型无需处理。</p>'
-            f'<ul>{review_html}</ul></details>'
-        )
-    else:
-        review = '<span class="rhythm-ok">整套节奏已自动整理</span>'
-    return f'''<section class="rhythm-panel" aria-label="整套演示节奏检查">
-<div class="rhythm-head"><div><strong>整套节奏</strong><span>背景、版式、媒体与强调由程序自动整理。</span></div>{review}</div>
-<div class="rhythm-row"><b>背景</b><div class="rhythm-cells">{cells("background")}</div></div>
-<div class="rhythm-row"><b>版式</b><div class="rhythm-cells">{cells("silhouette")}</div></div>
-<div class="rhythm-row"><b>媒体</b><div class="rhythm-cells">{cells("media")}</div></div>
-<div class="rhythm-row"><b>强调</b><div class="rhythm-cells">{cells("highlight")}</div></div>
-<div class="rhythm-row"><b>背景字</b><div class="rhythm-cells">{cells("backdrop")}</div></div>
-</section>'''
 
 
 def validate_asset_paths(data: dict, base: Path) -> None:
@@ -675,8 +577,7 @@ def render(data: dict, *, authoring: bool = False, editor_token: str = "", edito
     for index, slide in enumerate(slides, start=1):
         document = html.escape(iframe_document(data, slide, index, authoring=authoring), quote=True)
         open_label = f"打开第 {index} 页"
-        background = effective_background(slide)
-        cards.append(f"""<article class="page-card" data-page-index="{index - 1}"><div class="meta"><b>{index:02d}</b><span title="版式">{esc(template_ui_label(slide['template']))}</span><span title="布局">{esc(variant_ui_label(slide['variant']))}</span><span title="装饰">{esc(decor_ui_label(slide['decor']))}</span><span title="背景">{esc(background_ui_label(background))}</span></div>
+        cards.append(f"""<article class="page-card" data-page-index="{index - 1}"><div class="meta"><b>{index:02d}</b><strong>{esc(slide['title'])}</strong></div>
 <div class="frame-wrap"><iframe title="{esc(slide['title'])}" srcdoc="{document}" tabindex="-1" aria-hidden="true"></iframe><button class="preview-open" type="button" aria-label="{esc(open_label)}"></button></div><p>{esc(visual_label(slide))}</p></article>""")
     palette_json = json.dumps({name: named_palette(name) for name in PALETTES}, ensure_ascii=False).replace("</", "<\\/")
     selected_palette = palette["name"]
@@ -691,12 +592,19 @@ def render(data: dict, *, authoring: bool = False, editor_token: str = "", edito
         editor_toolbar = """<section id="editor-errors" class="editor-errors" hidden aria-live="assertive"><strong>这些文字还需要处理</strong><ul></ul></section>
 <aside class="editor-toolbar" aria-label="文字编辑工具栏"><div class="editor-state"><i class="editor-dot"></i><strong>文字编辑</strong><span id="editor-status">已自动保存</span></div><div class="editor-actions"><button type="button" data-editor-undo>撤销</button><button type="button" data-editor-redo>重做</button><button type="button" data-editor-discard>还原</button><button type="button" class="finish" data-editor-finish>完成编辑</button></div></aside>"""
         editor_script = f"<script>{editor_shell_js(editor_token, editor_recovery_id)}</script>"
+    settings = ""
+    if not authoring:
+        settings = (
+            f'<div class="settings">{palette_controls(data)}'
+            f'<span>字体 {esc(TYPE_META[data["typography"]]["label"])}</span>'
+            f'<span>圆角 {esc(SHAPE_META[data["shape"]]["label"])}</span>'
+            f'<span>鼠标翻页 {"开启" if data["click_navigation"] else "关闭"}</span></div>'
+        )
     lightbox = f"""<dialog id="slide-lightbox" class="slide-lightbox" aria-label="幻灯片大图预览"><header class="lightbox-bar"><strong class="lightbox-title"></strong><span class="lightbox-page"></span><button type="button" data-lightbox-prev aria-label="上一页">←</button><button type="button" data-lightbox-next aria-label="下一页">→</button><button type="button" data-lightbox-close>关闭</button></header><div class="lightbox-stage"><iframe title="大图预览"></iframe></div>{editor_toolbar}</dialog>"""
     return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(data['title'])} · 预览</title>
-<style>*{{box-sizing:border-box}}body{{margin:0;background:#f5f5f4;color:#292929;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}}main{{width:min(1500px,calc(100% - 40px));margin:auto;padding:44px 0 90px}}header{{margin-bottom:24px}}h1{{margin:0;font-size:40px}}.settings{{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 28px}}.settings>span,.meta span{{padding:7px 10px;border-radius:999px;background:#fff;border:1px solid #e5e5e5;font-size:12px}}.swatch{{display:inline-flex!important;align-items:center;gap:7px}}.swatch::before,.palette-option::before{{content:"";width:12px;height:12px;border-radius:3px;background:var(--swatch);border:1px solid rgba(0,0,0,.06)}}.palette-picker{{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:7px;border:1px solid #dedede;border-radius:14px;background:#fff}}.setting-label{{padding:0 5px;font-size:12px;color:#777}}.palette-option{{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid #e5e5e5;border-radius:999px;background:#fff;color:#555;font:600 12px/1 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;cursor:pointer}}.palette-option:hover{{border-color:#aaa}}.palette-option.is-selected{{border-color:#292929;background:#292929;color:#fff}}.rhythm-panel{{margin:0 0 28px;padding:18px;border:1px solid #dedede;border-radius:18px;background:#fff;box-shadow:0 10px 30px rgba(0,0,0,.035)}}.rhythm-head{{display:grid;grid-template-columns:minmax(220px,.7fr) minmax(0,1.3fr);gap:24px;margin-bottom:14px}}.rhythm-head>div{{display:flex;align-items:baseline;gap:10px}}.rhythm-head strong{{font-size:16px}}.rhythm-head span{{color:#888;font-size:12px}}.rhythm-ok{{justify-self:end;align-self:center;padding:7px 10px;border-radius:999px;background:#f4f4f2;color:#6f6f6b!important}}.rhythm-review{{justify-self:end;align-self:start;max-width:620px;color:#666;font-size:12px}}.rhythm-review summary{{cursor:pointer;list-style:none;padding:7px 10px;border-radius:999px;background:#f4f4f2;color:#686864;font-weight:700}}.rhythm-review summary::-webkit-details-marker{{display:none}}.rhythm-review[open] summary{{border-radius:10px}}.rhythm-review p{{margin:8px 2px;color:#999}}.rhythm-review ul{{display:grid;gap:7px;margin:8px 0 0;padding:0;list-style:none}}.rhythm-review li{{display:grid;gap:3px;padding:8px 10px;border-radius:10px;background:#f7f7f5;color:#555}}.rhythm-review em{{color:#888;font-style:normal}}.rhythm-row{{display:grid;grid-template-columns:52px minmax(0,1fr);gap:10px;align-items:center;margin-top:8px}}.rhythm-row>b{{color:#777;font-size:12px}}.rhythm-cells{{display:grid;grid-template-columns:repeat({len(slides)},minmax(24px,1fr));gap:5px}}.rhythm-cell{{min-width:0;height:34px;display:grid;grid-template-rows:11px 1fr;place-items:center;border:1px solid #ececec;border-radius:7px;background:#fafafa;color:#a3a3a3;overflow:hidden}}.rhythm-cell small{{font:600 8px/1 ui-monospace,SFMono-Regular,Menlo,monospace;color:#aaa}}.rhythm-cell i{{font:700 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace;font-style:normal}}.rhythm-cell.is-highlight i{{color:#292929}}.rhythm-cell.bg-grid-fade{{background:linear-gradient(145deg,#fff,#f5f5f4)}}.rhythm-cell.bg-grid-wide{{background:repeating-linear-gradient(90deg,#fafafa 0 5px,#ededeb 5px 6px)}}.rhythm-cell.bg-soft-spotlight{{background:radial-gradient(circle at 30% 28%,#e4e4e1,#fff 58%)}}.rhythm-cell.bg-block-field{{background:linear-gradient(145deg,#fff 0 44%,#eee 44% 72%,#f7e9ae 72%)}}.rhythm-cell.bg-media-owned{{background:#fff}}.pages{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}}article{{padding:14px;border-radius:18px;background:#fff;border:1px solid #e5e5e5}}.meta{{display:flex;align-items:center;gap:7px;margin-bottom:11px}}.meta b{{margin-right:auto}}iframe{{display:block;width:100%;aspect-ratio:16/9;border:1px solid #eee;border-radius:11px;background:#fff}}article p{{margin:10px 2px 0;color:#777;font-size:12px}}@media(max-width:900px){{.rhythm-head{{grid-template-columns:1fr}}.rhythm-ok,.rhythm-review{{justify-self:start}}.rhythm-panel{{overflow-x:auto}}.rhythm-row{{min-width:720px}}.pages{{grid-template-columns:1fr}}}}{PREVIEW_SHELL_CSS}</style></head><body{author_class}><main>
+<style>*{{box-sizing:border-box}}body{{margin:0;background:#f5f5f4;color:#292929;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}}main{{width:min(1500px,calc(100% - 40px));margin:auto;padding:44px 0 90px}}header{{margin-bottom:24px}}h1{{margin:0;font-size:40px}}.settings{{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 28px}}.settings>span{{padding:7px 10px;border-radius:999px;background:#fff;border:1px solid #e5e5e5;font-size:12px}}.swatch{{display:inline-flex!important;align-items:center;gap:7px}}.swatch::before,.palette-option::before{{content:"";width:12px;height:12px;border-radius:3px;background:var(--swatch);border:1px solid rgba(0,0,0,.06)}}.palette-picker{{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:7px;border:1px solid #dedede;border-radius:14px;background:#fff}}.setting-label{{padding:0 5px;font-size:12px;color:#777}}.palette-option{{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid #e5e5e5;border-radius:999px;background:#fff;color:#555;font:600 12px/1 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;cursor:pointer}}.palette-option:hover{{border-color:#aaa}}.palette-option.is-selected{{border-color:#292929;background:#292929;color:#fff}}.pages{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}}article{{padding:14px;border-radius:18px;background:#fff;border:1px solid #e5e5e5}}.meta{{display:flex;align-items:center;gap:10px;margin-bottom:11px;min-width:0}}.meta b{{font-size:13px}}.meta strong{{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#777;font-size:13px;font-weight:600}}iframe{{display:block;width:100%;aspect-ratio:16/9;border:1px solid #eee;border-radius:11px;background:#fff}}article p{{margin:10px 2px 0;color:#777;font-size:12px}}@media(max-width:900px){{.pages{{grid-template-columns:1fr}}}}{PREVIEW_SHELL_CSS}</style></head><body{author_class}><main>
 <header><h1>{esc(data['title'])}</h1></header>
-<div class="settings">{palette_controls(data, readonly=authoring)}<span>字体 {esc(TYPE_META[data['typography']]['label'])}</span><span>圆角 {esc(SHAPE_META[data['shape']]['label'])}</span><span>鼠标翻页 {'开启' if data['click_navigation'] else '关闭'}</span></div>
-{rhythm_panel(data, slides)}
+{settings}
 <section class="pages">{''.join(cards)}</section></main>{lightbox}
 <script>
 const palettes={palette_json};

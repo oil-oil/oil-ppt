@@ -62,6 +62,27 @@ def cli_command(*arguments: object) -> str:
     return shlex.join([cli_display(), *(str(argument) for argument in arguments)])
 
 
+def emit_json(value: object, *, pretty: bool) -> None:
+    """Write one JSON value with a consistent compact/pretty policy."""
+    print(json.dumps(
+        value,
+        ensure_ascii=False,
+        indent=2 if pretty else None,
+        separators=None if pretty else (",", ":"),
+    ))
+
+
+def verify_expected_sha256(path: Path, expected_sha256: str | None, *, stage: str) -> str:
+    """Bind a generated confirmation command to the artifact the user saw."""
+    actual = outline_digest(path)
+    if expected_sha256 is not None and expected_sha256 != actual:
+        raise SystemExit(
+            f"{stage} confirmation is stale: the reviewed artifact changed after the command was generated. "
+            "Run status again and show the new artifact to the user before confirming it."
+        )
+    return actual
+
+
 def atomic_write_json(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     handle, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
@@ -748,6 +769,39 @@ def contract_schema() -> dict:
                 "y": {"type": "number", "minimum": -MAX_ABS_DATA_VALUE, "maximum": MAX_ABS_DATA_VALUE},
             },
         },
+        "relationshipNode": {
+            "type": "object",
+            "required": ["id", "title", "body"],
+            "additionalProperties": False,
+            "properties": {
+                "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+                "title": bounded_text("relationship-map", "nodes[].title"),
+                "body": bounded_text("relationship-map", "nodes[].body"),
+                "emphasis": {"type": "boolean"},
+            },
+        },
+        "relationshipLink": {
+            "type": "object",
+            "required": ["source", "target", "label"],
+            "additionalProperties": False,
+            "properties": {
+                "source": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+                "target": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+                "label": bounded_text("relationship-map", "links[].label"),
+            },
+        },
+        "decisionOption": {
+            "type": "object",
+            "required": ["title", "scores"],
+            "additionalProperties": False,
+            "properties": {
+                "title": bounded_text("decision-matrix", "options[].title"),
+                "scores": {
+                    "type": "array", "minItems": 3, "maxItems": 3,
+                    "items": {"type": "integer", "minimum": 1, "maximum": 5},
+                },
+            },
+        },
         "annotation": {
             "type": "object", "required": ["body"], "additionalProperties": False,
             "oneOf": [{"required": ["title"]}, {"required": ["label"]}],
@@ -774,8 +828,9 @@ def contract_schema() -> dict:
         key: ({"type": "string"} if key in {"image_alt", "secondary_image_alt"} else {"type": "string", "minLength": 1})
         for key in SLIDE_ALLOWED_FIELDS
         if key not in {
-            "cards", "steps", "sides", "groups", "metrics", "annotations", "measurements",
-            "metric", "insight", "chart", "data", "axes", "media_source",
+            "cards", "steps", "sides", "groups", "nodes", "links", "criteria", "options",
+            "metrics", "annotations", "measurements", "metric", "insight", "chart", "data",
+            "axes", "media_source",
         }
     }
     structured_fields = {
@@ -783,6 +838,10 @@ def contract_schema() -> dict:
         "steps": {"type": "array", "items": {"$ref": "#/$defs/step"}},
         "sides": {"type": "array", "items": {"$ref": "#/$defs/side"}},
         "groups": {"type": "array"},
+        "nodes": {"type": "array", "items": {"$ref": "#/$defs/relationshipNode"}},
+        "links": {"type": "array", "items": {"$ref": "#/$defs/relationshipLink"}},
+        "criteria": {"type": "array", "items": bounded_text("decision-matrix", "criteria[]")},
+        "options": {"type": "array", "items": {"$ref": "#/$defs/decisionOption"}},
         "metrics": {"type": "array", "items": {"$ref": "#/$defs/measurement"}},
         "annotations": {"type": "array", "items": {"$ref": "#/$defs/annotation"}},
         "measurements": {"type": "array", "items": {"$ref": "#/$defs/measurement"}},
@@ -794,6 +853,11 @@ def contract_schema() -> dict:
                 ]},
                 "unit": bounded_text("metric", "metric.unit"),
                 "caption": bounded_text("metric", "metric.caption"),
+                "change": {"oneOf": [
+                    bounded_text("metric", "metric.change", "delta"), {"type": "number"},
+                ]},
+                "change_label": bounded_text("metric", "metric.change_label", "delta"),
+                "target": {"type": "number", "exclusiveMinimum": 0, "maximum": MAX_ABS_DATA_VALUE},
             },
         },
         "insight": {
@@ -900,6 +964,33 @@ def contract_schema() -> dict:
             "properties": {"sides": {"minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/tabSide"}}},
         },
         "metric": {"required": ["metric"], "allOf": [copy_required]},
+        "relationship-map": {
+            "required": ["nodes", "links"],
+            "allOf": [copy_required],
+            "properties": {
+                "content": bounded_text("relationship-map", "content"),
+                "note": bounded_text("relationship-map", "content"),
+                "nodes": {
+                    "minItems": 4,
+                    "maxItems": 6,
+                    "contains": {"required": ["emphasis"], "properties": {"emphasis": {"const": True}}},
+                    "minContains": 1,
+                    "maxContains": 1,
+                },
+                "links": {"minItems": 3, "maxItems": 5},
+            },
+        },
+        "decision-matrix": {
+            "required": ["source", "criteria", "options"],
+            "allOf": [copy_required],
+            "properties": {
+                "content": bounded_text("decision-matrix", "content"),
+                "note": bounded_text("decision-matrix", "content"),
+                "source": bounded_text("decision-matrix", "source"),
+                "criteria": {"minItems": 3, "maxItems": 3},
+                "options": {"minItems": 3, "maxItems": 3},
+            },
+        },
         "data-story": {
             "required": ["source", "data"],
             "allOf": [copy_required],
@@ -1115,6 +1206,35 @@ def contract_schema() -> dict:
                 "if": {"properties": {"variant": {"const": "relationship"}}},
                 "then": {"properties": {"data": {"required": ["x_label", "y_label"]}}},
             })
+        elif name == "metric":
+            variant_rules.extend([
+                {
+                    "if": {"properties": {"variant": {"const": "default"}}},
+                    "then": {"properties": {"metric": {
+                        "not": {"anyOf": [
+                            {"required": ["change"]}, {"required": ["change_label"]}, {"required": ["target"]},
+                        ]},
+                    }}},
+                },
+                {
+                    "if": {"properties": {"variant": {"const": "delta"}}},
+                    "then": {"properties": {"metric": {
+                        "required": ["change", "change_label"],
+                        "not": {"required": ["target"]},
+                    }}},
+                },
+                {
+                    "if": {"properties": {"variant": {"const": "progress"}}},
+                    "then": {"properties": {"metric": {
+                        "required": ["target"],
+                        "not": {"anyOf": [{"required": ["change"]}, {"required": ["change_label"]}]},
+                        "properties": {
+                            "value": {"type": "number", "minimum": 0, "maximum": MAX_ABS_DATA_VALUE},
+                            "target": {"type": "number", "exclusiveMinimum": 0, "maximum": MAX_ABS_DATA_VALUE},
+                        },
+                    }}},
+                },
+            ])
         elif name == "comparison":
             then.update({"required": ["sides"], "properties": {**then["properties"], "sides": {"minItems": 2, "maxItems": 2}}})
             variant_rules.extend([
@@ -1233,6 +1353,40 @@ def _selected_variant_names(condition: dict) -> set[str]:
     return {str(value) for value in values} if isinstance(values, list) else set()
 
 
+def _required_choice_groups(value: object) -> list[list[str]]:
+    """Expose compact top-level one-of requirements without dumping JSON Schema."""
+    groups: list[list[str]] = []
+
+    def visit(item: object) -> None:
+        if isinstance(item, dict):
+            branches = item.get("oneOf")
+            if isinstance(branches, list) and len(branches) > 1:
+                fields: list[str] = []
+                for branch in branches:
+                    required = branch.get("required") if isinstance(branch, dict) else None
+                    if not isinstance(required, list) or len(required) != 1 or not isinstance(required[0], str):
+                        fields = []
+                        break
+                    fields.append(required[0])
+                if fields and len(set(fields)) == len(fields):
+                    groups.append(fields)
+            for child in item.values():
+                visit(child)
+        elif isinstance(item, list):
+            for child in item:
+                visit(child)
+
+    visit(value)
+    deduped: list[list[str]] = []
+    seen: set[tuple[str, ...]] = set()
+    for group in groups:
+        key = tuple(group)
+        if key not in seen:
+            deduped.append(group)
+            seen.add(key)
+    return deduped
+
+
 def _collect_schema_definitions(value: object, definitions: dict) -> dict:
     names: set[str] = set()
 
@@ -1303,19 +1457,35 @@ def component_fill_plan(template: str) -> dict:
     ]
     variants: dict[str, dict] = {}
     guidance_by_variant = VARIANT_INPUT_GUIDANCE.get(template) or {}
+    base_template_rules = {
+        key: value for key, value in template_rules.items() if key != "allOf"
+    }
+    base_template_constraints = [
+        condition for condition in (template_rules.get("allOf") or [])
+        if not _selected_variant_names(condition)
+    ]
     for variant in COMPONENT_CONTRACTS[template]["variants"]:
         guidance = _schema_clone(guidance_by_variant.get(variant) or {
             "minimum": [TEMPLATE_CONTENT_HELP[template]],
             "optional": [],
         })
         required = set(base_required) | template_required
+        selected_variant_rules: list[dict] = []
         for condition in variant_conditions:
             if variant in _selected_variant_names(condition):
-                required.update((condition.get("then") or {}).get("required") or [])
+                selected = condition.get("then") or {}
+                required.update(selected.get("required") or [])
+                selected_variant_rules.append(selected)
+        required_choices = _required_choice_groups([
+            base_template_rules,
+            *base_template_constraints,
+            *selected_variant_rules,
+        ])
         budgets = text_budgets_for(template, variant)
         variants[variant] = {
             **guidance,
             "required_top_level": sorted(required),
+            **({"required_one_of_top_level": required_choices} if required_choices else {}),
             **({"text_budgets_nonspace": budgets} if budgets else {}),
         }
     canonical = json.dumps(input_schema, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -1323,7 +1493,10 @@ def component_fill_plan(template: str) -> dict:
         "schema_version": "oil-ppt.component-fill-plan/v1",
         "template": template,
         "authoritative_constraints": "input_schema+plan/check",
-        "content_fields": sorted(set(allowed_fields) - set(base_required)),
+        # Keep the normal detail view focused on component-owned inputs. Shared
+        # design and planning hints remain legal in input_schema, but should not
+        # compete with the minimum fields a weaker model needs to fill first.
+        "content_fields": sorted(TEMPLATE_VISIBLE_FIELDS[template]),
         "variants": variants,
         "schema_digest": "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
         "input_schema": input_schema,
@@ -1331,7 +1504,7 @@ def component_fill_plan(template: str) -> dict:
     }
 
 
-def confirm_outline(project: Path, user_confirmed: bool) -> None:
+def confirm_outline(project: Path, user_confirmed: bool, expected_sha256: str | None = None) -> None:
     project = require_initialized_project(project, "Outline confirmation")
     require_no_edit_draft(project, "Outline confirmation")
     if not user_confirmed:
@@ -1342,7 +1515,9 @@ def confirm_outline(project: Path, user_confirmed: bool) -> None:
     if markdown.read_text(encoding="utf-8").strip() == OUTLINE_MARKDOWN_TEMPLATE.strip():
         raise SystemExit(f"outline.md is still the empty starter: {markdown}. Fill it before confirmation.")
     state = read_project_state(project)
-    markdown_sha256 = outline_digest(markdown)
+    markdown_sha256 = verify_expected_sha256(
+        markdown, expected_sha256, stage="Outline",
+    )
     previous = state.get("outline_confirmation")
     previous_sha256 = previous.get("sha256") if isinstance(previous, dict) else None
     if previous_sha256 != markdown_sha256:
@@ -1582,7 +1757,24 @@ def run_batch_step(command: str, project: Path, *arguments: str) -> dict:
     return result
 
 
-def batch_projects(targets: list[Path], *, user_confirmed_preview: bool) -> dict:
+def parse_expected_previews(values: list[str] | None) -> dict[Path, str]:
+    """Parse repeatable PROJECT::SHA256 bindings emitted by batch itself."""
+    bindings: dict[Path, str] = {}
+    for value in values or []:
+        try:
+            raw_project, digest = value.rsplit("::", 1)
+        except ValueError as error:
+            raise SystemExit("--expected-preview must use PROJECT::SHA256.") from error
+        if not raw_project or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+            raise SystemExit("--expected-preview must use PROJECT::SHA256 with a lowercase SHA256 digest.")
+        bindings[Path(raw_project).expanduser().resolve()] = digest
+    return bindings
+
+
+def batch_projects(
+    targets: list[Path], *, user_confirmed_preview: bool,
+    expected_previews: list[str] | None = None,
+) -> dict:
     """Advance deterministic phases without confirming a newly rendered preview.
 
     A confirmation flag applies only to previews already awaiting approval when
@@ -1591,6 +1783,8 @@ def batch_projects(targets: list[Path], *, user_confirmed_preview: bool) -> dict
     """
     projects = discover_projects(targets)
     resolved_targets = [target.expanduser().resolve() for target in targets]
+    expected_by_project = parse_expected_previews(expected_previews)
+    bound_confirmation = bool(expected_previews)
     results: list[dict] = []
     for project in projects:
         actions: list[str] = []
@@ -1613,8 +1807,21 @@ def batch_projects(targets: list[Path], *, user_confirmed_preview: bool) -> dict
         elif initial_phase == "needs_preview":
             advance("preview", "preview", "--no-open")
         elif initial_phase == "needs_preview_confirmation" and user_confirmed_preview:
-            if advance("confirm-preview", "confirm", "--stage", "preview", "--user-confirmed"):
-                advance("build", "build")
+            expected = expected_by_project.get(project)
+            if bound_confirmation and expected is None:
+                failure = {
+                    "stage": "confirm-preview",
+                    "ok": False,
+                    "returncode": 1,
+                    "diagnostic": "This preview was not part of the artifact set shown to the user. Run batch again.",
+                }
+            else:
+                confirmation_arguments = ["--stage", "preview"]
+                if expected is not None:
+                    confirmation_arguments.extend(["--expected-sha256", expected])
+                confirmation_arguments.append("--user-confirmed")
+                if advance("confirm-preview", "confirm", *confirmation_arguments):
+                    advance("build", "build")
         elif initial_phase in {"ready_to_build", "needs_build"}:
             advance("build", "build")
 
@@ -1625,7 +1832,13 @@ def batch_projects(targets: list[Path], *, user_confirmed_preview: bool) -> dict
             "actions": actions,
             "phase": final_status["phase"],
             "blocked": blocked,
-            **({"preview": (final_status.get("next") or {}).get("artifact")} if final_status["phase"] == "needs_preview_confirmation" else {}),
+            **(
+                {
+                    "preview": (final_status.get("next") or {}).get("artifact"),
+                    "preview_sha256": (final_status.get("next") or {}).get("artifact_sha256"),
+                }
+                if final_status["phase"] == "needs_preview_confirmation" else {}
+            ),
             "blockers": final_status.get("blockers") or [],
             "next": final_status.get("next") or {},
             **({"failure": failure} if failure else {}),
@@ -1641,11 +1854,24 @@ def batch_projects(targets: list[Path], *, user_confirmed_preview: bool) -> dict
         first_blocked = next(item for item in results if item["blocked"])
         next_step = {"project": first_blocked["project"], **first_blocked["next"]}
     elif summary["awaiting_preview_confirmation"]:
+        awaiting = [item for item in results if item["phase"] == "needs_preview_confirmation"]
+        confirmation_arguments: list[object] = ["batch", *resolved_targets]
+        for item in awaiting:
+            if item.get("preview_sha256"):
+                confirmation_arguments.extend([
+                    "--expected-preview",
+                    f"{item['project']}::{item['preview_sha256']}",
+                ])
+        confirmation_arguments.append("--user-confirmed-preview")
         next_step = {
             "action": "ask_user_to_confirm_previews",
             "command": None,
-            "artifacts": [item["preview"] for item in results if item["phase"] == "needs_preview_confirmation"],
-            "command_on_confirm": cli_command("batch", *resolved_targets, "--user-confirmed-preview"),
+            "artifacts": [item["preview"] for item in awaiting],
+            "artifact_sha256": {
+                item["project"]: item["preview_sha256"]
+                for item in awaiting if item.get("preview_sha256")
+            },
+            "command_on_confirm": cli_command(*confirmation_arguments),
         }
     else:
         next_step = {"action": "complete", "command": None}
@@ -1693,23 +1919,22 @@ def print_contract(
     show_schema: bool = False, show_example: bool = False, show_list: bool = False,
     family_id: str | None = None,
 ) -> None:
-    """Print every capability in one compact, program-generated map.
-
-    ``show_all`` is retained for command compatibility. The default no longer
-    hides templates because hidden tiers were routinely invisible to weaker
-    models.
-    """
+    """Print a progressively disclosed, program-generated capability map."""
+    if show_schema and item_id:
+        normalized = item_id.removeprefix("template.")
+        emit_json(component_fill_plan(normalized)["input_schema"], pretty=pretty)
+        return
     if show_schema:
-        print(json.dumps(contract_schema(), ensure_ascii=False, indent=2))
+        emit_json(contract_schema(), pretty=pretty)
         return
     if show_example:
-        print(json.dumps(example_outline(), ensure_ascii=False, indent=2))
+        emit_json(example_outline(), pretty=pretty)
         return
     if family_id:
         if family_id not in FAMILY_GUIDANCE:
             raise SystemExit(f"Unknown family: {family_id}. Available: {', '.join(FAMILY_GUIDANCE)}")
         guide = FAMILY_GUIDANCE[family_id]
-        print(json.dumps({
+        emit_json({
             "schema_version": "oil-ppt.contract-family/v1",
             "family": {
                 "name": family_id,
@@ -1725,10 +1950,10 @@ def print_contract(
                 ],
             },
             "detail_command": cli_command("contract", "--id", "<template-name>"),
-        }, ensure_ascii=False, indent=2))
+        }, pretty=pretty)
         return
     if show_list:
-        print(json.dumps({
+        emit_json({
             "schema_version": "oil-ppt.contract-list/v2",
             "selection": "先回答 family 的问题，再只查询该 family；不要一次比较全部模板。",
             "families": [
@@ -1744,7 +1969,7 @@ def print_contract(
             ],
             "family_command": cli_command("contract", "--family", "<family>"),
             "detail_command": cli_command("contract", "--id", "<template-name>"),
-        }, ensure_ascii=False, indent=2))
+        }, pretty=pretty)
         return
     templates_by_family = {name: [] for name in FAMILY_GUIDANCE}
     for name, contract in sorted(COMPONENT_CONTRACTS.items()):
@@ -1825,17 +2050,22 @@ def print_contract(
         if match is None:
             available = ", ".join(sorted(COMPONENT_CONTRACTS))
             raise SystemExit(f"Unknown contract id: {item_id}. Available templates: {available}")
+        fill_plan = component_fill_plan(normalized)
+        fill_plan.pop("input_schema", None)
+        fill_plan["input_schema_command"] = cli_command(
+            "contract", "--id", normalized, "--schema", "--compact",
+        )
         payload = {
             "schema_version": payload["schema_version"],
             "registry_digest": payload["registry_digest"],
             "template": match,
-            "fill_plan": component_fill_plan(normalized),
+            "fill_plan": fill_plan,
             "base_fields": ["id", "title", "template", "variant", "decor"],
             "common_optional": ["highlight", "background", "backdrop_text"],
             "media_rule": "出现图片时通常设置 media_frame='content'。照片默认 cover 铺满版位；不可裁切的 UI/文档用 contain。split-visual/editorial-feature 的概念插画可用 media_surface='page-blend' 融入页面；只有素材自带必须保留的外框时才用 self-framed。",
-            "full_schema_command": cli_command("contract", "--schema"),
+            "full_schema_command": cli_command("contract", "--schema", "--compact"),
         }
-    print(json.dumps(payload, ensure_ascii=False, indent=2 if pretty else None, separators=None if pretty else (",", ":")))
+    emit_json(payload, pretty=pretty)
 
 
 def read_outline(project: Path) -> tuple[Path, dict]:
@@ -2179,9 +2409,14 @@ def status_payload(project_arg: Path, *, intent: str = "continue") -> dict:
         blockers.append({"path": str(markdown), "message": "当前 Markdown 大纲尚未被用户确认，或确认后又发生变化"})
         next_command = None
         next_action = "ask_user_to_confirm_outline"
+        markdown_sha256 = outline_digest(markdown)
         next_details = {
             "artifact": str(markdown),
-            "command_on_confirm": cli_command("confirm", project, "--stage", "outline", "--user-confirmed"),
+            "artifact_sha256": markdown_sha256,
+            "command_on_confirm": cli_command(
+                "confirm", project, "--stage", "outline",
+                "--expected-sha256", markdown_sha256, "--user-confirmed",
+            ),
         }
     elif not plan_ok:
         phase = "needs_plan"
@@ -2241,9 +2476,14 @@ def status_payload(project_arg: Path, *, intent: str = "continue") -> dict:
         blockers.append({"path": str(preview), "message": "当前预览正在等待用户明确确认"})
         next_command = None
         next_action = "ask_user_to_confirm_preview"
+        preview_sha256 = str((preview_state or {}).get("preview_sha256") or outline_digest(preview))
         next_details = {
             "artifact": str(preview),
-            "command_on_confirm": cli_command("confirm", project, "--stage", "preview", "--user-confirmed"),
+            "artifact_sha256": preview_sha256,
+            "command_on_confirm": cli_command(
+                "confirm", project, "--stage", "preview",
+                "--expected-sha256", preview_sha256, "--user-confirmed",
+            ),
         }
     elif intent == "edit":
         phase = "ready_to_edit"
@@ -2378,13 +2618,14 @@ def generate_preview(
     browser_validate(target, project=project, stage="preview")
     if previous_preview and previous_preview != target:
         previous_preview.unlink(missing_ok=True)
+    preview_sha256 = outline_digest(target)
     atomic_write_json(state_path, {
         "outline": str(outline),
         "outline_sha256": json_digest(outline),
         "markdown_sha256": outline_digest(outline.parent / "outline.md"),
         "renderer_sha256": renderer_digest(),
         "preview": str(target),
-        "preview_sha256": outline_digest(target),
+        "preview_sha256": preview_sha256,
         "assets": asset_manifest(outline),
         "confirmed": False,
     })
@@ -2400,7 +2641,11 @@ def generate_preview(
             "action": "ask_user_to_confirm_preview",
             "command": None,
             "artifact": str(target),
-            "command_on_confirm": cli_command("confirm", outline.parent, "--stage", "preview", "--user-confirmed"),
+            "artifact_sha256": preview_sha256,
+            "command_on_confirm": cli_command(
+                "confirm", outline.parent, "--stage", "preview",
+                "--expected-sha256", preview_sha256, "--user-confirmed",
+            ),
         },
     }
     if emit:
@@ -2408,7 +2653,9 @@ def generate_preview(
     return payload
 
 
-def confirm_preview(target_path: Path, user_confirmed: bool) -> None:
+def confirm_preview(
+    target_path: Path, user_confirmed: bool, expected_sha256: str | None = None,
+) -> None:
     if not user_confirmed:
         raise SystemExit("Confirmation requires --user-confirmed after the user explicitly approves the preview.")
     project = require_initialized_project(target_path, "Preview confirmation")
@@ -2423,6 +2670,7 @@ def confirm_preview(target_path: Path, user_confirmed: bool) -> None:
     if preview_status in {"missing", "stale"} or state is None:
         raise SystemExit(f"Preview confirmation is unavailable: {reason or 'regenerate 预览.html first'}.")
     preview = Path(str(state["preview"])).expanduser().resolve()
+    verify_expected_sha256(preview, expected_sha256, stage="Preview")
     state["confirmed"] = True
     atomic_write_json(state_path, state)
     print(json.dumps({
@@ -2618,7 +2866,7 @@ def parse_args() -> argparse.Namespace:
             "status PROJECT --json and follow its single next action. Run command_on_confirm only after user approval."
         ),
     )
-    public_commands = ("init", "batch", "status", "contract", "media", "icon", "doctor")
+    public_commands = ("init", "batch", "status", "contract", "media", "icon", "doctor", "version")
     sub = parser.add_subparsers(dest="command", metavar="{" + ",".join(public_commands) + "}")
     init_parser = sub.add_parser("init", help="initialize outline.md, assets, and project state")
     init_parser.add_argument("project", type=Path, help="one project root directory")
@@ -2628,6 +2876,13 @@ def parse_args() -> argparse.Namespace:
         "--user-confirmed-preview",
         action="store_true",
         help="attest that the user approved every awaiting preview, then build all ready projects",
+    )
+    batch_parser.add_argument(
+        "--expected-preview",
+        action="append",
+        default=[],
+        metavar="PROJECT::SHA256",
+        help="bind approval to one preview digest; repeat for batch confirmations",
     )
     status_parser = sub.add_parser("status", help="show the current phase and one explicit next action")
     status_parser.add_argument("project", type=Path, help="project root")
@@ -2647,6 +2902,8 @@ def parse_args() -> argparse.Namespace:
     check_parser = sub.add_parser("check", help="validate schema, deck rhythm, recommendations, and all bound media")
     check_parser.add_argument("target", type=Path, help="project root or outline.json")
     sub.add_parser("doctor", help="run dependency, contract, browser, and end-to-end self tests")
+    version_parser = sub.add_parser("version", help="show package version, provenance, and integrity")
+    version_parser.add_argument("--json", action="store_true", help="emit a machine-readable integrity report")
     audit_parser = sub.add_parser("audit")
     audit_parser.add_argument("outline", type=Path, help="project root or outline.json")
     recommend_parser = sub.add_parser("recommend")
@@ -2657,13 +2914,13 @@ def parse_args() -> argparse.Namespace:
     contract_selector.add_argument(
         "--all",
         action="store_true",
-        help="compatibility flag; every template is always included",
+        help="print the complete registry instead of the compact directory",
     )
-    contract_selector.add_argument("--id", help="show one template contract, e.g. photo-gradient")
     contract_selector.add_argument("--list", action="store_true", help="list families and their template names")
     contract_selector.add_argument("--family", choices=tuple(FAMILY_GUIDANCE), help="show templates in one content-relation family")
-    contract_selector.add_argument("--schema", action="store_true", help="print the outline JSON Schema")
     contract_selector.add_argument("--example", action="store_true", help="print a minimal valid outline.json")
+    contract_parser.add_argument("--id", help="show one compact template contract, e.g. photo-gradient")
+    contract_parser.add_argument("--schema", action="store_true", help="print the full schema, or one component schema with --id")
     contract_parser.add_argument("--pretty", action="store_true", help=argparse.SUPPRESS)
     contract_parser.add_argument("--compact", action="store_true", help="emit compact JSON")
     preview_parser = sub.add_parser("preview", help="create and open the editable final-material preview")
@@ -2679,6 +2936,10 @@ def parse_args() -> argparse.Namespace:
     confirm_parser = sub.add_parser("confirm", help="record explicit user approval for outline or preview")
     confirm_parser.add_argument("outline", type=Path, help="project root")
     confirm_parser.add_argument("--stage", choices=("outline", "preview"), help="defaults to preview for compatibility")
+    confirm_parser.add_argument(
+        "--expected-sha256",
+        help="bind this confirmation to the artifact digest returned by status",
+    )
     confirm_parser.add_argument("--user-confirmed", action="store_true", help="required explicit attestation")
     scaffold_parser = sub.add_parser("scaffold")
     scaffold_parser.add_argument("project", type=Path)
@@ -2736,6 +2997,12 @@ def parse_args() -> argparse.Namespace:
     if not args.command:
         parser.print_help()
         raise SystemExit(0)
+    if args.command == "contract":
+        primary_selector = any((args.all, args.list, args.family, args.example))
+        if args.id and primary_selector:
+            parser.error("contract --id cannot be combined with --all, --list, --family, or --example")
+        if args.schema and primary_selector:
+            parser.error("contract --schema can only be combined with --id")
     return args
 
 
@@ -2744,7 +3011,11 @@ def main() -> None:
     if args.command == "init":
         init_project(args.project)
     elif args.command == "batch":
-        payload = batch_projects(args.targets, user_confirmed_preview=args.user_confirmed_preview)
+        payload = batch_projects(
+            args.targets,
+            user_confirmed_preview=args.user_confirmed_preview,
+            expected_previews=args.expected_preview,
+        )
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         if not payload["ok"]:
             raise SystemExit(1)
@@ -2759,6 +3030,17 @@ def main() -> None:
             raise SystemExit(1)
     elif args.command == "doctor":
         run_script("doctor.py", [])
+    elif args.command == "version":
+        from package_manifest import package_status
+
+        payload = package_status(ROOT)
+        if args.json:
+            emit_json(payload, pretty=True)
+        else:
+            print(f"oil-ppt {payload['version']} ({payload['tree_sha256']})")
+            print(f"integrity: {'ok' if payload['ok'] else 'failed'}")
+        if not payload["ok"]:
+            raise SystemExit(1)
     elif args.command == "audit":
         print_audit(outline_from_target(args.outline))
     elif args.command == "recommend":
@@ -2795,9 +3077,11 @@ def main() -> None:
     elif args.command == "confirm":
         stage = args.stage or "preview"
         if stage == "outline":
-            confirm_outline(project_from_target(args.outline), args.user_confirmed)
+            confirm_outline(
+                project_from_target(args.outline), args.user_confirmed, args.expected_sha256,
+            )
         else:
-            confirm_preview(args.outline, args.user_confirmed)
+            confirm_preview(args.outline, args.user_confirmed, args.expected_sha256)
     elif args.command == "scaffold":
         scaffold(args.project, args.outline)
     elif args.command == "list":
