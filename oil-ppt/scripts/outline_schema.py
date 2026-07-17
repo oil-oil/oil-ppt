@@ -26,16 +26,16 @@ DATA_STORY_QUESTIONS = {
 
 TEMPLATE_FAMILIES = {
     "bleed-split": "bleed", "browser-showcase": "split", "card-trio": "cards",
-    "comparison": "comparison", "comparison-list": "comparison", "converge": "canvas",
+    "comparison": "comparison", "comparison-list": "comparison", "converge": "canvas", "cycle": "sequence",
     "cover": "focal", "data-story": "data", "diagonal-split": "bleed", "editorial-canvas": "canvas",
     "end": "focal", "metric": "focal", "photo-gradient": "bleed",
     "photo-split": "split", "process-rail": "sequence", "quote": "focal", "recap": "cards",
-    "section": "focal", "split-visual": "split", "tabs": "comparison",
+    "quadrant": "comparison", "section": "focal", "split-visual": "split", "tabs": "comparison",
     "three-steps": "sequence", "timeline": "sequence",
     "editorial-feature": "compound", "catalog-board": "compound",
     "case-study-board": "compound", "annotated-showcase": "compound",
     "narrative-bento": "compound", "sequence-gallery": "compound",
-    "process-cards": "sequence",
+    "process-cards": "sequence", "tier-stack": "canvas",
 }
 
 TEMPLATE_CONTENT_HELP = {
@@ -53,6 +53,7 @@ TEMPLATE_CONTENT_HELP = {
     "metric": "content + metric.value + metric.unit + metric.caption",
     "recap": "content + cards[3] with title + body",
     "converge": "groups[2], each with title + items[2], plus outcome",
+    "cycle": "content + statement + statement_body + steps[4] with title + body; step 4 visibly feeds back into step 1",
     "editorial-canvas": "content + image",
     "bleed-split": "content + image",
     "browser-showcase": "content + image",
@@ -68,6 +69,8 @@ TEMPLATE_CONTENT_HELP = {
     "narrative-bento": "content + statement + statement_body + cards[2] + quote; optional icons",
     "sequence-gallery": "content + conclusion + steps[3], each with title + body + image",
     "process-cards": "steps[4] with title + body; icons are all-or-none; optional measurements[4] require measurement_note + measurement_meta",
+    "quadrant": "content + axes.x + axes.y + groups[4] in top-left, top-right, bottom-left, bottom-right order; each group has title + meta + items[1..3], and exactly one group has emphasis=true",
+    "tier-stack": "content + steps[4] with title + body, ordered from broad/base input to focused/apex result; funnel and pyramid reuse the same input",
 }
 
 
@@ -81,6 +84,12 @@ VARIANT_INPUT_GUIDANCE = {
         },
         "steps-8": {
             "minimum": ["steps[8]: title only"],
+            "optional": [],
+        },
+    },
+    "cycle": {
+        "default": {
+            "minimum": ["content", "statement + statement_body", "steps[4]: title + body"],
             "optional": [],
         },
     },
@@ -117,37 +126,48 @@ VARIANT_INPUT_GUIDANCE = {
         "linear": {"minimum": ["content", "steps[4]: title + body"], "optional": ["icons on all 4 steps", "measurements[4] + measurement_note + measurement_meta"]},
         "terminal-focus": {"minimum": ["content", "steps[4]: title + body"], "optional": ["icons on all 4 steps", "measurements[4] + measurement_note + measurement_meta"]},
     },
+    "quadrant": {
+        "default": {
+            "minimum": ["content", "axes.x + axes.y", "groups[4] in TL, TR, BL, BR order: title + meta + items[1..3]", "exactly one groups[].emphasis=true"],
+            "optional": [],
+        },
+    },
+    "tier-stack": {
+        "funnel": {
+            "minimum": ["content", "steps[4]: title + body, broad input to focused result"],
+            "optional": [],
+        },
+        "pyramid": {
+            "minimum": ["content", "steps[4]: title + body, foundation to apex result"],
+            "optional": [],
+        },
+    },
     "data-story": {
         "category-comparison": {
             "minimum": ["content", "source", "data.items[2..6]: label + numeric value"],
             "optional": ["data.unit", "data.precision (0..6)"],
             "question": DATA_STORY_QUESTIONS["category-comparison"],
-            "budgets": {"data.items[].label": 8},
         },
         "trend": {
             "minimum": ["content", "source", "data.items[3..8] in time order: label + numeric value"],
             "optional": ["data.unit", "data.precision (0..6)"],
             "question": DATA_STORY_QUESTIONS["trend"],
-            "budgets": {"data.items[].label": 6},
         },
         "composition": {
             "minimum": ["content", "source", "data.items[2..5]: label + non-negative numeric value"],
             "optional": ["data.unit", "data.precision (0..6)"],
             "question": DATA_STORY_QUESTIONS["composition"],
-            "budgets": {"data.items[].label": 12},
         },
         "relationship": {
             "minimum": ["content", "source", "data.x_label + data.y_label", "data.items[3..12]: label + numeric x + numeric y"],
             "optional": ["data.x_unit", "data.y_unit", "data.precision (0..6)"],
             "question": DATA_STORY_QUESTIONS["relationship"],
-            "budgets": {"data.items[].label": 12},
         },
     },
     "catalog-board": {
         "default": {
             "minimum": ["metrics[3]: value + label", "groups[4]: title + meta + items[3](title + body)"],
             "optional": ["kicker", "page_note", "meta"],
-            "budgets": {"group.title": 12, "group.meta": 18, "item.title": 14, "item.body": 24},
         },
     },
     "case-study-board": {
@@ -164,7 +184,6 @@ VARIANT_INPUT_GUIDANCE = {
         "default": {
             "minimum": ["content", "image", "media_frame", "annotations[3]: title + body"],
             "optional": ["kicker", "image_alt"],
-            "budgets": {"annotation.title": 16, "annotation.body": 48},
         },
     },
     "narrative-bento": {
@@ -180,6 +199,94 @@ VARIANT_INPUT_GUIDANCE = {
         },
     },
 }
+
+
+# Non-space character budgets drive validation, public component schemas,
+# fill plans, and browser boundary probes from one registry.
+COMPONENT_TEXT_BUDGETS = {
+    "cycle": {
+        "*": {
+            "content": 48,
+            "statement": 7,
+            "statement_body": 28,
+            "steps[].title": 10,
+            "steps[].body": 28,
+        },
+    },
+    "data-story": {
+        "*": {
+            "content": 72,
+            "source": 96,
+        },
+        "category-comparison": {
+            "data.unit": 10,
+            "data.items[].label": 8,
+        },
+        "trend": {
+            "data.unit": 10,
+            "data.items[].label": 6,
+        },
+        "composition": {
+            "data.unit": 10,
+            "data.items[].label": 12,
+        },
+        "relationship": {
+            "data.x_label": 18,
+            "data.y_label": 18,
+            "data.x_unit": 10,
+            "data.y_unit": 10,
+            "data.items[].label": 12,
+        },
+    },
+    "catalog-board": {
+        "*": {
+            "metrics[].value": 10,
+            "metrics[].label": 14,
+            "groups[].title": 12,
+            "groups[].meta": 18,
+            "groups[].items[].title": 14,
+            "groups[].items[].body": 24,
+        },
+    },
+    "annotated-showcase": {
+        "*": {
+            "annotations[].title": 16,
+            "annotations[].body": 48,
+        },
+    },
+    "metric": {
+        "*": {
+            "metric.value": 12,
+            "metric.unit": 8,
+            "metric.caption": 36,
+        },
+    },
+    "quadrant": {
+        "*": {
+            "content": 48,
+            "axes.x": 12,
+            "axes.y": 12,
+            "groups[].title": 10,
+            "groups[].meta": 26,
+            "groups[].items[]": 12,
+        },
+    },
+    "tier-stack": {
+        "*": {
+            "content": 48,
+            "steps[].title": 12,
+            "steps[].body": 36,
+        },
+    },
+}
+
+
+def text_budgets_for(template: str, variant: str | None = None) -> dict[str, int]:
+    groups = COMPONENT_TEXT_BUDGETS.get(template) or {}
+    return {
+        **(groups.get("*") or {}),
+        **(groups.get(str(variant or "")) or {}),
+    }
 
 MEDIA_TEMPLATES = {
     "bleed-split", "browser-showcase", "diagonal-split", "photo-gradient",
@@ -215,7 +322,7 @@ SLIDE_ALLOWED_FIELDS = frozenset({
     "media_frame", "media_fit", "media_position", "media_treatment", "media_surface",
     "media_role", "media_fidelity", "media_question", "media_source",
     "cards", "steps", "sides", "groups", "outcome",
-    "quote", "source", "metric", "metrics", "insight", "chart", "data", "annotations",
+    "quote", "source", "metric", "metrics", "insight", "chart", "data", "axes", "annotations",
     "statement", "statement_body", "statement_icon", "quote_icon", "conclusion",
     "measurements", "measurement_note", "measurement_meta",
     "aside", "aside_label", "artifact_title", "artifact_body",
@@ -251,6 +358,7 @@ TEMPLATE_VISIBLE_FIELDS = {
     "metric": {"content", "note", "metric"},
     "recap": {"content", "note", "cards"},
     "converge": {"groups", "outcome"},
+    "cycle": {"content", "note", "statement", "statement_body", "steps"},
     "bleed-split": set(STANDARD_MEDIA_FIELDS),
     "browser-showcase": set(STANDARD_MEDIA_FIELDS),
     "diagonal-split": set(STANDARD_MEDIA_FIELDS),
@@ -265,6 +373,8 @@ TEMPLATE_VISIBLE_FIELDS = {
     "narrative-bento": {"content", "note", "kicker", "statement", "statement_body", "statement_icon", "quote", "quote_icon", "cards"},
     "sequence-gallery": {"content", "note", "kicker", "page_note", "conclusion", "steps", *MEDIA_METADATA_FIELDS},
     "process-cards": {"content", "note", "kicker", "steps", "measurements", "measurement_note", "measurement_meta"},
+    "quadrant": {"content", "note", "axes", "groups"},
+    "tier-stack": {"content", "note", "steps"},
 }
 
 SHARED_SLIDE_FIELDS = {
@@ -357,7 +467,18 @@ SHARED_SLIDE_FIELDS = {
 
 
 def _text(value: object) -> str:
-    return "" if value is None or isinstance(value, bool) else str(value).strip()
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _display_text(value: object) -> str:
+    """Normalize display values while keeping ordinary copy strictly string-only."""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value).strip()
+    if isinstance(value, float) and math.isfinite(value):
+        return str(value).strip()
+    return ""
 
 
 def _items(slide: dict, key: str) -> list:
@@ -402,7 +523,7 @@ def _reject_alias_conflicts(value: object, index: int, path: str) -> None:
 
 
 def _max_chars(value: object, index: int, field: str, maximum: int) -> None:
-    length = len(re.sub(r"\s+", "", _text(value)))
+    length = len(re.sub(r"\s+", "", _display_text(value)))
     if length > maximum:
         raise SystemExit(
             f"Outline slide {index} {field} is too long for its fixed component "
@@ -446,6 +567,11 @@ def _require_content(slide: dict, index: int) -> None:
         raise SystemExit(f"Outline slide {index} template {slide['template']!r} requires content/note text.")
 
 
+def _require_bounded_content(slide: dict, index: int, maximum: int) -> None:
+    _require_content(slide, index)
+    _max_chars(slide.get("content") or slide.get("note"), index, "content", maximum)
+
+
 def _reject_fields(slide: dict, index: int, fields: tuple[str, ...], reason: str) -> None:
     hidden = [field for field in fields if slide.get(field) is not None]
     if hidden:
@@ -477,7 +603,7 @@ def _require_metrics(slide: dict, index: int, count: int) -> list:
     if len(metrics) != count:
         raise SystemExit(f"Outline slide {index} template {slide['template']!r} requires exactly {count} metrics.")
     for metric_index, metric in enumerate(metrics, start=1):
-        if not isinstance(metric, dict) or not _text(metric.get("label")) or not _text(metric.get("value")):
+        if not isinstance(metric, dict) or not _text(metric.get("label")) or not _display_text(metric.get("value")):
             raise SystemExit(f"Outline slide {index} metrics[{metric_index}] requires label and value.")
         hidden = sorted(set(metric) - {"label", "value"})
         if hidden:
@@ -500,14 +626,15 @@ def _real_number(value: object, index: int, path: str) -> float:
 
 def _validate_data_story(slide: dict, index: int) -> None:
     variant = str(slide.get("variant") or "")
+    budgets = text_budgets_for("data-story", variant)
     data = slide.get("data")
     if not isinstance(data, dict):
         raise SystemExit(f"Outline slide {index} data-story/{variant} requires a data object.")
     _require_content(slide, index)
     if not _text(slide.get("source")):
         raise SystemExit(f"Outline slide {index} data-story/{variant} requires non-empty source text.")
-    _max_chars(slide.get("content") or slide.get("note"), index, "content", 72)
-    _max_chars(slide.get("source"), index, "source", 96)
+    _max_chars(slide.get("content") or slide.get("note"), index, "content", budgets["content"])
+    _max_chars(slide.get("source"), index, "source", budgets["source"])
 
     precision = data.get("precision")
     if precision is not None and (isinstance(precision, bool) or not isinstance(precision, int) or not 0 <= precision <= 6):
@@ -523,12 +650,12 @@ def _validate_data_story(slide: dict, index: int) -> None:
         for field in ("x_label", "y_label"):
             if not _text(data.get(field)):
                 raise SystemExit(f"Outline slide {index} data-story/relationship requires data.{field}.")
-            _max_chars(data.get(field), index, f"data.{field}", 18)
+            _max_chars(data.get(field), index, f"data.{field}", budgets[f"data.{field}"])
         for field in ("x_unit", "y_unit"):
             if field in data:
                 if not _text(data.get(field)):
                     raise SystemExit(f"Outline slide {index} data.{field} must be non-empty when provided.")
-                _max_chars(data.get(field), index, f"data.{field}", 10)
+                _max_chars(data.get(field), index, f"data.{field}", budgets[f"data.{field}"])
         items = data.get("items")
         if not isinstance(items, list) or not 3 <= len(items) <= 12:
             raise SystemExit(f"Outline slide {index} data-story/relationship requires 3–12 data.items.")
@@ -543,7 +670,7 @@ def _validate_data_story(slide: dict, index: int) -> None:
             label = _text(item.get("label"))
             if not label:
                 raise SystemExit(f"Outline slide {index} data.items[{item_index}].label must be non-empty.")
-            _max_chars(label, index, f"data.items[{item_index}].label", 12)
+            _max_chars(label, index, f"data.items[{item_index}].label", budgets["data.items[].label"])
             labels.append(label.casefold())
             x_values.append(_real_number(item.get("x"), index, f"data.items[{item_index}].x"))
             y_values.append(_real_number(item.get("y"), index, f"data.items[{item_index}].y"))
@@ -564,7 +691,7 @@ def _validate_data_story(slide: dict, index: int) -> None:
     if "unit" in data:
         if not _text(data.get("unit")):
             raise SystemExit(f"Outline slide {index} data.unit must be non-empty when provided.")
-        _max_chars(data.get("unit"), index, "data.unit", 10)
+        _max_chars(data.get("unit"), index, "data.unit", budgets["data.unit"])
     ranges = {
         "category-comparison": (2, 6),
         "trend": (3, 8),
@@ -578,7 +705,7 @@ def _validate_data_story(slide: dict, index: int) -> None:
         )
     labels: list[str] = []
     values: list[float] = []
-    label_limit = {"category-comparison": 8, "trend": 6, "composition": 12}[variant]
+    label_limit = budgets["data.items[].label"]
     for item_index, item in enumerate(items, start=1):
         if not isinstance(item, dict) or set(item) != {"label", "value"}:
             raise SystemExit(
@@ -714,6 +841,18 @@ def validate_slide_content(slide: dict, index: int) -> None:
 
     if template == "data-story":
         _validate_data_story(slide, index)
+    elif template == "cycle":
+        budgets = text_budgets_for("cycle", variant)
+        _require_bounded_content(slide, index, budgets["content"])
+        for field in ("statement", "statement_body"):
+            if not _text(slide.get(field)):
+                raise SystemExit(f"Outline slide {index} template 'cycle' requires {field}.")
+            _max_chars(slide.get(field), index, field, budgets[field])
+        steps = _require_cards(slide, index, "steps", 4)
+        _reject_nested_fields(steps, index, "steps", {"label", "title", "body"}, "cycle")
+        for step_index, step in enumerate(steps, start=1):
+            _max_chars(_label(step), index, f"steps[{step_index}].title", budgets["steps[].title"])
+            _max_chars(_body(step), index, f"steps[{step_index}].body", budgets["steps[].body"])
     elif template == "editorial-feature":
         _require_content(slide, index)
         if not image:
@@ -733,11 +872,12 @@ def validate_slide_content(slide: dict, index: int) -> None:
         else:
             _reject_fields(slide, index, ("badge", "media_note", "secondary_image", "secondary_image_alt"), "collage-only fields")
     elif template == "catalog-board":
+        budgets = text_budgets_for("catalog-board", variant)
         _reject_fields(slide, index, ("content", "note"), "the catalog header is composed from metrics")
         metrics = _require_metrics(slide, index, 3)
         for metric_index, metric in enumerate(metrics, start=1):
-            _max_chars(metric.get("value"), index, f"metrics[{metric_index}].value", 10)
-            _max_chars(metric.get("label"), index, f"metrics[{metric_index}].label", 14)
+            _max_chars(metric.get("value"), index, f"metrics[{metric_index}].value", budgets["metrics[].value"])
+            _max_chars(metric.get("label"), index, f"metrics[{metric_index}].label", budgets["metrics[].label"])
         groups = _items(slide, "groups")
         if len(groups) != 4:
             raise SystemExit(f"Outline slide {index} template 'catalog-board' requires exactly 4 groups.")
@@ -745,16 +885,16 @@ def validate_slide_content(slide: dict, index: int) -> None:
             items = group.get("items") if isinstance(group, dict) else None
             if not _label(group) or not isinstance(group, dict) or not _text(group.get("meta")) or not isinstance(items, list) or len(items) != 3:
                 raise SystemExit(f"Outline slide {index} groups[{group_index}] requires title, meta, and exactly 3 items.")
-            _max_chars(_label(group), index, f"groups[{group_index}].title", 12)
-            _max_chars(group.get("meta") if isinstance(group, dict) else "", index, f"groups[{group_index}].meta", 18)
+            _max_chars(_label(group), index, f"groups[{group_index}].title", budgets["groups[].title"])
+            _max_chars(group.get("meta") if isinstance(group, dict) else "", index, f"groups[{group_index}].meta", budgets["groups[].meta"])
             for item_index, item in enumerate(items, start=1):
                 if not isinstance(item, dict) or not _label(item) or not _body(item):
                     raise SystemExit(f"Outline slide {index} groups[{group_index}].items[{item_index}] requires title and body.")
                 hidden = sorted(set(item) - {"label", "title", "body"})
                 if hidden:
                     raise SystemExit(f"Outline slide {index} groups[{group_index}].items[{item_index}] field(s) {', '.join(hidden)} are not rendered.")
-                _max_chars(_label(item), index, f"groups[{group_index}].items[{item_index}].title", 14)
-                _max_chars(_body(item), index, f"groups[{group_index}].items[{item_index}].body", 24)
+                _max_chars(_label(item), index, f"groups[{group_index}].items[{item_index}].title", budgets["groups[].items[].title"])
+                _max_chars(_body(item), index, f"groups[{group_index}].items[{item_index}].body", budgets["groups[].items[].body"])
         _reject_nested_fields(groups, index, "groups", {"label", "title", "meta", "items"}, "catalog-board")
     elif template == "case-study-board":
         _reject_fields(slide, index, ("meta", "page_note"), "this component has no footer metadata slots")
@@ -780,6 +920,7 @@ def validate_slide_content(slide: dict, index: int) -> None:
             if any(not isinstance(value, (int, float)) or value < 0 for value in values):
                 raise SystemExit(f"Outline slide {index} chart.values must contain non-negative numbers.")
     elif template == "annotated-showcase":
+        budgets = text_budgets_for("annotated-showcase", variant)
         _reject_fields(slide, index, ("meta", "page_note"), "this component has no footer metadata slots")
         _require_content(slide, index)
         if not image:
@@ -787,8 +928,8 @@ def validate_slide_content(slide: dict, index: int) -> None:
         annotations = _require_cards(slide, index, "annotations", 3)
         _reject_nested_fields(annotations, index, "annotations", {"label", "title", "body"}, "annotated-showcase")
         for annotation_index, annotation in enumerate(annotations, start=1):
-            _max_chars(_label(annotation), index, f"annotations[{annotation_index}].title", 16)
-            _max_chars(_body(annotation), index, f"annotations[{annotation_index}].body", 48)
+            _max_chars(_label(annotation), index, f"annotations[{annotation_index}].title", budgets["annotations[].title"])
+            _max_chars(_body(annotation), index, f"annotations[{annotation_index}].body", budgets["annotations[].body"])
     elif template == "narrative-bento":
         _reject_fields(slide, index, ("meta", "page_note"), "this component has no footer metadata slots")
         _require_content(slide, index)
@@ -935,22 +1076,57 @@ def validate_slide_content(slide: dict, index: int) -> None:
         sides = _items(slide, "sides")
         _reject_nested_fields(sides, index, "sides", {"label", "title", "points"}, "comparison-list")
         _reject_point_fields(sides, index, {"body"}, "comparison-list")
+    elif template == "quadrant":
+        budgets = text_budgets_for("quadrant", variant)
+        _require_bounded_content(slide, index, budgets["content"])
+        axes = slide.get("axes")
+        if not isinstance(axes, dict) or set(axes) != {"x", "y"}:
+            raise SystemExit(f"Outline slide {index} template 'quadrant' requires axes with exactly x and y.")
+        for axis in ("x", "y"):
+            if not _text(axes.get(axis)):
+                raise SystemExit(f"Outline slide {index} axes.{axis} must be non-empty.")
+            _max_chars(axes.get(axis), index, f"axes.{axis}", budgets[f"axes.{axis}"])
+        groups = _items(slide, "groups")
+        if len(groups) != 4:
+            raise SystemExit(f"Outline slide {index} template 'quadrant' requires exactly 4 groups in TL, TR, BL, BR order.")
+        emphasis_count = 0
+        for group_index, group in enumerate(groups, start=1):
+            if not isinstance(group, dict) or not _label(group) or not _text(group.get("meta")):
+                raise SystemExit(f"Outline slide {index} groups[{group_index}] requires title and meta.")
+            items = group.get("items")
+            if not isinstance(items, list) or not 1 <= len(items) <= 3 or any(not isinstance(item, str) or not item.strip() for item in items):
+                raise SystemExit(f"Outline slide {index} groups[{group_index}].items requires 1–3 non-empty strings.")
+            if "emphasis" in group and not isinstance(group.get("emphasis"), bool):
+                raise SystemExit(f"Outline slide {index} groups[{group_index}].emphasis must be boolean when provided.")
+            emphasis_count += group.get("emphasis") is True
+            _max_chars(_label(group), index, f"groups[{group_index}].title", budgets["groups[].title"])
+            _max_chars(group.get("meta"), index, f"groups[{group_index}].meta", budgets["groups[].meta"])
+            for item_index, item in enumerate(items, start=1):
+                _max_chars(item, index, f"groups[{group_index}].items[{item_index}]", budgets["groups[].items[]"])
+        _reject_nested_fields(groups, index, "groups", {"label", "title", "meta", "items", "emphasis"}, "quadrant")
+        if emphasis_count != 1:
+            raise SystemExit(f"Outline slide {index} template 'quadrant' requires exactly one groups[].emphasis=true; found {emphasis_count}.")
     elif template == "tabs":
         sides = _items(slide, "sides")
         if len(sides) != 2 or any(not _label(side) or not _body(side) for side in sides):
             raise SystemExit(f"Outline slide {index} template 'tabs' requires 2 sides with title and body.")
         _reject_nested_fields(sides, index, "sides", {"label", "title", "body"}, "tabs")
     elif template == "metric":
+        budgets = text_budgets_for("metric", variant)
         _require_content(slide, index)
         metric = slide.get("metric")
-        if not isinstance(metric, dict) or any(not _text(metric.get(key)) for key in ("value", "unit", "caption")):
+        if (
+            not isinstance(metric, dict)
+            or not _display_text(metric.get("value"))
+            or any(not _text(metric.get(key)) for key in ("unit", "caption"))
+        ):
             raise SystemExit(f"Outline slide {index} template 'metric' requires metric.value, metric.unit and metric.caption.")
         hidden = sorted(set(metric) - {"value", "unit", "caption"})
         if hidden:
             raise SystemExit(f"Outline slide {index} metric field(s) {', '.join(hidden)} are not rendered.")
-        _max_chars(metric.get("value"), index, "metric.value", 12)
-        _max_chars(metric.get("unit"), index, "metric.unit", 8)
-        _max_chars(metric.get("caption"), index, "metric.caption", 36)
+        _max_chars(metric.get("value"), index, "metric.value", budgets["metric.value"])
+        _max_chars(metric.get("unit"), index, "metric.unit", budgets["metric.unit"])
+        _max_chars(metric.get("caption"), index, "metric.caption", budgets["metric.caption"])
     elif template == "converge":
         groups = _items(slide, "groups")
         if len(groups) != 2 or not _text(slide.get("outcome")):
@@ -960,6 +1136,14 @@ def validate_slide_content(slide: dict, index: int) -> None:
             values = group.get("items") if isinstance(group, dict) else None
             if not _label(group) or not isinstance(values, list) or len(values) != 2 or any(not isinstance(v, str) or not v.strip() for v in values):
                 raise SystemExit(f"Outline slide {index} groups[{group_index}] requires title and exactly 2 items.")
+    elif template == "tier-stack":
+        budgets = text_budgets_for("tier-stack", variant)
+        _require_bounded_content(slide, index, budgets["content"])
+        steps = _require_cards(slide, index, "steps", 4)
+        _reject_nested_fields(steps, index, "steps", {"label", "title", "body"}, f"tier-stack/{variant}")
+        for step_index, step in enumerate(steps, start=1):
+            _max_chars(_label(step), index, f"steps[{step_index}].title", budgets["steps[].title"])
+            _max_chars(_body(step), index, f"steps[{step_index}].body", budgets["steps[].body"])
 
 
 def validate_outline(data: dict, templates_dir: Path) -> list[dict]:

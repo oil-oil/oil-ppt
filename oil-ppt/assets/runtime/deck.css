@@ -308,10 +308,23 @@ p, h1, h2, h3, li, [data-fit] { overflow-wrap: anywhere; }
   pointer-events:none;
 }
 .oil-surface[data-motif="ring"]::after {
-  right:-126px;top:-126px;width:340px;height:340px;opacity:1;
+  content:none;
+  display:none;
+}
+[data-motif="ring"] > .oil-shape-window {
+  position:absolute !important;
+  inset:0;
+  z-index:0 !important;
+  overflow:hidden;
+  border-radius:inherit;
+  pointer-events:none;
+}
+[data-motif="ring"] > .oil-shape-window::after {
+  content:"";
+  position:absolute;
+  right:-96px;top:-96px;width:340px;height:340px;opacity:1;
   border:40px solid color-mix(in srgb,var(--ink) 5%,transparent);
-  border-radius:170px;
-  clip-path:inset(50% 50% 0 0);
+  border-radius:50%;
 }
 .oil-surface[data-motif="triangle"]::after {
   right:-28px;top:-26px;width:238px;height:214px;opacity:1;

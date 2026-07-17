@@ -76,6 +76,24 @@ def gradient_design_issues(text: str) -> list[str]:
     return issues
 
 
+def clipped_circle_selectors(text: str) -> list[str]:
+    """Find circular pseudo-element decorations whose clip-path destroys the circle."""
+    normalized = text.replace("{{", "{").replace("}}", "}")
+    selectors: list[str] = []
+    for selector, declarations in re.findall(r"([^{}]+)\{([^{}]*)\}", normalized, re.S):
+        clip = re.search(r"\bclip-path\s*:\s*([^;}]+)", declarations, re.I)
+        if not re.search(r"border-radius\s*:\s*50%(?:\s|;|$)", declarations, re.I) or not clip:
+            continue
+        if re.match(r"\s*(?:none\b|circle\s*\()", clip.group(1), re.I):
+            continue
+        selectors.extend(
+            " ".join(branch.split())
+            for branch in selector.split(",")
+            if re.search(r"::(?:before|after)\b", branch, re.I)
+        )
+    return selectors
+
+
 class TemplateTextCollector(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -98,6 +116,10 @@ class TemplateTextCollector(HTMLParser):
 
 def validate_skill() -> None:
     errors: list[str] = []
+    if clipped_circle_selectors('.avatar{border-radius:50%;clip-path:circle(50%)}'):
+        errors.append("circular media must not be mistaken for a clipped decoration")
+    if not clipped_circle_selectors('.decor::after{border-radius:50%;clip-path:inset(50% 0 0)}'):
+        errors.append("destructively clipped circular pseudo-elements must be rejected")
     required_files = (
         "SKILL.md",
         "agents/openai.yaml",
@@ -120,6 +142,7 @@ def validate_skill() -> None:
         "scripts/media_frame.py",
         "scripts/media_plan.py",
         "scripts/render_programmatic_visual.py",
+        "scripts/render_component_catalog.py",
         "scripts/render_outline_review.py",
         "scripts/sync_runtime.py",
         "scripts/text_editor.py",
@@ -198,8 +221,20 @@ def validate_skill() -> None:
             errors.append(f"visible field contract for {template} contains unknown fields: {', '.join(unknown)}")
 
     runtime_css = ROOT / "assets" / "runtime" / "deck.css"
-    for problem in gradient_design_issues(runtime_css.read_text(encoding="utf-8")):
+    runtime_text = runtime_css.read_text(encoding="utf-8")
+    for problem in gradient_design_issues(runtime_text):
         errors.append(f"{runtime_css.name}: {problem}")
+    for selector in clipped_circle_selectors(runtime_text):
+        errors.append(f"{runtime_css.name}: circular decoration may not use clip-path: {selector}")
+
+    catalog_renderer = ROOT / "scripts" / "render_component_catalog.py"
+    catalog_source = catalog_renderer.read_text(encoding="utf-8")
+    for selector in clipped_circle_selectors(catalog_source):
+        errors.append(f"{catalog_renderer.name}: circular decoration may not use clip-path: {selector}")
+    if 'class="primitive ring"><span class="shape-window"' not in catalog_source:
+        errors.append(f"{catalog_renderer.name}: ring primitive requires a dedicated shape window")
+    if ".primitive.ring>.shape-window::after" not in catalog_source:
+        errors.append(f"{catalog_renderer.name}: ring primitive geometry must belong to its shape window")
 
     for path in sorted(TEMPLATES.glob("*.html")):
         text = path.read_text(encoding="utf-8")
@@ -211,6 +246,11 @@ def validate_skill() -> None:
                 errors.append(f"{path.name}: clipping requires one explicit data-clip role (media, browser, or shape): {selector}")
         for problem in gradient_design_issues(text):
             errors.append(f"{path.name}: {problem}")
+        for selector in clipped_circle_selectors(text):
+            errors.append(f"{path.name}: circular decoration may not use clip-path: {selector}")
+        for selector, _ in re.findall(r"([^{}]+)\{([^{}]*)\}", text, re.S):
+            if 'data-motif="ring"' in selector and "::after" in selector and "oil-shape-window" not in selector:
+                errors.append(f"{path.name}: ring geometry may only render inside oil-shape-window")
         if "placeholder" in text.lower():
             errors.append(f"{path.name}: bundled templates must not contain visible placeholder visuals")
         collector = TemplateTextCollector()
@@ -224,6 +264,14 @@ def validate_skill() -> None:
         copy_flow_count = len(re.findall(r"<[^>]+\bdata-copy-flow\b[^>]*>", fragment, re.I))
         copy_title_count = len(re.findall(r"<[^>]+\bdata-copy-title\b[^>]*>", fragment, re.I))
         copy_body_count = len(re.findall(r"<[^>]+\bdata-copy-body\b[^>]*>", fragment, re.I))
+        ring_motif_count = len(re.findall(r'<[^>]+\bdata-motif=["\']ring["\'][^>]*>', fragment, re.I))
+        ring_window_count = sum(
+            1 for tag in re.findall(r"<[^>]+>", fragment, re.I)
+            if re.search(r'\bclass=["\'][^"\']*\boil-shape-window\b[^"\']*["\']', tag, re.I)
+            and re.search(r'\bdata-clip=["\']shape["\']', tag, re.I)
+        )
+        if ring_motif_count != ring_window_count:
+            errors.append(f"{path.name}: every ring motif requires one explicit oil-shape-window with data-clip='shape'")
         if path.stem in ADAPTIVE_COPY_TEMPLATES and copy_flow_count != 1:
             errors.append(f"{path.name}: focal title/body composition must use the adaptive copy flow")
         if copy_flow_count and (copy_title_count != copy_flow_count or copy_body_count != copy_flow_count):
@@ -261,7 +309,7 @@ def validate_skill() -> None:
                 if 'data-decor="__DECOR__"' not in text:
                     errors.append(f"{path.name}: declares decorations but has no rendered data-decor slot")
             quality = COMPONENT_QUALITY.get(path.stem) or {}
-            if quality.get("silhouette") not in {"bleed", "browser", "canvas", "card-grid", "data-story", "diagram", "editorial-list", "focal", "matrix", "metric", "rail", "split", "state-panel", "step-grid", "step-cards", "timeline", "two-panel", "editorial-feature", "catalog", "case-board", "annotated", "bento", "gallery"}:
+            if quality.get("silhouette") not in {"bleed", "browser", "canvas", "card-grid", "cycle", "data-story", "diagram", "editorial-list", "focal", "matrix", "metric", "quadrant", "rail", "split", "state-panel", "step-grid", "step-cards", "tier-stack", "timeline", "two-panel", "editorial-feature", "catalog", "case-board", "annotated", "bento", "gallery"}:
                 errors.append(f"{path.name}: invalid or missing silhouette metadata")
             if quality.get("surface_density") not in {"none", "light", "heavy"}:
                 errors.append(f"{path.name}: invalid or missing surface_density metadata")
@@ -299,6 +347,32 @@ def validate_skill() -> None:
             errors.append("process-rail.html: turn connector must rotate the system arrow downward")
         if 'data-c="56"] .oil-icon' not in text or "rotate(180deg)" not in text:
             errors.append("process-rail.html: return-row connectors must rotate the system arrow left")
+
+    cycle = TEMPLATES / "cycle.html"
+    if cycle.is_file():
+        text = cycle.read_text(encoding="utf-8")
+        if text.count('data-step="') != 4 or "data-visual-edge" not in text:
+            errors.append("cycle.html: requires exactly four stages and a visible program-owned cycle edge")
+        if 'data-slot="statement"' not in text or 'data-slot="statement-body"' not in text:
+            errors.append("cycle.html: requires a center statement and supporting body")
+
+    quadrant = TEMPLATES / "quadrant.html"
+    if quadrant.is_file():
+        text = quadrant.read_text(encoding="utf-8")
+        if text.count('data-quadrant="') != 4:
+            errors.append("quadrant.html: requires exactly four semantic groups")
+        if 'data-slot="axis-x"' not in text or 'data-slot="axis-y"' not in text:
+            errors.append("quadrant.html: requires program-owned x and y axes")
+
+    tier_stack = TEMPLATES / "tier-stack.html"
+    if tier_stack.is_file():
+        text = tier_stack.read_text(encoding="utf-8")
+        if text.count('data-step="') != 4:
+            errors.append("tier-stack.html: requires exactly four tiers")
+        if 'data-variant="__VARIANT__"' not in text:
+            errors.append("tier-stack.html: must render the selected semantic variant")
+        if '[data-variant="pyramid"]' not in text or "clip-path:polygon" not in text:
+            errors.append("tier-stack.html: requires distinct funnel and pyramid silhouettes")
     text_sources = [SKILL, *sorted((ROOT / "scripts").glob("*.py"))]
     for source in text_sources:
         source_text = source.read_text(encoding="utf-8")
@@ -438,7 +512,23 @@ def validate_skill() -> None:
     tone_layer = re.search(r"\.oil-surface\[data-tone\]::before\s*\{([^}]*)\}", runtime_css, re.S)
     if not tone_layer or "content:none" not in re.sub(r"\s+", "", tone_layer.group(1)):
         errors.append("runtime surface tones must stay flat; local motifs own decorative geometry")
+    ring_surface_rule = re.search(r'\.oil-surface\[data-motif="ring"\]::after\s*\{([^}]*)\}', runtime_css, re.S)
+    ring_surface_declarations = re.sub(r"\s+", "", ring_surface_rule.group(1)) if ring_surface_rule else ""
+    if "content:none" not in ring_surface_declarations or "display:none" not in ring_surface_declarations:
+        errors.append("runtime ring motif must disable the unclipped surface pseudo-element")
+    ring_window_rule = re.search(r'\[data-motif="ring"\]\s*>\s*\.oil-shape-window\s*\{([^}]*)\}', runtime_css, re.S)
+    if not ring_window_rule or not re.search(r"overflow\s*:\s*(?:hidden|clip)\b", ring_window_rule.group(1), re.I):
+        errors.append("runtime ring motif requires a clipping oil-shape-window")
+    ring_geometry_rule = re.search(r'\[data-motif="ring"\]\s*>\s*\.oil-shape-window::after\s*\{([^}]*)\}', runtime_css, re.S)
+    if not ring_geometry_rule:
+        errors.append("runtime ring geometry must belong to the oil-shape-window")
+    else:
+        declarations = ring_geometry_rule.group(1)
+        if not re.search(r"\bright\s*:\s*-", declarations) or not re.search(r"\btop\s*:\s*-", declarations):
+            errors.append("runtime ring geometry must cross the top-right shape-window boundary")
     for motif in PROGRAM_OWNED_CAPABILITIES["surface"]["automatic_motifs"]:
+        if motif == "ring":
+            continue
         motif_rule = re.search(
             rf'\.oil-surface\[data-motif="{re.escape(motif)}"\]::after\s*\{{([^}}]*)\}}',
             runtime_css,
@@ -466,7 +556,8 @@ def validate_skill() -> None:
     if "invalidCopyFlows" not in cdp_source or "reason:'copy-gap'" not in cdp_source:
         errors.append("browser validation must reject excessive title-to-body gaps")
     expected_visual_categories = {
-        "content-bounds", "surface-clipping", "decoration", "ring-geometry", "surface-paint", "line-density",
+        "content-bounds", "surface-clipping", "decoration", "relationship-edge", "ring-geometry",
+        "surface-paint", "line-density",
     }
     if set(VISUAL_FINDING_CATEGORIES) != expected_visual_categories:
         errors.append("browser visual maintenance finding categories are incomplete")
@@ -482,6 +573,8 @@ def validate_skill() -> None:
         errors.append("runtime grid system must use twelve minmax(0,1fr) tracks")
     for path in sorted(TEMPLATES.glob("*.html")):
         text = path.read_text(encoding="utf-8")
+        if path.name == "cycle.html" and len(re.findall(r'\bdata-cycle-arrow=["\'][^"\']+["\']', text)) != 4:
+            errors.append("cycle.html: four directional arrows must expose browser-validation hooks")
         if len(re.findall(r'data-bg=["\'][^"\']+["\']', text)) != 1:
             errors.append(f"{path.name}: template must expose exactly one data-bg")
         elif template_background(path.stem) not in ALL_BACKGROUNDS:

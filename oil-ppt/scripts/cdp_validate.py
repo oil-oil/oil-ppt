@@ -18,7 +18,8 @@ from pathlib import Path
 
 
 VISUAL_FINDING_CATEGORIES = frozenset({
-    "content-bounds", "surface-clipping", "decoration", "ring-geometry", "surface-paint", "line-density",
+    "content-bounds", "surface-clipping", "decoration", "relationship-edge", "ring-geometry",
+    "surface-paint", "line-density",
 })
 
 
@@ -298,6 +299,47 @@ def validate_file(
           const insideRect = (box, bounds, tolerance=3) => box.left >= bounds.left - tolerance
             && box.right <= bounds.right + tolerance && box.top >= bounds.top - tolerance
             && box.bottom <= bounds.bottom + tolerance;
+          const rectIntersection = (box, bounds) => {
+            if (!box || !bounds) return null;
+            const left = Math.max(box.left, bounds.left), right = Math.min(box.right, bounds.right);
+            const top = Math.max(box.top, bounds.top), bottom = Math.min(box.bottom, bounds.bottom);
+            if (right <= left || bottom <= top) return null;
+            return {left, right, top, bottom, width:right - left, height:bottom - top};
+          };
+          const polygonArea = points => Math.abs(points.reduce((sum, point, index) => {
+            const next = points[(index + 1) % points.length];
+            return sum + point.x * next.y - point.y * next.x;
+          }, 0)) / 2;
+          const clipPolygon = (points, axis, boundary, keepGreater) => {
+            const output = [];
+            points.forEach((point, index) => {
+              const next = points[(index + 1) % points.length];
+              const pointInside = keepGreater ? point[axis] >= boundary : point[axis] <= boundary;
+              const nextInside = keepGreater ? next[axis] >= boundary : next[axis] <= boundary;
+              if (pointInside) output.push(point);
+              if (pointInside !== nextInside) {
+                const ratio = (boundary - point[axis]) / (next[axis] - point[axis]);
+                output.push({
+                  x:point.x + ratio * (next.x - point.x),
+                  y:point.y + ratio * (next.y - point.y),
+                });
+              }
+            });
+            return output;
+          };
+          const polygonRectOverlapRatio = (points, bounds) => {
+            const area = polygonArea(points);
+            if (!area) return 0;
+            let clipped = points;
+            for (const [axis, boundary, keepGreater] of [
+              ['x', bounds.left, true], ['x', bounds.right, false],
+              ['y', bounds.top, true], ['y', bounds.bottom, false],
+            ]) {
+              clipped = clipPolygon(clipped, axis, boundary, keepGreater);
+              if (!clipped.length) return 0;
+            }
+            return polygonArea(clipped) / area;
+          };
           const invalidContentBounds = all('.slide-safe [data-fit], .slide-safe [data-sentence], .slide-safe [data-slot], .slide-safe [data-copy-title], .slide-safe [data-copy-body], .slide-safe img, .slide-safe video, .slide-safe canvas, .slide-safe svg, .slide-safe svg text').flatMap(node => {
             if (!visible(node) || node.closest('[data-bleed]')) return [];
             const owner = node.parentElement?.closest('[data-bound], [data-layout], .oil-surface, .oil-media, .oil-browser');
@@ -427,29 +469,104 @@ def validate_file(
               decoration:surface.dataset.motif || 'unknown'
             }] : [];
           });
-          const invalidRingGeometry = all('.oil-surface[data-motif="ring"]').flatMap(surface => {
-            if (!visible(surface) || styleOf(surface).getPropertyValue('--decor-opacity').trim() === '0') return [];
-            const pseudo = styleOf(surface, '::after');
-            if (!pseudoVisible(pseudo)) return [];
-            const box = pseudoRect(surface, pseudo);
+          const invalidRelationshipEdges = all('[data-cycle-arrow]').flatMap(arrow => {
+            if (!visible(arrow)) return [];
+            const relationship = arrow.closest('.cycle, [data-relationship-visual]');
+            const matrix = arrow.getScreenCTM?.();
+            const points = matrix && arrow.points ? Array.from(
+              {length:arrow.points.numberOfItems}, (_, index) => {
+                const point = arrow.points.getItem(index);
+                return new DOMPoint(point.x, point.y).matrixTransform(matrix);
+              }
+            ) : [];
+            let overlapRatio = 0;
+            const blocker = points.length >= 3 && relationship
+              && [...relationship.querySelectorAll('[data-visual-node]')].find(node => {
+              if (!visible(node)) return false;
+              overlapRatio = polygonRectOverlapRatio(points, node.getBoundingClientRect());
+              return overlapRatio >= .95;
+            });
+            return blocker ? [{
+              slide:arrow.closest('.oil-slide')?.dataset.slideId || 'unknown',
+              reason:'relationship-arrow-occluded', edge:arrow.dataset.cycleArrow || 'unknown',
+              blocker:blocker.className || blocker.tagName.toLowerCase(),
+              overlapRatio:Number(overlapRatio.toFixed(3))
+            }] : [];
+          });
+          const invalidRingGeometry = all('[data-motif="ring"]').flatMap(motif => {
+            if (!visible(motif)) return [];
+            const slide = motif.closest('.oil-slide');
+            const node = motif.className || motif.tagName.toLowerCase();
+            const windows = [...motif.children].filter(child => child.classList?.contains('oil-shape-window'));
+            if (windows.length !== 1) return [{
+              slide:slide?.dataset.slideId || 'unknown', reason:'ring-window-missing', node
+            }];
+            const shapeWindow = windows[0];
+            const windowStyle = styleOf(shapeWindow);
+            const clipsShape = ['hidden', 'clip'].includes(windowStyle.overflowX)
+              && ['hidden', 'clip'].includes(windowStyle.overflowY);
+            if (!clipsShape) return [{
+              slide:slide?.dataset.slideId || 'unknown', reason:'ring-window-not-clipping', node
+            }];
+            const pseudo = styleOf(shapeWindow, '::after');
+            const box = pseudoVisible(pseudo) ? pseudoRect(shapeWindow, pseudo) : null;
             const borders = [pseudo.borderTopWidth, pseudo.borderRightWidth, pseudo.borderBottomWidth, pseudo.borderLeftWidth].map(px);
             const uniformBorder = borders.every(value => value !== null && value >= 3)
               && Math.max(...borders) - Math.min(...borders) <= 1;
-            const radius = px(pseudo.borderTopLeftRadius);
-            const clippedQuadrant = /^inset\\(/.test(pseudo.clipPath)
-              && (pseudo.clipPath.match(/(?:[3-9]\\d|100)(?:\\.\\d+)?%/g) || []).length >= 2;
-            const borderCircle = box && Math.abs(box.width - box.height) <= Math.max(2, box.width * .04)
-              && uniformBorder && radius !== null && radius >= Math.min(box.width, box.height) * .45;
+            const radiusValue = pseudo.borderTopLeftRadius;
+            const radius = box && radiusValue.endsWith('%')
+              ? Math.min(box.width, box.height) * Number.parseFloat(radiusValue) / 100
+              : px(radiusValue);
+            const clipped = pseudo.clipPath && pseudo.clipPath !== 'none';
+            const borderCircle = box && uniformBorder
+              && radius !== null && radius >= Math.min(box.width, box.height) * .45;
             const inner = px(pseudo.getPropertyValue('--oil-ring-inner'));
             const outer = px(pseudo.getPropertyValue('--oil-ring-outer'));
-            const radialCircle = box && Math.abs(box.width - box.height) <= Math.max(2, box.width * .04)
-              && pseudo.backgroundImage.includes('radial-gradient')
+            const radialCircle = box && pseudo.backgroundImage.includes('radial-gradient')
               && inner !== null && outer !== null && outer - inner >= 6;
-            if (clippedQuadrant && (borderCircle || radialCircle)) return [];
-            return [{
-              slide:surface.closest('.oil-slide')?.dataset.slideId || 'unknown',
-              reason:'ring-is-not-circular', node:surface.className || surface.tagName.toLowerCase()
+            if (clipped) return [{
+              slide:slide?.dataset.slideId || 'unknown', reason:'ring-is-clipped', node
             }];
+            if (!(borderCircle || radialCircle)) return [{
+              slide:slide?.dataset.slideId || 'unknown', reason:'ring-is-not-circular', node
+            }];
+            const bounds = shapeWindow.getBoundingClientRect();
+            const scaleX = shapeWindow.offsetWidth ? bounds.width / shapeWindow.offsetWidth : 1;
+            const scaleY = shapeWindow.offsetHeight ? bounds.height / shapeWindow.offsetHeight : 1;
+            const paintedBox = transformedRect(box, pseudo, scaleX, scaleY);
+            let matrix = new DOMMatrixReadOnly();
+            try {
+              if (pseudo.transform && pseudo.transform !== 'none') matrix = new DOMMatrixReadOnly(pseudo.transform);
+            } catch (_) {
+              matrix = null;
+            }
+            const sourceCircular = box && Math.abs(box.width - box.height)
+              <= Math.max(2, Math.max(box.width, box.height) * .04);
+            const basisX = matrix ? Math.hypot(matrix.a * scaleX, matrix.b * scaleX) : 0;
+            const basisY = matrix ? Math.hypot(matrix.c * scaleY, matrix.d * scaleY) : 0;
+            const basisProduct = basisX * basisY;
+            const basisDot = matrix
+              ? matrix.a * matrix.c * scaleX * scaleY + matrix.b * matrix.d * scaleX * scaleY : Infinity;
+            const isotropicTransform = basisX > 0 && basisY > 0
+              && Math.abs(basisX - basisY) <= Math.max(.01, Math.max(basisX, basisY) * .04)
+              && Math.abs(basisDot) <= Math.max(.0001, basisProduct * .04);
+            const circular = paintedBox && sourceCircular && isotropicTransform;
+            if (!circular) return [{
+              slide:slide?.dataset.slideId || 'unknown', reason:'ring-is-not-circular', node
+            }];
+            const intersection = rectIntersection(paintedBox, bounds);
+            const visibleRatio = intersection && paintedBox.width > 0 && paintedBox.height > 0
+              ? (intersection.width * intersection.height) / (paintedBox.width * paintedBox.height) : 0;
+            const materiallyVisible = intersection
+              && intersection.width >= Math.max(8, paintedBox.width * .04)
+              && intersection.height >= Math.max(8, paintedBox.height * .04)
+              && visibleRatio >= .02;
+            if (!materiallyVisible) return [{
+              slide:slide?.dataset.slideId || 'unknown', reason:'ring-is-not-visible', node
+            }];
+            return paintedBox && insideRect(paintedBox, bounds, 1) ? [{
+              slide:slide?.dataset.slideId || 'unknown', reason:'ring-is-fully-exposed', node
+            }] : [];
           });
           const gradientCount = value => (value.match(/(?:repeating-)?(?:linear|radial|conic)-gradient\\(/g) || []).length;
           const invalidPaint = all('.oil-surface:not(.oil-media)').flatMap(surface => {
@@ -499,7 +616,8 @@ def validate_file(
           const documentsReady = documents.every(doc => doc.readyState === 'complete' && (!doc.fonts || doc.fonts.status === 'loaded'));
           const validated = slideDocuments.length > 0 && slideDocuments.every(doc => doc.documentElement?.dataset.oilValidated === 'ok');
           const blockingVisualCount = invalidContentBounds.length + invalidSurfaceClips.length
-            + invalidDecorations.length + invalidMotifBounds.length + invalidRingGeometry.length;
+            + invalidDecorations.length + invalidMotifBounds.length + invalidRelationshipEdges.length
+            + invalidRingGeometry.length;
           return {
           ready: documentsReady && imagesReady,
           status: brokenImages.length || invalidBleeds.length || invalidLayouts.length || invalidText.length
@@ -519,6 +637,7 @@ def validate_file(
             ...invalidSurfaceClips.map(item => ({...item, category:'surface-clipping'})),
             ...invalidDecorations.map(item => ({...item, category:'decoration'})),
             ...invalidMotifBounds.map(item => ({...item, category:'decoration'})),
+            ...invalidRelationshipEdges.map(item => ({...item, category:'relationship-edge'})),
             ...invalidRingGeometry.map(item => ({...item, category:'ring-geometry'})),
             ...invalidPaint.map(item => ({...item, category:'surface-paint'})),
             ...excessiveHairlines.map(item => ({...item, category:'line-density'}))

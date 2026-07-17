@@ -29,7 +29,7 @@ def has_native_visual(slide: dict) -> bool:
     """Count program-owned data/relationship graphics as visual evidence, not as image media."""
     template = slide.get("template")
     return bool(
-        template in {"data-story", "metric", "converge"}
+        template in {"data-story", "metric", "converge", "cycle", "quadrant", "tier-stack"}
         or (template == "case-study-board" and slide.get("variant") == "chart")
     )
 
@@ -68,12 +68,14 @@ def suggested_background(slide: dict, current: str) -> str:
         "browser": ("soft-spotlight", "grid-fade", "grid-wide"),
         "canvas": ("grid-wide", "grid-fade", "block-field"),
         "diagram": ("grid-wide", "grid-fade", "block-field"),
+        "cycle": ("grid-wide", "grid-fade", "soft-spotlight"),
         "rail": ("grid-wide", "grid-fade", "block-field"),
         "timeline": ("grid-wide", "grid-fade", "block-field"),
         "step-grid": ("grid-wide", "grid-fade", "block-field"),
         "card-grid": ("grid-fade", "block-field", "soft-spotlight"),
         "two-panel": ("grid-fade", "block-field", "soft-spotlight"),
         "matrix": ("grid-fade", "grid-wide", "block-field"),
+        "quadrant": ("grid-fade", "grid-wide", "soft-spotlight"),
         "metric": ("soft-spotlight", "block-field", "grid-fade"),
         "editorial-list": ("block-field", "grid-fade", "soft-spotlight"),
         "editorial-feature": ("grid-fade", "soft-spotlight", "grid-wide"),
@@ -82,6 +84,7 @@ def suggested_background(slide: dict, current: str) -> str:
         "annotated": ("grid-fade", "soft-spotlight", "grid-wide"),
         "bento": ("grid-fade", "soft-spotlight", "grid-wide"),
         "gallery": ("grid-fade", "grid-wide", "soft-spotlight"),
+        "tier-stack": ("grid-wide", "grid-fade", "soft-spotlight"),
     }.get(silhouette, ("grid-fade", "block-field", "soft-spotlight"))
     current_class = BACKGROUND_CLASSES[current]
     return next(

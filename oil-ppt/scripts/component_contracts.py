@@ -19,6 +19,7 @@ COMPONENT_CONTRACTS = {
         "decorations": ("dots",),
     },
     "converge": {"use_when": "多个输入汇聚为一个结果或判断。", "variants": ("default",), "decorations": ("none",)},
+    "cycle": {"use_when": "四个有明确顺序的阶段彼此供给，最后一个阶段会回到第一个阶段并形成持续循环。", "variants": ("default",), "decorations": ("none",)},
     "cover": {
         "use_when": "演示开场。statement=大字焦点；media=标题+铺满版位的真实主视觉，不使用通用卡片外框。",
         "variants": ("statement", "media"),
@@ -50,6 +51,7 @@ COMPONENT_CONTRACTS = {
         "variants": ("default",),
         "decorations": ("none",),
     },
+    "quadrant": {"use_when": "四组对象需要同时放进两个概念维度中定位，并且其中一个象限需要明确强调。", "variants": ("default",), "decorations": ("none",)},
     "recap": {
         "use_when": "一句收束判断由三条原则支撑。",
         "variants": ("thesis-left", "thesis-right"),
@@ -58,6 +60,7 @@ COMPONENT_CONTRACTS = {
     "section": {"use_when": "内容确实进入一个新的章节。", "variants": ("default",), "decorations": ("none",)},
     "split-visual": {"use_when": "一张真实图片、插画或材料组合与正文并置；按信息权重选择均衡、视觉主导或文字主导。", "variants": ("media-dominant", "balanced", "copy-dominant"), "decorations": ("none",)},
     "tabs": {"use_when": "同一对象的多个状态或视图需要切换式对照。", "variants": ("default",), "decorations": ("dots",)},
+    "tier-stack": {"use_when": "四层内容存在稳定的筛选收窄或基础支撑关系；漏斗表达聚焦，金字塔表达递进。", "variants": ("funnel", "pyramid"), "decorations": ("none",)},
     "three-steps": {
         "use_when": "三个连续动作构成可读完的短流程。",
         "variants": ("linear", "focus-middle"),
@@ -83,6 +86,7 @@ COMPONENT_QUALITY = {
     "comparison": {"silhouette": "two-panel", "surface_density": "heavy", "frame_owner": "none"},
     "comparison-list": {"silhouette": "matrix", "surface_density": "light", "frame_owner": "none"},
     "converge": {"silhouette": "diagram", "surface_density": "light", "frame_owner": "none"},
+    "cycle": {"silhouette": "cycle", "surface_density": "light", "frame_owner": "none"},
     "cover": {"silhouette": "focal", "surface_density": "none", "frame_owner": "none"},
     "data-story": {"silhouette": "data-story", "surface_density": "light", "frame_owner": "none"},
     "diagonal-split": {"silhouette": "bleed", "surface_density": "none", "frame_owner": "media"},
@@ -93,10 +97,12 @@ COMPONENT_QUALITY = {
     "photo-split": {"silhouette": "split", "surface_density": "none", "frame_owner": "media"},
     "process-rail": {"silhouette": "rail", "surface_density": "none", "frame_owner": "none"},
     "quote": {"silhouette": "focal", "surface_density": "none", "frame_owner": "none"},
+    "quadrant": {"silhouette": "quadrant", "surface_density": "heavy", "frame_owner": "none"},
     "recap": {"silhouette": "editorial-list", "surface_density": "heavy", "frame_owner": "none"},
     "section": {"silhouette": "focal", "surface_density": "none", "frame_owner": "none"},
     "split-visual": {"silhouette": "split", "surface_density": "light", "frame_owner": "none"},
     "tabs": {"silhouette": "state-panel", "surface_density": "heavy", "frame_owner": "none"},
+    "tier-stack": {"silhouette": "tier-stack", "surface_density": "heavy", "frame_owner": "none"},
     "three-steps": {"silhouette": "step-grid", "surface_density": "light", "frame_owner": "none"},
     "timeline": {"silhouette": "timeline", "surface_density": "none", "frame_owner": "none"},
     "editorial-feature": {"silhouette": "editorial-feature", "surface_density": "light", "frame_owner": "template"},
@@ -160,9 +166,15 @@ VARIANT_QUALITY = {
         "focus-left": {"layout_signature": "comparison-matrix", "visual_energy": "structured"},
         "balanced": {"layout_signature": "comparison-matrix", "visual_energy": "structured"},
     },
+    "cycle": {
+        "default": {"layout_signature": "closed-cycle", "visual_energy": "anchor"},
+    },
     "process-rail": {
         "steps-6": {"layout_signature": "serpentine-rail", "visual_energy": "anchor"},
         "steps-8": {"layout_signature": "serpentine-rail", "visual_energy": "anchor"},
+    },
+    "quadrant": {
+        "default": {"layout_signature": "conceptual-quadrant", "visual_energy": "structured"},
     },
     "photo-gradient": {
         "copy-left": {"layout_signature": "full-photo-overlay", "visual_energy": "anchor"},
@@ -184,6 +196,10 @@ VARIANT_QUALITY = {
     "three-steps": {
         "linear": {"layout_signature": "three-stage-spine", "visual_energy": "structured"},
         "focus-middle": {"layout_signature": "three-stage-spine", "visual_energy": "structured"},
+    },
+    "tier-stack": {
+        "funnel": {"layout_signature": "tier-funnel", "visual_energy": "anchor"},
+        "pyramid": {"layout_signature": "tier-pyramid", "visual_energy": "anchor"},
     },
     "case-study-board": {
         "evidence": {"layout_signature": "case-evidence", "visual_energy": "anchor"},
@@ -209,8 +225,11 @@ CLOSED_STRUCTURE_TEMPLATES = frozenset({
     "three-steps",
     "timeline",
     "converge",
+    "cycle",
     "card-trio",
     "data-story",
+    "quadrant",
+    "tier-stack",
     "editorial-feature",
     "catalog-board",
     "case-study-board",

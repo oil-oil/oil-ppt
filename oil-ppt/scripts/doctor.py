@@ -20,11 +20,11 @@ from fill_slots import set_slot_text_force
 from media_assets import inspect_image, inspect_outline_media, verify_outline_media
 from media_frame import frame_media
 from media_plan import build_media_plan
-from outline_schema import validate_outline
+from outline_schema import text_budgets_for, validate_outline
 from render_programmatic_visual import render_html_visual
 from render_outline_review import EDITOR_FRAME_CSS, PREVIEW_SHELL_CSS, RUNTIME_CSS, RUNTIME_JS, prepared_slide, render, theme_css
 from text_editor import EditorSession
-from validate_skill import gradient_design_issues, validate_skill
+from validate_skill import clipped_circle_selectors, gradient_design_issues, validate_skill
 import oil_ppt as workflow
 
 
@@ -77,6 +77,9 @@ def smoke_slides() -> list[dict]:
         {"id": "photo-split", "title": "照片与解释并重", "template": "photo-split", "variant": "media-right", "decor": "none", "content": "两侧信息权重保持接近", "image": image, "media_frame": "content"},
         {"id": "metric", "title": "一个数字是页面焦点", "template": "metric", "variant": "default", "decor": "dots", "content": "用一句话解释数字的意义", "metric": {"value": "86", "unit": "%", "caption": "样本范围与时间口径保持一致"}},
         {"id": "data-story", "title": "真实数据回答一个关系问题", "template": "data-story", "variant": "category-comparison", "decor": "none", "content": "直接比较各渠道带来的有效线索", "source": "示例数据 · 2026 Q2", "data": {"unit": "条", "items": [{"label": "自然搜索", "value": 42}, {"label": "内容活动", "value": 68}, {"label": "客户转介", "value": 31}]}},
+        {"id": "cycle", "title": "四个动作形成持续循环", "template": "cycle", "variant": "default", "decor": "none", "content": "每个动作都为下一阶段提供输入，末段重新供给起点", "statement": "持续复利", "statement_body": "让每一次完成都成为下一轮的起点", "steps": [{"title": "捕捉信号", "body": "从真实行为里发现问题"}, {"title": "形成方案", "body": "把需要转成可验证假设"}, {"title": "交付价值", "body": "让结果真正抵达使用者"}, {"title": "积累反馈", "body": "沉淀下一轮判断依据"}]},
+        {"id": "quadrant", "title": "两个维度共同决定优先级", "template": "quadrant", "variant": "default", "decor": "none", "content": "同时判断影响范围与实施确定性，再决定不同事项的行动方式", "axes": {"x": "影响范围", "y": "实施确定性"}, "groups": [{"title": "长期布局", "meta": "价值较高但关键条件仍需补足", "items": ["技术雷达", "组织能力"]}, {"title": "优先推进", "meta": "价值与确定性同时成立", "items": ["新手引导", "检索路径"], "emphasis": True}, {"title": "保留观察", "meta": "暂时没有足够证据", "items": ["自定义动效"]}, {"title": "快速试验", "meta": "成本可控并能换取确定性", "items": ["文案缩短", "页内提示"]}]},
+        {"id": "tier-stack", "title": "四层内容逐步形成结果", "template": "tier-stack", "variant": "funnel", "decor": "none", "content": "同一组层级既可以表达筛选收窄，也可以表达基础支撑", "steps": [{"title": "收集", "body": "把事实、反馈和异常信号放到同一张桌面"}, {"title": "归并", "body": "去掉重复噪音并形成可讨论主题"}, {"title": "判断", "body": "用统一标准比较价值、风险与时机"}, {"title": "承诺", "body": "把关键判断转成有期限的行动"}]},
         {"id": "recap", "title": "三条原则支撑一个结论", "template": "recap", "variant": "thesis-left", "decor": "dots", "content": "最后回到一个清楚的判断", "cards": cards},
         {"id": "tabs", "title": "同一对象的两个视角", "template": "tabs", "variant": "default", "decor": "dots", "sides": [{"title": "视角 A", "body": "从使用者任务理解界面"}, {"title": "视角 B", "body": "从系统实现理解界面"}]},
         {"id": "converge", "title": "两组输入汇聚为结果", "template": "converge", "variant": "default", "decor": "none", "groups": [{"title": "内容输入", "items": ["明确目标", "整理材料"]}, {"title": "设计输入", "items": ["选择组件", "准备视觉"]}], "outcome": "共同形成可交付的演示"},
@@ -98,6 +101,35 @@ TEMPLATE_SEEDS = (
 )
 
 
+def set_text_budget_path(node: object, path: str, value: str) -> None:
+    def replace(current: object, segments: list[str]) -> None:
+        segment, *rest = segments
+        repeated = segment.endswith("[]")
+        key = segment[:-2] if repeated else segment
+        if not isinstance(current, dict) or key not in current:
+            raise RuntimeError(f"text budget path is not rendered by its smoke slide: {path}")
+        target = current[key]
+        if repeated:
+            if not isinstance(target, list):
+                raise RuntimeError(f"text budget path does not resolve to a list: {path}")
+            if rest:
+                for item in target:
+                    replace(item, rest)
+            else:
+                current[key] = [value for _ in target]
+        elif rest:
+            replace(target, rest)
+        else:
+            current[key] = value
+
+    replace(node, path.split("."))
+
+
+def apply_text_budget_boundary(slide: dict) -> None:
+    for path, maximum in text_budgets_for(slide["template"], slide["variant"]).items():
+        set_text_budget_path(slide, path, "界" * maximum)
+
+
 def render_component_matrix(root: Path, browser: str) -> int:
     base = {
         "title": "oil-ppt component matrix",
@@ -106,6 +138,7 @@ def render_component_matrix(root: Path, browser: str) -> int:
         "shape": "crisp",
         "click_navigation": False,
     }
+    templates = Path(__file__).resolve().parent.parent / "assets" / "templates"
     seeds = {slide["template"]: slide for slide in smoke_slides()}
     css_parts: list[str] = []
     fragments: list[str] = []
@@ -136,6 +169,9 @@ def render_component_matrix(root: Path, browser: str) -> int:
                     })
                 if template == "process-rail" and variant == "steps-8":
                     slide["steps"] = [{"label": f"动作{i}"} for i in range(1, 9)]
+                if template in {"cycle", "quadrant", "tier-stack"}:
+                    apply_text_budget_boundary(slide)
+                    validate_outline({**base, "media_policy": "text-only", "slides": [slide]}, templates)
                 css, fragment = prepared_slide(slide, index)
                 css_parts.append(css)
                 fragments.append(fragment)
@@ -240,10 +276,19 @@ def verify_visual_quality_guards(root: Path, browser: str) -> None:
         .quality-probe .oil-surface{position:relative;width:420px;height:220px;margin:20px}
         .bad-clip{overflow:hidden!important}
         .bad-anchor::after{top:0!important;right:0!important;bottom:auto!important;left:auto!important}
-        .bad-ring::after{right:0!important;top:0!important;width:220px!important;height:130px!important;
+        .bad-ring>.oil-shape-window::after{right:0!important;top:0!important;width:220px!important;height:130px!important;
           border:24px solid rgba(0,0,0,.08)!important;border-radius:36px!important;background:none!important;clip-path:none!important}
+        .bad-ring-clip>.oil-shape-window::after{right:0!important;top:0!important;clip-path:inset(50% 50% 0 0)!important}
+        .bad-ring-full>.oil-shape-window::after{right:20px!important;top:20px!important;width:120px!important;height:120px!important;border-width:18px!important}
+        .bad-ring-window>.oil-shape-window{overflow:visible!important}
+        .bad-ring-hidden>.oil-shape-window::after{transform:translateX(2000px)!important}
+        .bad-ring-scaled>.oil-shape-window::after{transform:scaleX(1.5)!important}
+        .bad-ring-rotated-scaled>.oil-shape-window::after{transform:rotate(45deg) scaleX(1.5)!important}
         .bad-overflow::after{right:-2100px!important;top:0!important}
         .bad-transform::after{right:0!important;top:0!important;transform:translateX(2100px)!important}
+        .relationship-probe{position:relative;width:420px;height:220px;margin:20px}
+        .relationship-probe svg{position:absolute;inset:0;width:420px;height:220px}
+        .quality-probe .arrow-blocker{position:absolute!important;z-index:2!important;left:50px;top:50px;width:52px!important;height:70px!important;margin:0!important}
         .bad-paint{background-image:linear-gradient(90deg,transparent,rgba(0,0,0,.03)),
           linear-gradient(0deg,transparent,rgba(0,0,0,.03)),linear-gradient(45deg,transparent,rgba(0,0,0,.03))!important}
         .spilling-copy{position:absolute;left:380px;top:80px;width:90px;height:40px}
@@ -255,7 +300,25 @@ def verify_visual_quality_guards(root: Path, browser: str) -> None:
         + "<section class='oil-slide quality-probe' data-slide-id='decor-anchor'><div class='slide-safe'>"
           "<article class='oil-surface bad-anchor' data-tone='neutral' data-decor='dots' data-decor-pos='bottom-left'></article></div></section>"
         + "<section class='oil-slide quality-probe' data-slide-id='ring-shape'><div class='slide-safe'>"
-          "<article class='oil-surface bad-ring' data-tone='neutral' data-motif='ring'></article></div></section>"
+          "<article class='oil-surface bad-ring' data-tone='neutral' data-motif='ring'><span class='oil-shape-window' data-clip='shape'></span></article></div></section>"
+        + "<section class='oil-slide quality-probe' data-slide-id='ring-clip'><div class='slide-safe'>"
+          "<article class='oil-surface bad-ring-clip' data-tone='neutral' data-motif='ring'><span class='oil-shape-window' data-clip='shape'></span></article></div></section>"
+        + "<section class='oil-slide quality-probe' data-slide-id='ring-window-missing'><div class='slide-safe'>"
+          "<article class='oil-surface' data-tone='neutral' data-motif='ring'></article></div></section>"
+        + "<section class='oil-slide quality-probe' data-slide-id='ring-window-open'><div class='slide-safe'>"
+          "<article class='oil-surface bad-ring-window' data-tone='neutral' data-motif='ring'><span class='oil-shape-window' data-clip='shape'></span></article></div></section>"
+        + "<section class='oil-slide quality-probe' data-slide-id='ring-full'><div class='slide-safe'>"
+          "<article class='oil-surface bad-ring-full' data-tone='neutral' data-motif='ring'><span class='oil-shape-window' data-clip='shape'></span></article></div></section>"
+        + "<section class='oil-slide quality-probe' data-slide-id='ring-hidden'><div class='slide-safe'>"
+          "<article class='oil-surface bad-ring-hidden' data-tone='neutral' data-motif='ring'><span class='oil-shape-window' data-clip='shape'></span></article></div></section>"
+        + "<section class='oil-slide quality-probe' data-slide-id='ring-scaled'><div class='slide-safe'>"
+          "<article class='oil-surface bad-ring-scaled' data-tone='neutral' data-motif='ring'><span class='oil-shape-window' data-clip='shape'></span></article></div></section>"
+        + "<section class='oil-slide quality-probe' data-slide-id='ring-rotated-scaled'><div class='slide-safe'>"
+          "<article class='oil-surface bad-ring-rotated-scaled' data-tone='neutral' data-motif='ring'><span class='oil-shape-window' data-clip='shape'></span></article></div></section>"
+        + "<section class='oil-slide quality-probe' data-slide-id='relationship-edge'><div class='slide-safe'>"
+          "<div class='relationship-probe' data-layout data-relationship-visual><svg viewBox='0 0 420 220' data-visual-edge>"
+          "<polygon data-cycle-arrow='probe' points='60,60 110,80 60,100'></polygon></svg>"
+          "<article class='oil-surface arrow-blocker' data-tone='neutral' data-visual-node></article></div></div></section>"
         + "<section class='oil-slide quality-probe' data-slide-id='motif-overflow'><div class='slide-safe'>"
           "<article class='oil-surface bad-overflow' data-tone='neutral' data-motif='triangle'></article></div></section>"
         + "<section class='oil-slide quality-probe' data-slide-id='motif-transform-overflow'><div class='slide-safe'>"
@@ -276,7 +339,9 @@ def verify_visual_quality_guards(root: Path, browser: str) -> None:
     reasons = {item.get("reason") for item in findings}
     categories = {item.get("category") for item in findings}
     expected = {
-        "surface-clips-content", "decoration-anchor-mismatch", "ring-is-not-circular",
+        "surface-clips-content", "decoration-anchor-mismatch", "ring-is-not-circular", "ring-is-clipped",
+        "ring-window-missing", "ring-window-not-clipping", "ring-is-fully-exposed", "ring-is-not-visible",
+        "relationship-arrow-occluded",
         "decoration-outside-slide", "excessive-gradient-layers", "content-outside-semantic-container",
         "excessive-unowned-hairlines",
     }
@@ -287,6 +352,14 @@ def verify_visual_quality_guards(root: Path, browser: str) -> None:
         for item in findings
     ):
         raise RuntimeError(f"transformed decoration overflow bypassed visual validation: {report}")
+    for slide_id, reason in (
+        ("ring-hidden", "ring-is-not-visible"),
+        ("ring-scaled", "ring-is-not-circular"),
+        ("ring-rotated-scaled", "ring-is-not-circular"),
+        ("relationship-edge", "relationship-arrow-occluded"),
+    ):
+        if not any(item.get("slide") == slide_id and item.get("reason") == reason for item in findings):
+            raise RuntimeError(f"{slide_id} bypassed {reason} validation: {report}")
 
     advisory = root / "advisory-visual-quality-probe.html"
     advisory.write_text(
@@ -476,6 +549,10 @@ def verify_regression_guards(entry: Path) -> None:
     dirty_gradient = ".surface{background:linear-gradient(90deg,#ff3355,#33ccff)}"
     if gradient_design_issues(clean_gradient) or not gradient_design_issues(dirty_gradient):
         raise RuntimeError("gradient token guard did not distinguish theme-owned paint from hardcoded chromatic paint")
+    if clipped_circle_selectors('.avatar{border-radius:50%;clip-path:circle(50%)}'):
+        raise RuntimeError("clip-path guard misclassified legitimate circular media")
+    if not clipped_circle_selectors('.decor::after{border-radius:50%;clip-path:inset(50% 0 0)}'):
+        raise RuntimeError("clip-path guard missed a destructively clipped circular decoration")
     runtime_css = (Path(__file__).resolve().parent.parent / "assets" / "runtime" / "deck.css").read_text(encoding="utf-8")
     if gradient_design_issues(runtime_css):
         raise RuntimeError("runtime CSS contains hardcoded chromatic gradient paint")
@@ -522,6 +599,63 @@ def verify_regression_guards(entry: Path) -> None:
         },
         "data-story accepted a trend label wider than its program-owned geometry",
     )
+    budgeted_component_seeds = {
+        slide["template"]: slide
+        for slide in smoke_slides()
+        if slide["template"] in {
+            "annotated-showcase", "catalog-board", "cycle", "data-story", "metric", "quadrant", "tier-stack",
+        }
+    }
+    for template, seed in budgeted_component_seeds.items():
+        for probe_index, (path, maximum) in enumerate(
+            text_budgets_for(template, seed["variant"]).items(), start=1
+        ):
+            invalid = json.loads(json.dumps(seed, ensure_ascii=False))
+            invalid["id"] = f"budget-{template}-{probe_index}"
+            set_text_budget_path(invalid, path, "界" * (maximum + 1))
+            expect_outline_rejected(
+                invalid,
+                f"{template} accepted {path} beyond its public non-space budget",
+            )
+    for template, path in (
+        ("cycle", "steps[].title"),
+        ("quadrant", "groups[].meta"),
+        ("tier-stack", "steps[].body"),
+    ):
+        invalid = json.loads(json.dumps(budgeted_component_seeds[template], ensure_ascii=False))
+        set_text_budget_path(invalid, path, 123)
+        expect_outline_rejected(invalid, f"{template} accepted numeric copy at {path}")
+    for template, key in (("cycle", "steps"), ("quadrant", "groups"), ("tier-stack", "steps")):
+        invalid = json.loads(json.dumps(budgeted_component_seeds[template], ensure_ascii=False))
+        item = invalid[key][0]
+        item["label" if "title" in item else "title"] = item.get("title") or item.get("label") or "冲突别名"
+        expect_outline_rejected(invalid, f"{template} accepted both title and label aliases")
+    expect_outline_rejected(
+        {
+            "id": "cycle-three", "title": "错误循环", "template": "cycle", "variant": "default", "decor": "none",
+            "content": "三个阶段不能填充四节点循环", "statement": "循环", "statement_body": "必须保持四个节点",
+            "steps": [{"title": f"阶段{i}", "body": "说明"} for i in range(1, 4)],
+        },
+        "cycle accepted fewer than four stages",
+    )
+    expect_outline_rejected(
+        {
+            "id": "quadrant-no-focus", "title": "错误象限", "template": "quadrant", "variant": "default", "decor": "none",
+            "content": "象限必须声明一个重点", "axes": {"x": "横轴", "y": "纵轴"},
+            "groups": [
+                {"title": f"象限{i}", "meta": "说明", "items": ["事项"]}
+                for i in range(1, 5)
+            ],
+        },
+        "quadrant accepted zero emphasized groups",
+    )
+    expect_outline_rejected(
+        {
+            "id": "tier-three", "title": "错误层级", "template": "tier-stack", "variant": "funnel", "decor": "none",
+            "content": "层级轮廓必须稳定", "steps": [{"title": f"层级{i}", "body": "说明"} for i in range(1, 4)],
+        },
+        "tier-stack accepted fewer than four levels",
+    )
 
     mutually_exclusive = subprocess.run(
         [sys.executable, str(entry), "contract", "--schema", "--list"],
@@ -545,13 +679,51 @@ def verify_regression_guards(entry: Path) -> None:
     if (
         not {
             "card", "plainCard", "iconCard", "evidenceCard", "decisionCard",
-            "step", "stepBody", "stepIconBody", "stepMediaBody", "stepLabel",
-            "side", "plainSide", "visualSide", "tabSide", "group", "convergeGroup", "measurement", "annotation",
+            "step", "stepBody", "stepIconBody", "stepMediaBody", "stepLabel", "cycleStep", "tierStep",
+            "side", "plainSide", "visualSide", "tabSide", "group", "convergeGroup", "quadrantGroup", "axes",
+            "measurement", "catalogMeasurement", "catalogGroup", "catalogGroupItem", "annotation",
         }.issubset(definitions)
         or set((slide_properties.get("metric") or {}).get("required") or ()) != {"value", "unit", "caption"}
         or not (slide_properties.get("cards") or {}).get("items")
     ):
         raise RuntimeError("public JSON Schema does not expose compound input structures")
+    axis_pattern = (((definitions.get("axes") or {}).get("properties") or {}).get("x") or {}).get("pattern")
+    if (
+        not axis_pattern
+        or re.fullmatch(axis_pattern, "A B C D E F G H I J K L") is None
+        or re.fullmatch(axis_pattern, "界" * 13) is not None
+    ):
+        raise RuntimeError("public JSON Schema does not enforce quadrant axes by non-space budget")
+    if (
+        "emphasis" in ((definitions.get("group") or {}).get("properties") or {})
+        or "emphasis" not in ((definitions.get("quadrantGroup") or {}).get("properties") or {})
+    ):
+        raise RuntimeError("public JSON Schema leaked quadrant emphasis into generic groups")
+    alias_definitions = {
+        "card", "plainCard", "iconCard", "evidenceCard", "decisionCard", "step", "stepBody",
+        "cycleStep", "tierStep", "stepIconBody", "stepMediaBody", "stepLabel", "side", "plainSide",
+        "visualSide", "tabSide", "group", "convergeGroup", "quadrantGroup", "catalogGroup",
+        "catalogGroupItem", "annotation",
+    }
+    if any("oneOf" not in (definitions.get(name) or {}) or "anyOf" in (definitions.get(name) or {}) for name in alias_definitions):
+        raise RuntimeError("public JSON Schema does not enforce exactly one title/label alias")
+    budgeted_schema_fields = (
+        ("catalogMeasurement", "label", "metrics[].label"),
+        ("catalogGroup", "title", "groups[].title"),
+        ("catalogGroup", "meta", "groups[].meta"),
+        ("catalogGroupItem", "title", "groups[].items[].title"),
+        ("catalogGroupItem", "body", "groups[].items[].body"),
+        ("annotation", "title", "annotations[].title"),
+        ("annotation", "body", "annotations[].body"),
+    )
+    for definition_name, field, budget_path in budgeted_schema_fields:
+        template = "annotated-showcase" if definition_name == "annotation" else "catalog-board"
+        maximum = text_budgets_for(template)[budget_path]
+        pattern = (((definitions.get(definition_name) or {}).get("properties") or {}).get(field) or {}).get("pattern")
+        within = " ".join("界" * maximum)
+        beyond = " ".join("界" * (maximum + 1))
+        if not pattern or re.fullmatch(pattern, within) is None or re.fullmatch(pattern, beyond) is not None:
+            raise RuntimeError(f"public JSON Schema drifted from {template} budget {budget_path}")
 
     replaced = set_slot_text_force('<p data-slot="value"></p>', "value", r"C:\Users\oil\deck")
     if r"C:\Users\oil\deck" not in replaced:
@@ -982,6 +1154,37 @@ def verify_media_policy_interface(entry: Path) -> None:
             raise RuntimeError("outline edits did not invalidate the text-only user confirmation")
 
 
+def verify_contract_fill_plans(entry: Path) -> None:
+    """Ensure every public component detail exposes an executable fill contract."""
+    for template, contract in COMPONENT_CONTRACTS.items():
+        result = subprocess.run(
+            [sys.executable, str(entry), "contract", "--id", template, "--compact"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        payload = json.loads(result.stdout)
+        plan = payload.get("fill_plan") or {}
+        schema = plan.get("input_schema") or {}
+        template_schema = (schema.get("properties") or {}).get("template") or {}
+        variant_schema = (schema.get("properties") or {}).get("variant") or {}
+        guidance = plan.get("variants") or {}
+        if (
+            plan.get("schema_version") != "oil-ppt.component-fill-plan/v1"
+            or plan.get("authoritative_constraints") != "input_schema+plan/check"
+            or template_schema.get("const") != template
+            or set(variant_schema.get("enum") or []) != set(contract["variants"])
+            or set(guidance) != set(contract["variants"])
+            or not str(plan.get("schema_digest") or "").startswith("sha256:")
+        ):
+            raise RuntimeError(f"component fill plan is incomplete for {template}: {plan}")
+        for variant in contract["variants"]:
+            actual = (guidance.get(variant) or {}).get("text_budgets_nonspace") or {}
+            expected = text_budgets_for(template, variant)
+            if actual != expected:
+                raise RuntimeError(f"{template}/{variant} fill plan drifted from its executable text budgets")
+
+
 def main() -> None:
     required_ok = True
     entry = Path(__file__).resolve().parent / "oil_ppt.py"
@@ -992,6 +1195,7 @@ def main() -> None:
     verify_media_error_aggregation()
     verify_regression_guards(entry)
     verify_media_policy_interface(entry)
+    verify_contract_fill_plans(entry)
 
     python_ok = sys.version_info >= (3, 10)
     required_ok &= python_ok
@@ -1236,8 +1440,9 @@ def main() -> None:
             for background in ("soft-spotlight", "block-field", "grid-wide"):
                 if f'data-bg=&quot;{background}&quot;' not in preview_text:
                     raise RuntimeError(f"preview did not render background {background}")
-            if any(seed in preview_text for seed in TEMPLATE_SEEDS):
-                raise RuntimeError("preview leaked bundled template example copy")
+            leaked_seeds = [seed for seed in TEMPLATE_SEEDS if seed in preview_text]
+            if leaked_seeds:
+                raise RuntimeError(f"preview leaked bundled template example copy: {', '.join(leaked_seeds)}")
             # A weak model must receive the exact outline field, not a count-only
             # render failure.  Preview is the first gate; status must remember the
             # same structured issue until a relevant input changes.
