@@ -1482,6 +1482,10 @@ def main() -> None:
             preview_text = preview_file.read_text(encoding="utf-8")
             if preview_text.count('class="page-card"') != len(smoke_slides()):
                 raise RuntimeError("preview did not render every slide as a real template iframe")
+            if 'data-readonly-design-summary' not in preview_text or 'data-design-setting="' in preview_text:
+                raise RuntimeError("formal preview did not keep design settings as a read-only persisted summary")
+            if "applyPalette(" in preview_text or 'aria-label="选择配色"' in preview_text:
+                raise RuntimeError("formal preview still exposed the retired temporary palette picker")
             if 'id="slide-lightbox"' not in preview_text or 'class="preview-open"' not in preview_text:
                 raise RuntimeError("preview did not expose the program-owned click-to-enlarge viewer")
             if 'class=&quot;hl&quot;' not in preview_text:
@@ -1564,8 +1568,22 @@ def main() -> None:
             )
             if "放大编辑" in authoring_text:
                 raise RuntimeError("text editor still exposed the removed enlarge-edit button")
-            if 'class="settings"' in authoring_text or 'aria-label="选择配色"' in authoring_text:
-                raise RuntimeError("text editor exposed read-only design settings")
+            if (
+                'class="design-panel"' not in authoring_text
+                or 'data-design-direction="fresh-default"' not in authoring_text
+                or 'data-design-setting="palette"' not in authoring_text
+                or 'data-design-setting="typography"' not in authoring_text
+                or 'data-design-setting="shape"' not in authoring_text
+                or "/api/settings" not in authoring_text
+            ):
+                raise RuntimeError("authoring HTML did not expose persisted curated design controls")
+            if any(
+                forbidden in authoring_text
+                for forbidden in ('data-design-setting="css"', 'data-design-setting="layout"', 'name="css"', 'name="layout"')
+            ):
+                raise RuntimeError("authoring HTML exposed a free CSS or layout control")
+            if not isinstance(editor.data.get("palette"), str) and 'data-custom-palette-lock' not in authoring_text:
+                raise RuntimeError("authoring HTML did not show the custom palette lock")
             if authoring_text.count('class="preview-open"') != len(smoke_slides()):
                 raise RuntimeError("text editor did not make every thumbnail a click-to-open target")
             if authoring_text.count('tabindex="-1" aria-hidden="true"') != len(smoke_slides()):

@@ -2,8 +2,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "2c71fbd990e0625f25bffc3d6981a6d41a5eb68e1f978884f0c43ad58ede465b",
-      "size": 7563
+      "sha256": "b026b902209badf03f81b0eb592ee96f0fd990490ca1bc769d0879c56f8f5807",
+      "size": 7674
     },
     {
       "path": "agents/openai.yaml",
@@ -326,14 +326,19 @@
       "size": 27789
     },
     {
+      "path": "scripts/design_directions.py",
+      "sha256": "eb56171f1d3a4eb9602a6e0af71b88d5b3056e916000d54d7aafffe096c31e2a",
+      "size": 3870
+    },
+    {
       "path": "scripts/design_quality.py",
       "sha256": "0a5a65a936eb3d3d90686c8d884e726da9516615fb1b0fc0bfda1db5e96f51ff",
       "size": 28999
     },
     {
       "path": "scripts/doctor.py",
-      "sha256": "c71568f7867aebe640a311312f9e6d81cd158428773bc903b81f539b1cf3f97f",
-      "size": 116282
+      "sha256": "26a7711e9219e8b69af9e8add3c7b1e1848822da9f550f86a42c9dee520070d1",
+      "size": 117575
     },
     {
       "path": "scripts/editor_bindings.py",
@@ -402,8 +407,8 @@
     },
     {
       "path": "scripts/palette_tokens.py",
-      "sha256": "e141694a89ff3edf77fceb13685f29a906ef1a3efd5084f0efc2103852e044fe",
-      "size": 8724
+      "sha256": "00cdbb15e186b236f40bc2a1046ed74944985079bc24545ef02c1544bd5b5266",
+      "size": 9768
     },
     {
       "path": "scripts/profile_tokens.py",
@@ -417,8 +422,8 @@
     },
     {
       "path": "scripts/render_outline_review.py",
-      "sha256": "4d7fe1b5316d33d70db20deb2afce34b8a29d4949f041341e035cd0a5a42db2c",
-      "size": 40613
+      "sha256": "342acb5d9e3074677c611a78c9171c2802b7b58c0a2c0909b91c787a4a8046a5",
+      "size": 45946
     },
     {
       "path": "scripts/render_programmatic_visual.py",
@@ -432,8 +437,8 @@
     },
     {
       "path": "scripts/text_editor.py",
-      "sha256": "db51ab29ff9bdb30694311f56a4731275c734812813be4ce338dfb760ccfb5ae",
-      "size": 26788
+      "sha256": "a97948f04b1221a8f6ed836602305811da1ca2597e1b83282095df5b5f6d8858",
+      "size": 32120
     },
     {
       "path": "scripts/validate_skill.py",
@@ -461,6 +466,11 @@
       "size": 2319
     },
     {
+      "path": "tests/test_design_directions.py",
+      "sha256": "56d86a40836f009ce4d2a6605fcc02e0dd890f9c3683f63b96a6fe9e55caa4ee",
+      "size": 9191
+    },
+    {
       "path": "tests/test_package_manifest.py",
       "sha256": "4ee104e873a877bfb81a16a3bcc02c2bddf8095713a83d5a83d57283d6df2d7d",
       "size": 5776
@@ -483,5 +493,5 @@
   ],
   "package_version": "0.3.0",
   "schema_version": "oil-ppt.package/v1",
-  "tree_sha256": "c7fb10393708f9db909f180a46a35bc4130d53e0ab25d37ef402671fbf849e5e"
+  "tree_sha256": "c6d6532311c1553aa831299a6009f5dbcead9cc2513367dbb48d39b00fe62aeb"
 }

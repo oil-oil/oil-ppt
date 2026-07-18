@@ -20,6 +20,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from design_quality import enforce_outline_quality
+from design_directions import DESIGN_DIRECTION_BY_ID, matching_direction
 from editor_bindings import editable_values, pointer_parts, set_pointer
 from media_assets import verify_outline_media
 from oil_ppt import (
@@ -39,6 +40,8 @@ from oil_ppt import (
     visual_plan_valid,
 )
 from outline_schema import validate_outline
+from palette_tokens import PALETTE_META, PALETTES, canonical_name, named_palette, normalize_palette
+from profile_tokens import SHAPE_META, SHAPE_PROFILES, TYPE_META, TYPE_PROFILES
 from render_outline_review import render
 
 
@@ -67,6 +70,47 @@ def _normalize_text(value: object) -> str:
     if len(value) > 20_000:
         raise ValueError("One text field cannot exceed 20,000 characters.")
     return re.sub(r"\s+", " ", value).strip()
+
+
+def _setting_values(data: dict) -> dict:
+    return {
+        "palette": copy.deepcopy(data.get("palette")),
+        "palette_source": data.get("palette_source"),
+        "typography": data.get("typography"),
+        "shape": data.get("shape"),
+    }
+
+
+def _settings_signature(data: dict) -> str:
+    return _digest(_setting_values(data))
+
+
+def _settings_state(data: dict) -> dict:
+    raw_palette = data["palette"]
+    custom = not isinstance(raw_palette, str)
+    resolved = normalize_palette(raw_palette) if custom else named_palette(raw_palette)
+    palette_name = None if custom else canonical_name(raw_palette)
+    source = str(data.get("palette_source") or "") if custom else "curated"
+    return {
+        "direction": matching_direction(data),
+        "palette": {
+            "id": palette_name,
+            "label": (
+                "品牌配色" if source == "brand" else "用户配色"
+            ) if custom else PALETTE_META[palette_name]["label"],
+            "source": source,
+            "locked": custom,
+            "colors": [resolved["accent"], resolved["accent_alt"], resolved["accent_warm"]],
+        },
+        "typography": {
+            "id": data["typography"],
+            "label": TYPE_META[data["typography"]]["label"],
+        },
+        "shape": {
+            "id": data["shape"],
+            "label": SHAPE_META[data["shape"]]["label"],
+        },
+    }
 
 
 def _atomic_write_bytes(path: Path, value: bytes) -> None:
@@ -280,10 +324,17 @@ class EditorSession:
     def state(self, *, notices: list[str] | None = None) -> dict:
         current = editable_values(self.data)
         base = editable_values(self.base_data)
+        current_settings = _setting_values(self.data)
+        base_settings = _setting_values(self.base_data)
         return {
             "ok": True,
             "values": current,
             "changed_paths": sorted(path for path, value in current.items() if base.get(path) != value),
+            "changed_settings": sorted(
+                key for key, value in current_settings.items() if base_settings.get(key) != value
+            ),
+            "settings": _settings_state(self.data),
+            "settings_signature": _settings_signature(self.data),
             "can_undo": bool(self.history),
             "can_redo": bool(self.future),
             "draft": self.draft_path.is_file(),
@@ -322,6 +373,70 @@ class EditorSession:
                 self._write_draft()
                 return self.state(notices=notices)
             except (ValueError, KeyError, IndexError, OSError):
+                self._restore_memory(snapshot)
+                raise
+
+    def apply_settings(self, payload: dict) -> dict:
+        with self.lock:
+            self._ensure_editable()
+            snapshot = self._memory_snapshot()
+            try:
+                if not isinstance(payload, dict):
+                    raise ValueError("Design settings must be a JSON object.")
+                allowed = {"direction", "palette", "typography", "shape"}
+                unknown = sorted(set(payload) - allowed)
+                if unknown:
+                    raise ValueError(f"Unsupported design setting(s): {', '.join(unknown)}.")
+                selected = [key for key in allowed if key in payload]
+                if len(selected) != 1:
+                    raise ValueError("Change exactly one design direction or fine-tuning setting at a time.")
+                key = selected[0]
+                value = payload[key]
+                if not isinstance(value, str):
+                    raise ValueError(f"Design setting {key} must be a string enum value.")
+                if key == "direction":
+                    direction = DESIGN_DIRECTION_BY_ID.get(value)
+                    if direction is None:
+                        raise ValueError(
+                            "Design direction must be one of: "
+                            + ", ".join(DESIGN_DIRECTION_BY_ID)
+                            + "."
+                        )
+                    updates = {
+                        "palette": direction.palette,
+                        "typography": direction.typography,
+                        "shape": direction.shape,
+                    }
+                elif key == "palette":
+                    if value not in PALETTES:
+                        raise ValueError("Palette must be one of: " + ", ".join(PALETTES) + ".")
+                    updates = {"palette": value}
+                elif key == "typography":
+                    if value not in TYPE_PROFILES:
+                        raise ValueError("Typography must be one of: " + ", ".join(TYPE_PROFILES) + ".")
+                    updates = {"typography": value}
+                else:
+                    if value not in SHAPE_PROFILES:
+                        raise ValueError("Shape must be one of: " + ", ".join(SHAPE_PROFILES) + ".")
+                    updates = {"shape": value}
+                if all(self.data.get(name) == setting for name, setting in updates.items()):
+                    return self.state()
+                self.history.append(copy.deepcopy(self.data))
+                if len(self.history) > 100:
+                    self.history.pop(0)
+                self.future.clear()
+                self.data.update(updates)
+                if "palette" in updates:
+                    self.data.pop("palette_source", None)
+                self.last_edit_path = ""
+                self.last_edit_at = 0.0
+                try:
+                    validate_outline(self.data, TEMPLATES)
+                except SystemExit as error:
+                    raise ValueError(str(error)) from error
+                self._write_draft()
+                return self.state()
+            except (ValueError, KeyError, OSError):
                 self._restore_memory(snapshot)
                 raise
 
@@ -542,6 +657,8 @@ class EditorHandler(BaseHTTPRequestHandler):
                 result = self.session.state()
             elif route == "/api/edit":
                 result = self.session.apply_edit(str(payload.get("path") or ""), payload.get("value"))
+            elif route == "/api/settings":
+                result = self.session.apply_settings(payload)
             elif route == "/api/undo":
                 result = self.session.undo()
             elif route == "/api/redo":
