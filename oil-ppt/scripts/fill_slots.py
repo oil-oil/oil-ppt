@@ -18,11 +18,13 @@ from media_assets import outline_media_bindings
 
 
 MEDIA_FIT_DEFAULTS = {
+    "artifact-focus": "contain",
     "cover": "cover",
     "end": "contain",
     "split-visual": "contain",
     "browser-showcase": "contain",
     "editorial-canvas": "contain",
+    "step-hero": "contain",
 }
 
 AUTO_BACKDROP_TEMPLATES = {"cover", "section", "end"}
@@ -932,7 +934,162 @@ def fill_split_like(fragment: str, slide: dict) -> str:
     return fragment
 
 
+def fill_project_card_grid(fragment: str, slide: dict) -> str:
+    fragment = fill_common_slots(fragment, slide)
+    for index, card in enumerate(slide.get("cards") or [], start=1):
+        if not isinstance(card, dict):
+            continue
+        fragment = set_slot_text_force(fragment, f"card-title-{index}", display_value(card.get("title")))
+        fragment = set_slot_text_force(fragment, f"card-meta-{index}", display_value(card.get("meta")))
+        fragment = set_slot_text_force(fragment, f"card-body-{index}", display_value(card.get("body")))
+    return fragment
+
+
+def fill_artifact_focus(fragment: str, slide: dict) -> str:
+    fragment = fill_common_slots(fragment, slide)
+    image = project_media_src(slide.get("image") or slide.get("media"))
+    if image:
+        alt = html.escape(display_value(slide.get("image_alt") or slide.get("title")), quote=True)
+        markup = f'<img class="oil-stock-visual" src="{html.escape(image, quote=True)}" alt="{alt}">'
+        fragment = re.sub(
+            r'<div\b(?=[^>]*data-slot="media")[^>]*>.*?</div>',
+            lambda _: markup, fragment, count=1, flags=re.I | re.S,
+        )
+    return fragment
+
+
+def fill_brand_matrix(fragment: str, slide: dict) -> str:
+    fragment = fill_common_slots(fragment, slide)
+    fragment = fragment.replace('class="brand-card is-empty', 'class="brand-card')
+    groups = [group for group in (slide.get("groups") or []) if isinstance(group, dict)]
+    for group_index in range(2):
+        group = groups[group_index] if group_index < len(groups) else {}
+        items = [item for item in (group.get("items") or []) if isinstance(item, dict)]
+        fragment = set_slot_text_force(fragment, f"group-title-{group_index + 1}", display_value(group.get("title")))
+        fragment = re.sub(
+            rf'<div\b[^>]*data-brand-group="{group_index + 1}"[^>]*>',
+            lambda match: re.sub(r'data-count="\d+"', f'data-count="{len(items)}"', match.group(0))
+            if "data-count=" in match.group(0)
+            else match.group(0)[:-1] + f' data-count="{len(items)}">',
+            fragment, count=1, flags=re.I,
+        )
+        offset = group_index * 6
+        for item_index, item in enumerate(items, start=1):
+            slot_index = offset + item_index
+            fragment = set_slot_text_force(fragment, f"cell-title-{slot_index}", display_value(item.get("title")))
+            fragment = set_slot_text_force(fragment, f"cell-body-{slot_index}", display_value(item.get("meta")))
+        for item_index in range(len(items) + 1, 7):
+            slot_index = offset + item_index
+            fragment = re.sub(
+                rf'(<article\b(?=[^>]*class="[^"]*\bbrand-card\b)[^>]*>)(?=\s*<h2\b[^>]*data-slot="cell-title-{slot_index}")',
+                lambda match: match.group(1) if "is-empty" in match.group(1) else match.group(1).replace('class="brand-card', 'class="brand-card is-empty', 1),
+                fragment, count=1, flags=re.I | re.S,
+            )
+    return fragment
+
+
+def fill_dialogue_vs_task(fragment: str, slide: dict) -> str:
+    fragment = fill_common_slots(fragment, slide)
+    sides = slide.get("sides") or []
+    for side_index, prefix in enumerate(("left", "right")):
+        side = sides[side_index] if side_index < len(sides) and isinstance(sides[side_index], dict) else {}
+        fragment = set_slot_text_force(fragment, f"{prefix}-label", "DIALOGUE" if side_index == 0 else "TASK")
+        fragment = set_slot_text_force(fragment, f"{prefix}-title", display_value(side.get("title")))
+        fragment = set_slot_text_force(fragment, f"{prefix}-body", display_value(side.get("lead")))
+        for point_index, point in enumerate(side.get("points") or [], start=1):
+            if f'data-slot="{prefix}-point-{point_index}"' not in fragment:
+                fragment = re.sub(
+                    rf'(<div\b[^>]*class="[^"]*\bpoints\b[^"]*"[^>]*>.*?data-slot="{prefix}-point-{point_index - 1}".*?)(</div>)',
+                    lambda match: match.group(1) + f'<div class="point"><span data-slot="{prefix}-point-{point_index}"></span></div>' + match.group(2),
+                    fragment, count=1, flags=re.I | re.S,
+                )
+            fragment = set_slot_text_force(fragment, f"{prefix}-point-{point_index}", display_value(point))
+    if len(sides) >= 1 and isinstance(sides[0], dict):
+        fragment = set_slot_text_force(fragment, "left-conclusion", display_value(sides[0].get("result")))
+    if len(sides) >= 2 and isinstance(sides[1], dict):
+        fragment = set_slot_text_force(fragment, "right-result", display_value(sides[1].get("result")))
+    return set_slot_text_force(fragment, "versus", "VS")
+
+
+def fill_dual_table_matrix(fragment: str, slide: dict) -> str:
+    fragment = fill_common_slots(fragment, slide)
+    fragment = fragment.replace('class="row is-empty', 'class="row')
+    fragment = re.sub(r'\sdata-highlight="true"', "", fragment)
+    tables = slide.get("tables") or []
+    for table_index, prefix in enumerate(("left", "right")):
+        table = tables[table_index] if table_index < len(tables) and isinstance(tables[table_index], dict) else {}
+        fragment = set_slot_text_force(fragment, f"{prefix}-title", display_value(table.get("title")))
+        for row_index, row in enumerate(table.get("rows") or [], start=1):
+            if not isinstance(row, list):
+                continue
+            fragment = set_slot_text_force(fragment, f"{prefix}-label-{row_index}", display_value(row[0] if row else ""))
+            fragment = set_slot_text_force(fragment, f"{prefix}-value-{row_index}", display_value(row[1] if len(row) > 1 else ""))
+        for row_index in range(len(table.get("rows") or []) + 1, 5):
+            fragment = re.sub(
+                rf'(<div\b(?=[^>]*class="[^"]*\brow\b)[^>]*>)(?=\s*<b\b[^>]*data-slot="{prefix}-label-{row_index}")',
+                lambda match: match.group(1) if "is-empty" in match.group(1) else match.group(1).replace('class="row', 'class="row is-empty', 1),
+                fragment, count=1, flags=re.I | re.S,
+            )
+        row_count = len(table.get("rows") or [])
+        if row_count:
+            fragment = re.sub(
+                rf'(<div\b(?=[^>]*class="[^"]*\brow\b)[^>]*)(>)(?=\s*<b\b[^>]*data-slot="{prefix}-label-{row_count}")',
+                lambda match: match.group(1) + ' data-highlight="true"' + match.group(2),
+                fragment, count=1, flags=re.I | re.S,
+            )
+    return fragment
+
+
+def fill_code_to_render(fragment: str, slide: dict) -> str:
+    fragment = fill_common_slots(fragment, slide)
+    panels = slide.get("panels") or []
+    for prefix, panel in zip(("left", "right"), panels):
+        if not isinstance(panel, dict):
+            continue
+        fragment = set_slot_text_force(fragment, f"{prefix}-code-label", display_value(panel.get("title")))
+        # Source is deliberately routed through the escaping text setter. Raw HTML
+        # here would turn authored examples into active DOM and break closed structure.
+        fragment = set_slot_text_force(fragment, f"{prefix}-source-code", display_value(panel.get("source")))
+        fragment = set_slot_text_force(fragment, f"{prefix}-render-label", display_value(panel.get("render_title")))
+        fragment = set_slot_text_force(fragment, f"{prefix}-render-body", display_value(panel.get("render_body")))
+        fragment = set_slot_text_force(fragment, f"{prefix}-connector", "→")
+    return fragment
+
+
+def fill_step_hero(fragment: str, slide: dict) -> str:
+    fragment = fill_common_slots(fragment, slide)
+    fragment = fragment.replace('class="point is-empty', 'class="point')
+    fragment = set_slot_text_force(fragment, "step-number", display_value(slide.get("step_number")))
+    points = slide.get("points") or []
+    for index in range(1, 5):
+        value = points[index - 1] if index <= len(points) else ""
+        fragment = set_slot_text_force(fragment, f"point-{index}", display_value(value))
+        if not value:
+            fragment = re.sub(
+                rf'(<li\b(?=[^>]*class="[^"]*\bpoint\b)[^>]*data-slot="point-{index}"[^>]*>)',
+                lambda match: match.group(1) if "is-empty" in match.group(1) else match.group(1).replace('class="point', 'class="point is-empty', 1),
+                fragment, count=1, flags=re.I,
+            )
+    fragment = set_slot_text_force(fragment, "conclusion", display_value(slide.get("conclusion")))
+    image = project_media_src(slide.get("image") or slide.get("media"))
+    if image:
+        alt = html.escape(display_value(slide.get("image_alt") or slide.get("title")), quote=True)
+        markup = f'<img class="oil-stock-visual" src="{html.escape(image, quote=True)}" alt="{alt}">'
+        fragment = re.sub(
+            r'<div\b(?=[^>]*data-slot="media")[^>]*>.*?</div>',
+            lambda _: markup, fragment, count=1, flags=re.I | re.S,
+        )
+    return fragment
+
+
 FILLERS = {
+    "artifact-focus": fill_artifact_focus,
+    "project-card-grid": fill_project_card_grid,
+    "brand-matrix": fill_brand_matrix,
+    "dialogue-vs-task": fill_dialogue_vs_task,
+    "dual-table-matrix": fill_dual_table_matrix,
+    "code-to-render": fill_code_to_render,
+    "step-hero": fill_step_hero,
     "three-steps": fill_three_steps,
     "timeline": fill_timeline,
     "process-rail": fill_process_rail,

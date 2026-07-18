@@ -22,6 +22,10 @@ FAMILY_GUIDANCE = {
         "question": "多个信息单元是否共同支撑一个结论，并存在主次关系？",
         "reading_path": "主次聚合",
     },
+    "collection": {
+        "question": "多个同类项目或品牌是否需要按固定分组和统一单元快速扫描？",
+        "reading_path": "集合扫描",
+    },
     "comparison": {
         "question": "对象是否需要沿共享维度对照、评分决策、在两个概念维度中定位，或切换同一对象的状态？",
         "reading_path": "共享维度判断",
@@ -186,7 +190,7 @@ PROGRAM_OWNED_CAPABILITIES = {
         "verification_command": "scripts/oil-ppt icon verify",
     },
     "compound_layouts": {
-        "recipes": ["editorial-feature", "catalog-board", "case-study-board", "annotated-showcase", "narrative-bento", "sequence-gallery", "process-cards"],
+        "recipes": ["editorial-feature", "catalog-board", "case-study-board", "annotated-showcase", "narrative-bento", "sequence-gallery", "process-cards", "code-to-render"],
         "automatic": "模板固定主叙事、支撑模块与元信息的尺度关系；Agent 只提供结构化内容、真实数据和素材。",
     },
 }

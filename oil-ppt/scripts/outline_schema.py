@@ -18,6 +18,7 @@ from profile_tokens import SHAPE_PROFILES, TYPE_PROFILES
 MAX_ABS_DATA_VALUE = 1_000_000_000_000_000
 
 TEMPLATE_CONTENT_HELP = {
+    "artifact-focus": "image + media_frame; optional short content/note",
     "cover": "content optional; media variant also requires image",
     "end": "line needs title; line-note needs exactly one of aside/content/note; line-artifact needs image + artifact_title + artifact_body",
     "section": "content",
@@ -52,12 +53,21 @@ TEMPLATE_CONTENT_HELP = {
     "tier-stack": "content + steps[4] with title + body, ordered from broad/base input to focused/apex result; funnel and pyramid reuse the same input",
     "relationship-map": "content + nodes[4..6] with id + title + body and exactly one emphasis=true; links use source→target + label to connect every peripheral node to the center",
     "decision-matrix": "content + source + criteria[3] + options[3], each option with title + scores[3] integers from 1 to 5 where 5 is better; totals must produce one unique recommendation",
+    "project-card-grid": "content + cards[6], each with title + optional meta + body",
+    "brand-matrix": "content + groups[2], each with title + items[3..6], each item with title + meta",
+    "dialogue-vs-task": "content + sides[2]: each has title + lead + result; left has points[2], right has points[3]",
+    "dual-table-matrix": "content + tables[2], each with title + rows[2..4] of exactly 2 text cells",
+    "code-to-render": "content + panels[2], each with title + source + render_title + render_body",
+    "step-hero": "content + step_number + points[2..4] + conclusion + image + media_frame",
 }
 
 
 # Only complex variants need an extra map. This is emitted by `contract --id`
 # so a weaker model sees the shortest valid input before optional polish.
 VARIANT_INPUT_GUIDANCE = {
+    "artifact-focus": {
+        "default": {"minimum": ["image", "media_frame"], "optional": ["content or note", "image_alt"]},
+    },
     "process-rail": {
         "steps-6": {
             "minimum": ["steps[6]: title + body"],
@@ -216,12 +226,32 @@ VARIANT_INPUT_GUIDANCE = {
             "optional": ["kicker", "page_note", "steps[].image_alt", "steps[].media_question", "steps[].media_source"],
         },
     },
+    "project-card-grid": {
+        "default": {"minimum": ["content", "cards[6]: title + body"], "optional": ["cards[].meta"]},
+    },
+    "brand-matrix": {
+        "default": {"minimum": ["content", "groups[2]: title + items[3..6](title + meta)"], "optional": []},
+    },
+    "dialogue-vs-task": {
+        "default": {"minimum": ["content", "left side: title + lead + points[2] + result", "right side: title + lead + points[3] + result"], "optional": []},
+    },
+    "dual-table-matrix": {
+        "default": {"minimum": ["content", "tables[2]: title + rows[2..4][2]"], "optional": []},
+    },
+    "code-to-render": {
+        "default": {"minimum": ["content", "panels[2]: title + source + render_title + render_body"], "optional": []},
+    },
+    "step-hero": {
+        "media-right": {"minimum": ["content", "step_number", "points[2..4]", "conclusion", "image", "media_frame"], "optional": ["image_alt"]},
+        "media-left": {"minimum": ["content", "step_number", "points[2..4]", "conclusion", "image", "media_frame"], "optional": ["image_alt"]},
+    },
 }
 
 
 # Non-space character budgets drive validation, public component schemas,
 # fill plans, and browser boundary probes from one registry.
 COMPONENT_TEXT_BUDGETS = {
+    "artifact-focus": {"*": {"content": 48}},
     "cycle": {
         "*": {
             "content": 48,
@@ -319,6 +349,24 @@ COMPONENT_TEXT_BUDGETS = {
             "options[].title": 16,
         },
     },
+    "project-card-grid": {
+        "*": {"content": 48, "cards[].title": 16, "cards[].meta": 12, "cards[].body": 42},
+    },
+    "brand-matrix": {
+        "*": {"content": 48, "groups[].title": 16, "groups[].items[].title": 16, "groups[].items[].meta": 24},
+    },
+    "dialogue-vs-task": {
+        "*": {"content": 48, "sides[].title": 16, "sides[].lead": 48, "sides[].points[]": 28, "sides[].result": 48},
+    },
+    "dual-table-matrix": {
+        "*": {"content": 48, "tables[].title": 16, "tables[].rows[][]": 24},
+    },
+    "code-to-render": {
+        "*": {"content": 48, "panels[].title": 18, "panels[].source": 220, "panels[].render_title": 20, "panels[].render_body": 120},
+    },
+    "step-hero": {
+        "*": {"content": 60, "step_number": 3, "points[]": 30, "conclusion": 48},
+    },
 }
 
 
@@ -356,6 +404,7 @@ SLIDE_ALLOWED_FIELDS = frozenset({
     "media_frame", "media_fit", "media_position", "media_treatment", "media_surface",
     "media_role", "media_fidelity", "media_question", "media_source",
     "cards", "steps", "sides", "groups", "nodes", "links", "criteria", "options", "outcome",
+    "points", "tables", "panels", "step_number",
     "quote", "source", "metric", "metrics", "insight", "chart", "data", "axes", "annotations",
     "statement", "statement_body", "statement_icon", "quote_icon", "conclusion",
     "measurements", "measurement_note", "measurement_meta",
@@ -377,6 +426,7 @@ STANDARD_MEDIA_FIELDS = frozenset({"content", "note", "image", "media", "image_a
 # Top-level fields that can affect each template's rendered result. Variant-only
 # fields are narrowed further by validate_slide_content.
 TEMPLATE_VISIBLE_FIELDS = {
+    "artifact-focus": {"content", "note", "image", "media", "image_alt", "media_surface", *MEDIA_METADATA_FIELDS},
     "cover": {"kicker", "content", "note", "image", "media", "image_alt", *MEDIA_METADATA_FIELDS},
     "data-story": {"content", "note", "source", "data"},
     "end": {"content", "note", "meta", "aside", "aside_label", "image", "artifact_image", "image_alt", "artifact_title", "artifact_body", *MEDIA_METADATA_FIELDS},
@@ -411,6 +461,12 @@ TEMPLATE_VISIBLE_FIELDS = {
     "tier-stack": {"content", "note", "steps"},
     "relationship-map": {"content", "note", "nodes", "links"},
     "decision-matrix": {"content", "note", "source", "criteria", "options"},
+    "project-card-grid": {"content", "note", "cards"},
+    "brand-matrix": {"content", "note", "groups"},
+    "dialogue-vs-task": {"content", "note", "sides"},
+    "dual-table-matrix": {"content", "note", "tables"},
+    "code-to-render": {"content", "note", "panels"},
+    "step-hero": {"content", "note", "step_number", "points", "conclusion", "image", "media", "image_alt", "media_surface", *MEDIA_METADATA_FIELDS},
 }
 
 SHARED_SLIDE_FIELDS = {
@@ -791,6 +847,116 @@ def _validate_decision_matrix(slide: dict, index: int) -> None:
         )
 
 
+def _validate_project_card_grid(slide: dict, index: int) -> None:
+    budgets = text_budgets_for("project-card-grid")
+    _require_bounded_content(slide, index, budgets["content"])
+    cards = _items(slide, "cards")
+    if len(cards) != 6:
+        raise SystemExit(f"Outline slide {index} project-card-grid requires exactly 6 cards.")
+    for card_index, card in enumerate(cards, start=1):
+        if not isinstance(card, dict) or not {"title", "body"} <= set(card) or set(card) - {"title", "meta", "body"}:
+            raise SystemExit(f"Outline slide {index} cards[{card_index}] requires title + body and optional meta only.")
+        if not _text(card.get("title")) or not _text(card.get("body")):
+            raise SystemExit(f"Outline slide {index} cards[{card_index}] title and body must be non-empty.")
+        if "meta" in card and not _text(card.get("meta")):
+            raise SystemExit(f"Outline slide {index} cards[{card_index}].meta must be non-empty when provided.")
+        for field in ("title", "meta", "body"):
+            if field in card:
+                _max_chars(card.get(field), index, f"cards[{card_index}].{field}", budgets[f"cards[].{field}"])
+
+
+def _validate_brand_matrix(slide: dict, index: int) -> None:
+    budgets = text_budgets_for("brand-matrix")
+    _require_bounded_content(slide, index, budgets["content"])
+    groups = _items(slide, "groups")
+    if len(groups) != 2:
+        raise SystemExit(f"Outline slide {index} brand-matrix requires exactly 2 groups.")
+    for group_index, group in enumerate(groups, start=1):
+        if not isinstance(group, dict) or set(group) != {"title", "items"}:
+            raise SystemExit(f"Outline slide {index} groups[{group_index}] requires exactly title + items.")
+        items = group.get("items")
+        if not _text(group.get("title")) or not isinstance(items, list) or not 3 <= len(items) <= 6:
+            raise SystemExit(f"Outline slide {index} groups[{group_index}] requires title and 3–6 items.")
+        _max_chars(group.get("title"), index, f"groups[{group_index}].title", budgets["groups[].title"])
+        for item_index, item in enumerate(items, start=1):
+            if not isinstance(item, dict) or set(item) != {"title", "meta"} or not _text(item.get("title")) or not _text(item.get("meta")):
+                raise SystemExit(f"Outline slide {index} groups[{group_index}].items[{item_index}] requires exactly title + meta.")
+            _max_chars(item.get("title"), index, f"groups[{group_index}].items[{item_index}].title", budgets["groups[].items[].title"])
+            _max_chars(item.get("meta"), index, f"groups[{group_index}].items[{item_index}].meta", budgets["groups[].items[].meta"])
+
+
+def _validate_dialogue_vs_task(slide: dict, index: int) -> None:
+    budgets = text_budgets_for("dialogue-vs-task")
+    _require_bounded_content(slide, index, budgets["content"])
+    sides = _items(slide, "sides")
+    if len(sides) != 2:
+        raise SystemExit(f"Outline slide {index} dialogue-vs-task requires exactly 2 sides.")
+    for side_index, side in enumerate(sides, start=1):
+        if not isinstance(side, dict) or set(side) != {"title", "lead", "points", "result"} or not _text(side.get("title")) or not _text(side.get("lead")) or not _text(side.get("result")):
+            raise SystemExit(f"Outline slide {index} sides[{side_index}] requires exactly title + lead + points + result.")
+        _max_chars(side.get("title"), index, f"sides[{side_index}].title", budgets["sides[].title"])
+        _max_chars(side.get("lead"), index, f"sides[{side_index}].lead", budgets["sides[].lead"])
+        _max_chars(side.get("result"), index, f"sides[{side_index}].result", budgets["sides[].result"])
+        points = side.get("points")
+        expected = 2 if side_index == 1 else 3
+        if not isinstance(points, list) or len(points) != expected or any(not isinstance(item, str) or not item.strip() for item in points):
+            raise SystemExit(f"Outline slide {index} sides[{side_index}].points requires exactly {expected} non-empty strings.")
+        for point_index, point in enumerate(points, start=1):
+            _max_chars(point, index, f"sides[{side_index}].points[{point_index}]", budgets["sides[].points[]"])
+
+
+def _validate_dual_table_matrix(slide: dict, index: int) -> None:
+    budgets = text_budgets_for("dual-table-matrix")
+    _require_bounded_content(slide, index, budgets["content"])
+    tables = _items(slide, "tables")
+    if len(tables) != 2:
+        raise SystemExit(f"Outline slide {index} dual-table-matrix requires exactly 2 tables.")
+    for table_index, table in enumerate(tables, start=1):
+        if not isinstance(table, dict) or set(table) != {"title", "rows"}:
+            raise SystemExit(f"Outline slide {index} tables[{table_index}] requires exactly title + rows.")
+        rows = table.get("rows")
+        if not _text(table.get("title")) or not isinstance(rows, list) or not 2 <= len(rows) <= 4:
+            raise SystemExit(f"Outline slide {index} tables[{table_index}] requires a title and 2–4 rows.")
+        _max_chars(table.get("title"), index, f"tables[{table_index}].title", budgets["tables[].title"])
+        for row_index, row in enumerate(rows, start=1):
+            if not isinstance(row, list) or len(row) != 2 or any(not isinstance(cell, str) or not cell.strip() for cell in row):
+                raise SystemExit(f"Outline slide {index} tables[{table_index}].rows[{row_index}] requires exactly 2 non-empty text cells.")
+            for column_index, cell in enumerate(row, start=1):
+                _max_chars(cell, index, f"tables[{table_index}].rows[{row_index}][{column_index}]", budgets["tables[].rows[][]"])
+
+
+def _validate_code_to_render(slide: dict, index: int) -> None:
+    budgets = text_budgets_for("code-to-render")
+    _require_bounded_content(slide, index, budgets["content"])
+    panels = _items(slide, "panels")
+    required = {"title", "source", "render_title", "render_body"}
+    if len(panels) != 2:
+        raise SystemExit(f"Outline slide {index} code-to-render requires exactly 2 panels.")
+    for panel_index, panel in enumerate(panels, start=1):
+        if not isinstance(panel, dict) or set(panel) != required or any(not _text(panel.get(field)) for field in required):
+            raise SystemExit(f"Outline slide {index} panels[{panel_index}] requires exactly title + source + render_title + render_body.")
+        for field in required:
+            _max_chars(panel.get(field), index, f"panels[{panel_index}].{field}", budgets[f"panels[].{field}"])
+
+
+def _validate_step_hero(slide: dict, index: int, image: str) -> None:
+    budgets = text_budgets_for("step-hero")
+    _require_bounded_content(slide, index, budgets["content"])
+    if not image:
+        raise SystemExit(f"Outline slide {index} step-hero requires an image path.")
+    if not _text(slide.get("step_number")):
+        raise SystemExit(f"Outline slide {index} step-hero requires step_number.")
+    _max_chars(slide.get("step_number"), index, "step_number", budgets["step_number"])
+    points = _items(slide, "points")
+    if not 2 <= len(points) <= 4 or any(not isinstance(point, str) or not point.strip() for point in points):
+        raise SystemExit(f"Outline slide {index} step-hero requires 2–4 non-empty points strings.")
+    for point_index, point in enumerate(points, start=1):
+        _max_chars(point, index, f"points[{point_index}]", budgets["points[]"])
+    if not _text(slide.get("conclusion")):
+        raise SystemExit(f"Outline slide {index} step-hero requires conclusion.")
+    _max_chars(slide.get("conclusion"), index, "conclusion", budgets["conclusion"])
+
+
 def _validate_data_story(slide: dict, index: int) -> None:
     variant = str(slide.get("variant") or "")
     budgets = text_budgets_for("data-story", variant)
@@ -1006,7 +1172,24 @@ def validate_slide_content(slide: dict, index: int) -> None:
     if _text(slide.get("content")) and _text(slide.get("note")):
         raise SystemExit(f"Outline slide {index} accepts content or note as aliases, not both.")
 
-    if template == "relationship-map":
+    if template == "artifact-focus":
+        if not image:
+            raise SystemExit(f"Outline slide {index} artifact-focus requires an image path.")
+        if _text(slide.get("content") or slide.get("note")):
+            _max_chars(slide.get("content") or slide.get("note"), index, "content", text_budgets_for("artifact-focus")["content"])
+    elif template == "project-card-grid":
+        _validate_project_card_grid(slide, index)
+    elif template == "brand-matrix":
+        _validate_brand_matrix(slide, index)
+    elif template == "dialogue-vs-task":
+        _validate_dialogue_vs_task(slide, index)
+    elif template == "dual-table-matrix":
+        _validate_dual_table_matrix(slide, index)
+    elif template == "code-to-render":
+        _validate_code_to_render(slide, index)
+    elif template == "step-hero":
+        _validate_step_hero(slide, index, image)
+    elif template == "relationship-map":
         _validate_relationship_map(slide, index)
     elif template == "decision-matrix":
         _validate_decision_matrix(slide, index)

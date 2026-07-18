@@ -12,6 +12,7 @@ from outline_schema import MEDIA_TEMPLATES, TEMPLATE_FAMILIES
 
 
 MEDIA_MENU = {
+    "focal_artifact": ["artifact-focus"],
     "inset": ["split-visual", "photo-split"],
     "interface": ["browser-showcase"],
     "canvas": ["editorial-canvas"],
@@ -71,6 +72,8 @@ def slide_recommendation(slide: dict) -> dict | None:
     links = slide.get("links") if isinstance(slide.get("links"), list) else []
     criteria = slide.get("criteria") if isinstance(slide.get("criteria"), list) else []
     options = slide.get("options") if isinstance(slide.get("options"), list) else []
+    tables = slide.get("tables") if isinstance(slide.get("tables"), list) else []
+    panels = slide.get("panels") if isinstance(slide.get("panels"), list) else []
     image = slide.get("image") or slide.get("media") or slide.get("artifact_image")
     secondary_image = slide.get("secondary_image")
     data = slide.get("data") if isinstance(slide.get("data"), dict) else None
@@ -85,7 +88,27 @@ def slide_recommendation(slide: dict) -> dict | None:
         if isinstance(card, dict) and isinstance(card.get("images"), list) and len(card["images"]) == 2
     ]
 
-    if (
+    if selected == "artifact-focus" and image:
+        candidates.append(_candidate("artifact-focus", "ONE_LARGE_FOCAL_ARTIFACT"))
+    elif selected == "project-card-grid" and len(cards) == 6:
+        candidates.append(_candidate("project-card-grid", "SIX_EQUAL_PROJECT_CARDS"))
+    elif selected == "brand-matrix" and len(groups) == 2 and all(
+        isinstance(group, dict) and 3 <= len(group.get("items") or []) <= 6 for group in groups
+    ):
+        candidates.append(_candidate("brand-matrix", "TWO_GROUPS_THREE_TO_SIX_BRANDS"))
+    elif selected == "dialogue-vs-task" and isinstance(slide.get("sides"), list) and len(slide["sides"]) == 2 and [
+        len(side.get("points") or []) if isinstance(side, dict) else 0 for side in slide["sides"]
+    ] == [2, 3]:
+        candidates.append(_candidate("dialogue-vs-task", "DIALOGUE_TWO_FINDINGS_TASK_THREE_ACTIONS"))
+    elif selected == "dual-table-matrix" and len(tables) == 2 and all(
+        isinstance(table, dict) and 2 <= len(table.get("rows") or []) <= 4 for table in tables
+    ):
+        candidates.append(_candidate("dual-table-matrix", "TWO_PAIRED_TABLES"))
+    elif selected == "code-to-render" and len(panels) == 2:
+        candidates.append(_candidate("code-to-render", "TWO_SOURCE_TO_RENDER_EXAMPLES"))
+    elif selected == "step-hero" and image and slide.get("step_number") and 2 <= len(slide.get("points") or []) <= 4:
+        candidates.append(_candidate("step-hero", "ONE_NUMBERED_STEP_WITH_HERO_VISUAL", variant=str(slide.get("variant") or "media-right")))
+    elif (
         selected == "relationship-map"
         and 4 <= len(nodes) <= 6
         and len(links) == len(nodes) - 1

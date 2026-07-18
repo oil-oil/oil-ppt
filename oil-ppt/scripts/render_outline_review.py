@@ -13,12 +13,12 @@ import webbrowser
 from pathlib import Path
 
 from background_presets import effective_background
-from design_directions import DESIGN_DIRECTION_BY_ID, DESIGN_DIRECTIONS, matching_direction
+from design_directions import DESIGN_DIRECTION_BY_ID, matching_direction
 from editor_bindings import annotate_editable_fragment
 from fill_slots import FILLERS, apply_media_attributes, inject_backdrop_text
 from media_assets import verify_outline_media
 from outline_schema import validate_outline
-from palette_tokens import PALETTE_META, PALETTES, canonical_name, named_palette, normalize_palette
+from palette_tokens import PALETTE_META, canonical_name, named_palette, normalize_palette
 from profile_tokens import SHAPE_META, SHAPE_PROFILES, TYPE_META, TYPE_PROFILES
 
 
@@ -144,14 +144,13 @@ EDITOR_FRAME_JS = r"""
 
 
 PREVIEW_SHELL_CSS = r"""
-.design-panel{margin:0 0 28px;padding:18px;border:1px solid #dededb;border-radius:20px;background:#fff}.design-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}.design-panel-head h2{margin:0 0 4px;font-size:17px}.design-panel-head p{margin:0;color:#777;font-size:12px;line-height:1.5}.palette-lock{flex:0 0 auto;padding:7px 10px;border-radius:999px;background:#fff4df;color:#75511d;font-size:12px;font-weight:700}.direction-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:9px}.direction-option{min-width:0;padding:12px;text-align:left;border:1px solid #e2e2df;border-radius:14px;background:#fafaf9;color:#292929;cursor:pointer}.direction-option:hover,.fine-option:hover{border-color:#999}.direction-option.is-selected,.fine-option.is-selected{border-color:#292929;background:#292929;color:#fff}.direction-option strong{display:block;margin:7px 0 4px;font-size:13px}.direction-option small{display:block;min-height:34px;color:#777;font-size:11px;line-height:1.45}.direction-option.is-selected small{color:#d7d7d4}.mini-palette{display:flex;gap:3px}.mini-palette i{width:18px;height:10px;border:1px solid rgba(0,0,0,.08);border-radius:3px;background:var(--color)}.fine-tune{display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:16px;margin-top:16px;padding-top:14px;border-top:1px solid #ececea}.fine-group{min-width:0}.fine-group>strong{display:block;margin-bottom:8px;color:#666;font-size:12px}.fine-options{display:flex;gap:6px;flex-wrap:wrap}.fine-option{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 9px;border:1px solid #e2e2df;border-radius:10px;background:#fff;color:#555;font:650 11px/1 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;cursor:pointer}.fine-option .palette-dot{width:10px;height:10px;border:1px solid rgba(0,0,0,.08);border-radius:3px;background:var(--swatch)}.custom-palette-note{margin:10px 0 0;color:#75511d;font-size:12px;line-height:1.5}.is-editor-readonly .design-panel button{opacity:.45;pointer-events:none}
+.design-summary{margin:0 0 28px;padding:12px 15px;display:flex;align-items:center;gap:12px;border:1px solid #dededb;border-radius:14px;background:#fff;color:#555;font-size:13px;line-height:1.45}.design-summary-main{min-width:0;display:flex;align-items:center;gap:5px;flex-wrap:wrap}.design-summary-main strong{color:#292929}.design-summary-palette{display:inline-flex;align-items:center;gap:7px}.mini-palette{display:inline-flex;gap:3px}.mini-palette i{width:10px;height:10px;border:1px solid rgba(0,0,0,.08);border-radius:3px;background:var(--color)}.design-summary-note{margin-left:auto;flex:0 0 auto;color:#888;font-size:12px}
 .page-card{position:relative}.frame-wrap{position:relative}.frame-wrap>iframe{pointer-events:none}.preview-open{position:absolute;inset:0;z-index:3;border:0;border-radius:11px;background:transparent;color:transparent;cursor:zoom-in}.preview-open:focus-visible{outline:3px solid #292929;outline-offset:4px}
 .slide-lightbox{width:min(96vw,1680px);height:min(96vh,1000px);max-width:none;max-height:calc(100vh - 20px);padding:0;border:1px solid rgba(41,41,41,.08);border-radius:24px;background:#f7f7f5;box-shadow:0 30px 88px rgba(0,0,0,.22),0 1px 0 rgba(255,255,255,.8) inset;overflow:hidden}.slide-lightbox[open]{display:grid;grid-template-rows:auto minmax(0,1fr) auto;animation:oil-lightbox-in .28s cubic-bezier(.22,1,.36,1)}.slide-lightbox::backdrop{background:rgba(28,28,26,.44);backdrop-filter:blur(12px) saturate(.9)}.slide-lightbox[open]::backdrop{animation:oil-backdrop-in .22s ease-out}.lightbox-bar{height:62px;padding:0 14px 0 22px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #dededb;background:rgba(255,255,255,.94)}.lightbox-bar strong{min-width:0;margin-right:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.lightbox-page{color:#777;font-size:13px}.lightbox-bar button{height:38px;min-width:38px;padding:0 13px;border:1px solid #dededb;border-radius:12px;background:#fff;color:#292929;font:650 14px/1 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;cursor:pointer}.lightbox-bar button:hover{border-color:#aaa;background:#fafafa}.lightbox-bar button:disabled{opacity:.38;cursor:default}.lightbox-stage{min-height:0;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);place-items:center;padding:18px;overflow:hidden;background:#efefed}.lightbox-stage iframe{min-width:0;min-height:0;width:auto;height:100%;max-width:100%;max-height:100%;aspect-ratio:16/9;border:0;border-radius:13px;box-shadow:0 12px 38px rgba(0,0,0,.1);background:#fff}
 @keyframes oil-lightbox-in{from{opacity:0;transform:translateY(12px) scale(.985)}to{opacity:1;transform:none}}@keyframes oil-backdrop-in{from{background:rgba(28,28,26,0);backdrop-filter:blur(0)}to{background:rgba(28,28,26,.44);backdrop-filter:blur(12px) saturate(.9)}}
 .editor-toolbar{position:fixed;z-index:40;left:50%;bottom:20px;transform:translateX(-50%);width:min(920px,calc(100% - 28px));min-height:68px;padding:12px 14px 12px 18px;display:flex;align-items:center;gap:12px;border:1px solid rgba(41,41,41,.14);border-radius:20px;background:rgba(255,255,255,.94);box-shadow:0 18px 54px rgba(0,0,0,.16);backdrop-filter:blur(18px)}.editor-state{min-width:0;margin-right:auto;display:flex;align-items:center;gap:10px}.editor-dot{width:9px;height:9px;border-radius:50%;background:#61a56d;box-shadow:0 0 0 5px rgba(97,165,109,.13)}.editor-state strong{font-size:14px}.editor-state span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#777;font-size:13px}.editor-actions{display:flex;gap:8px}.editor-actions button{height:42px;padding:0 15px;border:1px solid #dededb;border-radius:13px;background:#fff;color:#292929;font:700 13px/1 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;cursor:pointer}.editor-actions button:hover:not(:disabled){border-color:#999}.editor-actions button:disabled{opacity:.38;cursor:default}.editor-actions .finish{border-color:#292929;background:#292929;color:#fff}.editor-errors{position:fixed;z-index:39;left:50%;bottom:102px;transform:translateX(-50%);width:min(920px,calc(100% - 28px));padding:16px 18px;border:1px solid #e6b5aa;border-radius:18px;background:#fff8f5;box-shadow:0 14px 40px rgba(0,0,0,.12);color:#7b3328}.editor-errors strong{display:block;margin-bottom:6px}.editor-errors ul{margin:0;padding-left:20px;font-size:13px;line-height:1.55}
 .slide-lightbox .editor-toolbar{position:static;z-index:auto;left:auto;bottom:auto;transform:none;width:100%;min-height:66px;border-width:1px 0 0;border-radius:0;box-shadow:none;backdrop-filter:none}.slide-lightbox .editor-errors{position:absolute;z-index:2;bottom:78px;width:min(920px,calc(100% - 28px))}
-@media(max-width:980px){.direction-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.fine-tune{grid-template-columns:1fr}}
-@media(max-width:720px){.design-panel-head{display:block}.palette-lock{display:inline-block;margin-top:10px}.direction-grid{grid-template-columns:1fr}.slide-lightbox{width:100vw;height:100dvh;max-height:100dvh;border-radius:0}.lightbox-bar{height:56px;padding-left:12px}.lightbox-bar strong{display:none}.lightbox-stage{padding:8px}.lightbox-stage iframe{width:100%;height:auto;max-height:100%}.editor-toolbar{bottom:10px;padding:10px 10px 10px 14px;flex-wrap:wrap}.editor-state{width:100%}.editor-actions{width:100%;display:grid;grid-template-columns:repeat(4,1fr)}.editor-actions button{padding:0 8px}.editor-errors{bottom:132px}}
+@media(max-width:720px){.design-summary{align-items:flex-start;flex-direction:column;gap:5px}.design-summary-note{margin-left:0}.slide-lightbox{width:100vw;height:100dvh;max-height:100dvh;border-radius:0}.lightbox-bar{height:56px;padding-left:12px}.lightbox-bar strong{display:none}.lightbox-stage{padding:8px}.lightbox-stage iframe{width:100%;height:auto;max-height:100%}.editor-toolbar{bottom:10px;padding:10px 10px 10px 14px;flex-wrap:wrap}.editor-state{width:100%}.editor-actions{width:100%;display:grid;grid-template-columns:repeat(4,1fr)}.editor-actions button{padding:0 8px}.editor-errors{bottom:132px}}
 @media(prefers-reduced-motion:reduce){.slide-lightbox[open],.slide-lightbox[open]::backdrop{animation:none}}
 """
 
@@ -264,7 +263,6 @@ def editor_shell_js(token: str, recovery_id: str, settings_signature: str) -> st
   function lockEditor(message='另一个标签页正在编辑这份演示，请回到原标签页继续。') {
     document.body.classList.add('is-editor-readonly');
     document.querySelectorAll('.editor-actions button').forEach(button=>button.disabled=true);
-    document.querySelectorAll('.design-panel button').forEach(button=>button.disabled=true);
     document.querySelectorAll('iframe').forEach(frame=>frame.contentWindow?.postMessage({type:'oil-ppt-editor-lock'},'*'));
     showErrors([{message}]); setStatus('当前标签页只读','error');
   }
@@ -370,17 +368,6 @@ def editor_shell_js(token: str, recovery_id: str, settings_signature: str) -> st
       catch (error) { showErrors([{message:error.message}]); setStatus('操作失败','error'); }
     });
   }
-  async function changeSetting(payload) {
-    if (!ensureLease()) return;
-    if (!await flushEdits()) { showErrors([{message:saveErrorMessage()}]); return; }
-    document.querySelectorAll('.design-panel button').forEach(button=>button.disabled=true);
-    setStatus('正在应用设计…','saving');
-    try { await enqueue(()=>api('/api/settings',payload)); location.reload(); }
-    catch (error) {
-      document.querySelectorAll('.design-panel button').forEach(button=>button.disabled=false);
-      showErrors([{message:error.message}]); setStatus('设计保存失败','error');
-    }
-  }
   addEventListener('message', event => {
     const message=event.data||{};
     if (message.type==='oil-ppt-editor-ready') {
@@ -397,8 +384,6 @@ def editor_shell_js(token: str, recovery_id: str, settings_signature: str) -> st
   });
   undo.addEventListener('click',()=>historyAction('/api/undo'));
   redo.addEventListener('click',()=>historyAction('/api/redo'));
-  document.querySelectorAll('[data-design-direction]').forEach(button=>button.addEventListener('click',()=>changeSetting({direction:button.dataset.designDirection})));
-  document.querySelectorAll('[data-design-setting]').forEach(button=>button.addEventListener('click',()=>changeSetting({[button.dataset.designSetting]:button.dataset.designValue})));
   document.querySelector('[data-editor-discard]').addEventListener('click',async()=>{
     if (!ensureLease()) return;
     if (!confirm('还原这次文字编辑？已经保存的编辑草稿会被删除。')) return;
@@ -576,72 +561,33 @@ def mini_palette(colors: list[str] | tuple[str, ...]) -> str:
     ) + "</span>"
 
 
-def palette_summary(data: dict) -> str:
+def palette_label(data: dict) -> str:
     raw = data["palette"]
-    palette = palette_for(data)
     if isinstance(raw, str):
-        name = canonical_name(raw)
-        label = PALETTE_META[name]["label"]
-    else:
-        label = "品牌配色" if data.get("palette_source") == "brand" else "用户配色"
+        return PALETTE_META[canonical_name(raw)]["label"]
+    return "品牌配色" if data.get("palette_source") == "brand" else "用户配色"
+
+
+def design_summary(data: dict) -> str:
+    direction_id = matching_direction(data)
+    direction = DESIGN_DIRECTION_BY_ID.get(direction_id)
+    direction_label = direction.label if direction else "自定义细调"
+    direction_detail = (
+        f"适合：{direction.use_when} 视觉影响：{direction.visual}"
+        if direction else "Agent 已根据当前内容与用户要求组合视觉参数。"
+    )
+    palette = palette_for(data)
     return (
-        f'<span class="swatch">{mini_palette([palette["accent"], palette["accent_alt"], palette["accent_warm"]])}'
-        f'配色 {esc(label)}</span>'
+        f'<section class="design-summary" data-readonly-design-summary aria-label="当前视觉" '
+        f'title="{esc(direction_detail)}"><span class="design-summary-main"><strong>当前视觉：</strong>'
+        f'<span>{esc(direction_label)}</span><span>·</span>'
+        f'<span class="design-summary-palette">'
+        f'{mini_palette([palette["accent"], palette["accent_alt"], palette["accent_warm"]])}'
+        f'{esc(palette_label(data))}</span><span>·</span>'
+        f'<span>{esc(TYPE_META[data["typography"]]["label"])}</span><span>·</span>'
+        f'<span>{esc(SHAPE_META[data["shape"]]["label"])}圆角</span></span>'
+        f'<span class="design-summary-note">需要调整，直接告诉 Agent。</span></section>'
     )
-
-
-def design_controls(data: dict) -> str:
-    active_direction = matching_direction(data)
-    raw_palette = data["palette"]
-    active_palette = canonical_name(raw_palette) if isinstance(raw_palette, str) else None
-    direction_buttons = []
-    for direction in DESIGN_DIRECTIONS:
-        tokens = named_palette(direction.palette)
-        selected = direction.id == active_direction
-        direction_buttons.append(
-            f'<button type="button" class="direction-option{" is-selected" if selected else ""}" '
-            f'data-design-direction="{esc(direction.id)}" aria-pressed="{str(selected).lower()}" '
-            f'title="适合：{esc(direction.use_when)} {esc(direction.visual)}">'
-            f'{mini_palette([tokens["accent"], tokens["accent_alt"], tokens["accent_warm"]])}'
-            f'<strong>{esc(direction.label)}</strong><small>{esc(direction.visual)}</small></button>'
-        )
-    palette_buttons = []
-    for name, tokens in PALETTES.items():
-        selected = name == active_palette
-        palette_buttons.append(
-            f'<button type="button" class="fine-option{" is-selected" if selected else ""}" '
-            f'data-design-setting="palette" data-design-value="{esc(name)}" '
-            f'aria-pressed="{str(selected).lower()}" title="{esc(PALETTE_META[name]["description"])}">'
-            f'<i class="palette-dot" style="--swatch:{esc(tokens["accent"])}"></i>{esc(PALETTE_META[name]["label"])}</button>'
-        )
-    typography_buttons = []
-    for name, meta in TYPE_META.items():
-        selected = name == data["typography"]
-        typography_buttons.append(
-            f'<button type="button" class="fine-option{" is-selected" if selected else ""}" '
-            f'data-design-setting="typography" data-design-value="{esc(name)}" '
-            f'aria-pressed="{str(selected).lower()}" title="{esc(meta["description"])}">{esc(meta["label"])}</button>'
-        )
-    shape_buttons = []
-    for name, meta in SHAPE_META.items():
-        selected = name == data["shape"]
-        shape_buttons.append(
-            f'<button type="button" class="fine-option{" is-selected" if selected else ""}" '
-            f'data-design-setting="shape" data-design-value="{esc(name)}" '
-            f'aria-pressed="{str(selected).lower()}" title="{esc(meta["description"])}">{esc(meta["label"])}</button>'
-        )
-    custom = not isinstance(raw_palette, str)
-    lock = '<span class="palette-lock" data-custom-palette-lock>自定义配色已锁定</span>' if custom else ""
-    note = (
-        '<p class="custom-palette-note">当前用户 / 品牌配色会保持不变；只有明确选择上方方向或某个配色时才会替换。</p>'
-        if custom else ""
-    )
-    return f"""<section class="design-panel" aria-label="设计方向设置" data-editor-settings>
-<header class="design-panel-head"><div><h2>设计方向</h2><p>选择整体方向，或只细调配色、字体与圆角。所有选择都可撤销、重做或还原。</p></div>{lock}</header>
-<div class="direction-grid">{"".join(direction_buttons)}</div>
-<div class="fine-tune"><div class="fine-group"><strong>配色</strong><div class="fine-options">{"".join(palette_buttons)}</div>{note}</div>
-<div class="fine-group"><strong>字体</strong><div class="fine-options">{"".join(typography_buttons)}</div></div>
-<div class="fine-group"><strong>圆角</strong><div class="fine-options">{"".join(shape_buttons)}</div></div></div></section>"""
 
 
 def validate_asset_paths(data: dict, base: Path) -> None:
@@ -675,24 +621,12 @@ def render(data: dict, *, authoring: bool = False, editor_token: str = "", edito
         if not editor_recovery_id:
             raise ValueError("authoring preview requires a project-bound recovery id")
         editor_toolbar = """<section id="editor-errors" class="editor-errors" hidden aria-live="assertive"><strong>这些内容还需要处理</strong><ul></ul></section>
-<aside class="editor-toolbar" aria-label="内容与设计编辑工具栏"><div class="editor-state"><i class="editor-dot"></i><strong>内容与设计</strong><span id="editor-status">已自动保存</span></div><div class="editor-actions"><button type="button" data-editor-undo>撤销</button><button type="button" data-editor-redo>重做</button><button type="button" data-editor-discard>还原</button><button type="button" class="finish" data-editor-finish>完成编辑</button></div></aside>"""
+<aside class="editor-toolbar" aria-label="内容编辑工具栏"><div class="editor-state"><i class="editor-dot"></i><strong>内容编辑</strong><span id="editor-status">已自动保存</span></div><div class="editor-actions"><button type="button" data-editor-undo>撤销</button><button type="button" data-editor-redo>重做</button><button type="button" data-editor-discard>还原</button><button type="button" class="finish" data-editor-finish>完成编辑</button></div></aside>"""
         editor_script = f"<script>{editor_shell_js(editor_token, editor_recovery_id, settings_signature(data))}</script>"
-    if authoring:
-        settings = design_controls(data)
-    else:
-        direction_id = matching_direction(data)
-        direction_label = DESIGN_DIRECTION_BY_ID[direction_id].label if direction_id else "自定义细调"
-        settings = (
-            f'<div class="settings" data-readonly-design-summary>'
-            f'<span>方向 {esc(direction_label)}</span>{palette_summary(data)}'
-            f'<span>字体 {esc(TYPE_META[data["typography"]]["label"])}</span>'
-            f'<span>圆角 {esc(SHAPE_META[data["shape"]]["label"])}</span>'
-            f'<span>鼠标翻页 {"开启" if data["click_navigation"] else "关闭"}</span>'
-            f'<span>如需修改，请进入编辑预览</span></div>'
-        )
+    settings = design_summary(data)
     lightbox = f"""<dialog id="slide-lightbox" class="slide-lightbox" aria-label="幻灯片大图预览"><header class="lightbox-bar"><strong class="lightbox-title"></strong><span class="lightbox-page"></span><button type="button" data-lightbox-prev aria-label="上一页">←</button><button type="button" data-lightbox-next aria-label="下一页">→</button><button type="button" data-lightbox-close>关闭</button></header><div class="lightbox-stage"><iframe title="大图预览"></iframe></div>{editor_toolbar}</dialog>"""
     return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(data['title'])} · 预览</title>
-<style>*{{box-sizing:border-box}}body{{margin:0;background:#f5f5f4;color:#292929;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}}main{{width:min(1500px,calc(100% - 40px));margin:auto;padding:44px 0 90px}}header{{margin-bottom:24px}}h1{{margin:0;font-size:40px}}.settings{{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 28px}}.settings>span{{padding:7px 10px;border-radius:999px;background:#fff;border:1px solid #e5e5e5;font-size:12px}}.swatch{{display:inline-flex!important;align-items:center;gap:7px}}.settings .mini-palette i{{width:10px;height:10px}}.pages{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}}article{{padding:14px;border-radius:18px;background:#fff;border:1px solid #e5e5e5}}.meta{{display:flex;align-items:center;gap:10px;margin-bottom:11px;min-width:0}}.meta b{{font-size:13px}}.meta strong{{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#777;font-size:13px;font-weight:600}}iframe{{display:block;width:100%;aspect-ratio:16/9;border:1px solid #eee;border-radius:11px;background:#fff}}article p{{margin:10px 2px 0;color:#777;font-size:12px}}@media(max-width:900px){{.pages{{grid-template-columns:1fr}}}}{PREVIEW_SHELL_CSS}</style></head><body{author_class}><main>
+<style>*{{box-sizing:border-box}}body{{margin:0;background:#f5f5f4;color:#292929;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}}main{{width:min(1500px,calc(100% - 40px));margin:auto;padding:44px 0 90px}}header{{margin-bottom:24px}}h1{{margin:0;font-size:40px}}.pages{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}}article{{padding:14px;border-radius:18px;background:#fff;border:1px solid #e5e5e5}}.meta{{display:flex;align-items:center;gap:10px;margin-bottom:11px;min-width:0}}.meta b{{font-size:13px}}.meta strong{{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#777;font-size:13px;font-weight:600}}iframe{{display:block;width:100%;aspect-ratio:16/9;border:1px solid #eee;border-radius:11px;background:#fff}}article p{{margin:10px 2px 0;color:#777;font-size:12px}}@media(max-width:900px){{.pages{{grid-template-columns:1fr}}}}{PREVIEW_SHELL_CSS}</style></head><body{author_class}><main>
 <header><h1>{esc(data['title'])}</h1></header>
 {settings}
 <section class="pages">{''.join(cards)}</section></main>{lightbox}

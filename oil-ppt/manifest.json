@@ -2,8 +2,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "b026b902209badf03f81b0eb592ee96f0fd990490ca1bc769d0879c56f8f5807",
-      "size": 7674
+      "sha256": "df670f182c811892ae26a69ad62f66e36cac2e126b6384c5dc9b1f65cea878fe",
+      "size": 8177
     },
     {
       "path": "agents/openai.yaml",
@@ -96,9 +96,19 @@
       "size": 4423
     },
     {
+      "path": "assets/templates/artifact-focus.html",
+      "sha256": "acb79ac89da082a278ab0084ebcec603a9033a822e84828621836401c33e21f6",
+      "size": 1816
+    },
+    {
       "path": "assets/templates/bleed-split.html",
       "sha256": "a86d8c0dd6c9af8cfd4f309ec2048e91fbc35802e501458cf161b31c7d10aa16",
       "size": 1528
+    },
+    {
+      "path": "assets/templates/brand-matrix.html",
+      "sha256": "98a40bc4e39fb765112d6716b67d36e360f0389e41449c71b2821181e019ec10",
+      "size": 5108
     },
     {
       "path": "assets/templates/browser-showcase.html",
@@ -119,6 +129,11 @@
       "path": "assets/templates/catalog-board.html",
       "sha256": "464e7615ea8256f8868c881043553002cf3d4fa14a4d00623178ed3d6baba6a4",
       "size": 6046
+    },
+    {
+      "path": "assets/templates/code-to-render.html",
+      "sha256": "af96973bcb4ed27e2c21ab119bf3bae2a2e79e89b468dcab1dd2cfe34d44b217",
+      "size": 3977
     },
     {
       "path": "assets/templates/comparison-list.html",
@@ -159,6 +174,16 @@
       "path": "assets/templates/diagonal-split.html",
       "sha256": "a58ad60e47c5d6c4ad5ff81e2d619989a634b7df7cfe019726a1b1978db9cf0e",
       "size": 1595
+    },
+    {
+      "path": "assets/templates/dialogue-vs-task.html",
+      "sha256": "742cbdfbc4e13c6060015a86c8062d1381b48746e143169c89cc2d0b59641b32",
+      "size": 5729
+    },
+    {
+      "path": "assets/templates/dual-table-matrix.html",
+      "sha256": "f86656827346e2d8a7bc5b8d355d2a8dd77b9165afd3d7bb8e548b4b4005d9e4",
+      "size": 3857
     },
     {
       "path": "assets/templates/editorial-canvas.html",
@@ -206,6 +231,11 @@
       "size": 9068
     },
     {
+      "path": "assets/templates/project-card-grid.html",
+      "sha256": "f709482605f49475490535bf13c54050b32d36125fb5ea269da5f6049daa9e0c",
+      "size": 4541
+    },
+    {
       "path": "assets/templates/quadrant.html",
       "sha256": "3f12bd5e2b41ae794b454cb572b47b5f6c501a8fda55c3c66380185de7dbe2a3",
       "size": 5464
@@ -239,6 +269,11 @@
       "path": "assets/templates/split-visual.html",
       "sha256": "f9b97c5369ab0421cbd1f5c3998a5cc34533d114b3ba84ab3fd71b3385c11448",
       "size": 2135
+    },
+    {
+      "path": "assets/templates/step-hero.html",
+      "sha256": "a9af03f4d1ab103013b2bf99a5dbc53587eaa7b898b1f8d28610428617ee57a3",
+      "size": 3442
     },
     {
       "path": "assets/templates/tabs.html",
@@ -302,13 +337,13 @@
     },
     {
       "path": "scripts/capability_catalog.py",
-      "sha256": "51f48d5f0fd06fc0b0f73f7c18ecd79aef3f9dcb35a94085a3a82878def05462",
-      "size": 9043
+      "sha256": "68fbd7aef316b3ea8fc0faa7d5de8a35476b8656a395ebfc49222a24efaacf3e",
+      "size": 9236
     },
     {
       "path": "scripts/capability_recommender.py",
-      "sha256": "7f362f564cdd6f7aa9592f3e37c7dc2137c2366462b19d54f34ead470897ec60",
-      "size": 10492
+      "sha256": "a68ec37f7b1f995bd7752f26da16d8260563448b52342e7125b5b46b961e18b1",
+      "size": 12230
     },
     {
       "path": "scripts/cdp_validate.py",
@@ -317,13 +352,13 @@
     },
     {
       "path": "scripts/component_contracts.py",
-      "sha256": "d703698fcb5b23ca0017257579a62f1fe9b80f87fc492c0b69a920aa7e02aee6",
-      "size": 4033
+      "sha256": "ec0186d0fb8753b04c0ad2b6abb1cd1a55f0479a1cea1d77bb79844670f79735",
+      "size": 4116
     },
     {
       "path": "scripts/component_registry.py",
-      "sha256": "74b030545754017a658f34b8de5fa93072c3cb47672598674b6f774e969b975e",
-      "size": 27789
+      "sha256": "8f86cad8dacf00f76e9904d47f1751b35723ee114e6062b9823da40420f30502",
+      "size": 32037
     },
     {
       "path": "scripts/design_directions.py",
@@ -332,23 +367,23 @@
     },
     {
       "path": "scripts/design_quality.py",
-      "sha256": "0a5a65a936eb3d3d90686c8d884e726da9516615fb1b0fc0bfda1db5e96f51ff",
-      "size": 28999
+      "sha256": "c528d00cfc0805bdbb91aed9e81b6516ea17f6225c4c131240b738f8ec535ad1",
+      "size": 29487
     },
     {
       "path": "scripts/doctor.py",
-      "sha256": "26a7711e9219e8b69af9e8add3c7b1e1848822da9f550f86a42c9dee520070d1",
-      "size": 117575
+      "sha256": "e1ba71444183bc0ff3c22448773c5dbe1a07ad7187b86efb1ad84e7544ebdea6",
+      "size": 120436
     },
     {
       "path": "scripts/editor_bindings.py",
-      "sha256": "b531d0ae8d5667a9c5a704e1c9c9e17855f749183f8c10dcf47e270d34180d0d",
-      "size": 27496
+      "sha256": "bd15e63a58a00c44de395bbe8485ebffb1b210d1232a4a16a8220f8d44c1b676",
+      "size": 34654
     },
     {
       "path": "scripts/fill_slots.py",
-      "sha256": "fa29b17a1032b4f21c482acebced5d1e7578d7b5cb3b51e5e9baeed1e7f3b8a7",
-      "size": 47907
+      "sha256": "32d18a4b55988f81a1c3afa56943efb6df67d4c65b5270c49253d515f3e3cd6d",
+      "size": 57157
     },
     {
       "path": "scripts/fill_templates.py",
@@ -377,8 +412,8 @@
     },
     {
       "path": "scripts/media_plan.py",
-      "sha256": "2b91b05347bf7bd5bb8e2578b6a4be411058aee93190f446bf54c167924bb87c",
-      "size": 10356
+      "sha256": "1f3aeed9e46bce145bb941952a00ca9b5d275de5d5e2ec21031ba1a6b1fce354",
+      "size": 10622
     },
     {
       "path": "scripts/oil-ppt",
@@ -392,13 +427,13 @@
     },
     {
       "path": "scripts/oil_ppt.py",
-      "sha256": "5f2251d19a5fe6b689ffb6ff26c014809b780003874db327c44660b4338b3158",
-      "size": 148415
+      "sha256": "8c59d62c8ca47278ac5b20318f7fc7f661b70f80cb0a9d72dcb54b2d4a62c856",
+      "size": 154479
     },
     {
       "path": "scripts/outline_schema.py",
-      "sha256": "32dd8dfcfe3eb4d6f0fc74766eb6d733e37778ef2ba7e20528502eacc7acabe2",
-      "size": 78682
+      "sha256": "2233b170d653829f7ebfd5927e3c7fc1201cbaab8a127e5443050230c52540ad",
+      "size": 90479
     },
     {
       "path": "scripts/package_manifest.py",
@@ -417,13 +452,13 @@
     },
     {
       "path": "scripts/render_component_catalog.py",
-      "sha256": "024de0447431a47aa51a58312de80efde77a5445b9dffabc712d45a256b7f0b9",
-      "size": 16249
+      "sha256": "5905e91a9a39123b65c6688898d7ece8728333241e1b772cca2584bed3ccf596",
+      "size": 16363
     },
     {
       "path": "scripts/render_outline_review.py",
-      "sha256": "342acb5d9e3074677c611a78c9171c2802b7b58c0a2c0909b91c787a4a8046a5",
-      "size": 45946
+      "sha256": "af8da5f57bfac27fc25cd4eb9b2bbf9b51bd2a4383f696583a1d6bf7c059068b",
+      "size": 39808
     },
     {
       "path": "scripts/render_programmatic_visual.py",
@@ -442,8 +477,8 @@
     },
     {
       "path": "scripts/validate_skill.py",
-      "sha256": "33bd55c4d4ad44e15c4be543d122c72ce4eb76d9277c40d4afbe4075b2e41b42",
-      "size": 39426
+      "sha256": "3eabd91f92766389ccc1ae163d4353f397747525161047bf7b3d705e6a1d920f",
+      "size": 39535
     },
     {
       "path": "scripts/workflow_contract.py",
@@ -467,8 +502,13 @@
     },
     {
       "path": "tests/test_design_directions.py",
-      "sha256": "56d86a40836f009ce4d2a6605fcc02e0dd890f9c3683f63b96a6fe9e55caa4ee",
-      "size": 9191
+      "sha256": "8b0467096a4eee4f7717aec4f89973504c2b89b60c45ddd1a2e7f6b379ef851a",
+      "size": 9853
+    },
+    {
+      "path": "tests/test_extended_components.py",
+      "sha256": "67940520bb7e9dc34fa9dfe75c94764492ef89ab6b4889090dc6ad748c3c937e",
+      "size": 6813
     },
     {
       "path": "tests/test_package_manifest.py",
@@ -493,5 +533,5 @@
   ],
   "package_version": "0.3.0",
   "schema_version": "oil-ppt.package/v1",
-  "tree_sha256": "c6d6532311c1553aa831299a6009f5dbcead9cc2513367dbb48d39b00fe62aeb"
+  "tree_sha256": "378579f733227dcba8bbc3040cd312d462c0a16852f4a28dcaf8b4d86b96e774"
 }

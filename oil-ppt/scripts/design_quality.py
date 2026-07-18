@@ -64,6 +64,7 @@ def suggested_background(slide: dict, current: str) -> str:
     silhouette = slide_quality(slide)["silhouette"]
     candidates = {
         "focal": ("block-field", "soft-spotlight", "grid-fade"),
+        "artifact-focus": ("soft-spotlight", "grid-fade", "grid-wide"),
         "split": ("soft-spotlight", "grid-fade", "grid-wide"),
         "bleed": ("soft-spotlight", "grid-fade", "block-field"),
         "browser": ("soft-spotlight", "grid-fade", "grid-wide"),
@@ -74,7 +75,13 @@ def suggested_background(slide: dict, current: str) -> str:
         "timeline": ("grid-wide", "grid-fade", "block-field"),
         "step-grid": ("grid-wide", "grid-fade", "block-field"),
         "card-grid": ("grid-fade", "block-field", "soft-spotlight"),
+        "project-grid": ("grid-fade", "grid-wide", "soft-spotlight"),
+        "brand-matrix": ("grid-wide", "grid-fade", "soft-spotlight"),
         "two-panel": ("grid-fade", "block-field", "soft-spotlight"),
+        "dialogue-task": ("grid-fade", "block-field", "soft-spotlight"),
+        "dual-table": ("grid-wide", "grid-fade", "block-field"),
+        "code-render": ("block-field", "grid-fade", "soft-spotlight"),
+        "step-hero": ("soft-spotlight", "grid-fade", "grid-wide"),
         "matrix": ("grid-fade", "grid-wide", "block-field"),
         "quadrant": ("grid-fade", "grid-wide", "soft-spotlight"),
         "metric": ("soft-spotlight", "block-field", "grid-fade"),

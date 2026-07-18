@@ -162,39 +162,52 @@ class EditorDesignTransactionTests(unittest.TestCase):
             self.assertEqual(session.data["palette_source"], "brand")
 
 
-class DesignControlsHtmlTests(unittest.TestCase):
-    def test_authoring_exposes_only_curated_controls_and_formal_preview_is_read_only(self) -> None:
+class DesignSummaryHtmlTests(unittest.TestCase):
+    def test_authoring_and_formal_preview_show_the_same_read_only_summary(self) -> None:
         data = outline_data()
         authoring = render(data, authoring=True, editor_token="token", editor_recovery_id="recovery")
         formal = render(data)
 
-        self.assertIn('class="design-panel"', authoring)
-        self.assertIn('aria-label="设计方向设置"', authoring)
-        self.assertIn('data-design-direction="fresh-default"', authoring)
-        self.assertIn('data-design-setting="palette"', authoring)
-        self.assertIn('data-design-setting="typography"', authoring)
-        self.assertIn('data-design-setting="shape"', authoring)
-        self.assertIn("明亮黄", authoring)
-        self.assertNotIn('data-design-setting="css"', authoring)
-        self.assertNotIn('data-design-setting="layout"', authoring)
-        self.assertNotIn('name="css"', authoring)
-        self.assertNotIn('name="layout"', authoring)
+        for preview in (authoring, formal):
+            with self.subTest(authoring=preview is authoring):
+                self.assertIn('class="design-summary"', preview)
+                self.assertIn('data-readonly-design-summary', preview)
+                self.assertIn('aria-label="当前视觉"', preview)
+                self.assertIn("当前视觉：", preview)
+                self.assertIn("清爽默认", preview)
+                self.assertIn("明亮黄", preview)
+                self.assertIn("清爽无衬线", preview)
+                self.assertIn("柔和圆角", preview)
+                self.assertIn("需要调整，直接告诉 Agent。", preview)
+                self.assertNotIn('class="design-panel"', preview)
+                self.assertNotIn('data-design-direction="', preview)
+                self.assertNotIn('data-design-setting="', preview)
+                self.assertNotIn("/api/settings", preview)
 
-        self.assertIn("data-readonly-design-summary", formal)
-        self.assertIn("如需修改，请进入编辑预览", formal)
-        self.assertNotIn('data-design-direction="', formal)
-        self.assertNotIn('data-design-setting="', formal)
-        self.assertNotIn("applyPalette(", formal)
+        self.assertIn('aria-label="内容编辑工具栏"', authoring)
+        self.assertNotIn('aria-label="内容与设计编辑工具栏"', authoring)
 
-    def test_custom_palette_lock_is_visible_in_authoring_html(self) -> None:
+    def test_summary_describes_matching_direction(self) -> None:
+        data = outline_data(palette="glacier-teal")
+        data["shape"] = "crisp"
+        authoring = render(data, authoring=True, editor_token="token", editor_recovery_id="recovery")
+
+        self.assertIn("冷静研究", authoring)
+        self.assertIn("冰川青", authoring)
+        self.assertIn("清爽无衬线", authoring)
+        self.assertIn("利落圆角", authoring)
+        self.assertIn("视觉影响：冰川青、低对比表面与清晰边界。", authoring)
+
+    def test_custom_palette_is_identified_without_exposing_replacement_controls(self) -> None:
         data = outline_data(
             palette=custom_palette("#2255AA", "#EEF4FF", "#173263"),
             palette_source="brand",
         )
         authoring = render(data, authoring=True, editor_token="token", editor_recovery_id="recovery")
-        self.assertIn("data-custom-palette-lock", authoring)
-        self.assertIn("自定义配色已锁定", authoring)
-        self.assertIn("只有明确选择上方方向或某个配色时才会替换", authoring)
+        self.assertIn("自定义细调", authoring)
+        self.assertIn("品牌配色", authoring)
+        self.assertNotIn("data-custom-palette-lock", authoring)
+        self.assertNotIn('data-design-setting="', authoring)
 
 
 if __name__ == "__main__":

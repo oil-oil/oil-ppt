@@ -13,6 +13,7 @@ from media_assets import inspect_image, outline_media_bindings
 
 
 MEDIA_SLOTS = {
+    "artifact-focus": {"ratio": "16:10", "target": [1600, 1000], "role": "focal-artifact", "fit": "contain", "fidelity": "illustrative"},
     "cover": {"ratio": "4:5", "target": [1200, 1500], "role": "opening-visual", "fit": "cover", "fidelity": "contextual"},
     "end": {"ratio": "1:1", "target": [1200, 1200], "role": "artifact", "fit": "contain", "fidelity": "strict"},
     "bleed-split": {"ratio": "16:9", "target": [1600, 900], "role": "edge-visual", "fit": "cover", "fidelity": "contextual"},
@@ -26,6 +27,7 @@ MEDIA_SLOTS = {
     "case-study-board": {"ratio": "16:10", "target": [1600, 1000], "role": "case-evidence", "fit": "contain", "fidelity": "strict"},
     "annotated-showcase": {"ratio": "16:10", "target": [1600, 1000], "role": "annotated-evidence", "fit": "contain", "fidelity": "strict"},
     "sequence-gallery": {"ratio": "16:10", "target": [1200, 750], "role": "sequence-frame", "fit": "cover", "fidelity": "contextual"},
+    "step-hero": {"ratio": "4:5", "target": [1200, 1500], "role": "step-visual", "fit": "contain", "fidelity": "illustrative"},
 }
 
 MEDIA_VARIANT_SLOTS = {
