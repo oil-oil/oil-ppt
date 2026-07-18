@@ -164,6 +164,18 @@ PALETTES = {
     },
 }
 
+PALETTE_META = {
+    "soft-editorial": {"label": "纸刊蓝", "description": "偏纸张质感的浅蓝与柔和中性色。"},
+    "oil-yellow": {"label": "明亮黄", "description": "明亮白底与克制黄强调，适合大多数演示。"},
+    "ink-slate": {"label": "雾蓝", "description": "清爽浅蓝，信息感明确但不过度冷峻。"},
+    "quiet-moss": {"label": "苔绿", "description": "安静自然的浅绿，适合长期主义与组织主题。"},
+    "warm-clay": {"label": "暖陶", "description": "温暖珊瑚色，亲和但仍保持清楚对比。"},
+    "dusty-plum": {"label": "灰紫", "description": "低饱和紫色，适合抽象概念与叙事内容。"},
+    "ocean-cobalt": {"label": "深海蓝", "description": "更深的冷蓝层级，适合系统与技术内容。"},
+    "sand-copper": {"label": "沙铜", "description": "纸张暖白与铜色强调，稳重且有人文感。"},
+    "glacier-teal": {"label": "冰川青", "description": "冷静青色与低对比表面，适合研究与分析。"},
+}
+
 ALIASES = {
     "warm": "oil-yellow",
     "yellow": "oil-yellow",

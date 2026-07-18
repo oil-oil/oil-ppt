@@ -1,6 +1,6 @@
 ---
 name: oil-ppt
-description: 使用 oil-ppt 创建、修改、续做、批量检查或构建白底细网格、层级清楚、强调克制的 16:9 HTML 演示文稿/PPT。适用于从主题、文档或既有大纲新建演示，继续现有 oil-ppt 项目，恢复文字编辑，批量验收项目，以及生成最终离线 HTML。
+description: 使用 oil-ppt 创建、修改、续做、批量检查或构建白底细网格、层级清楚、强调克制的 16:9 HTML 演示文稿/PPT。适用于从主题、文档或既有大纲新建演示，继续现有 oil-ppt 项目，恢复预览编辑，批量验收项目，以及生成最终离线 HTML。
 ---
 
 # oil-ppt
@@ -50,7 +50,7 @@ scripts/oil-ppt status <项目> --json
 - `write_visual_plan`：只编辑 `next.path`；可先原样执行 `next.reference_command` 查看合法参考，完成后重新运行 `status`。
 <!-- next-action-contract:end -->
 
-需要重新打开已完成演示的文字编辑器时，不重走构建流程：
+需要重新打开已完成演示的预览编辑器时，不重走构建流程：
 
 ```text
 scripts/oil-ppt status <项目> --json --intent edit
@@ -97,7 +97,7 @@ scripts/oil-ppt contract --id <组件>
 
 只有需要获取外部素材时读取 `references/media.md`；生成概念插画时读取 `references/illustration.md`；用代码绘制 UI、流程、关系或图表时读取 `references/programmatic-visuals.md`。
 
-正式预览默认打开可编辑页面。用户点击页面即可校对文字；草稿自动保存，完成后程序写回结构化内容并重新生成预览。不要直接修改预览或最终 HTML。生成后停止等待用户确认；确认后仍只执行状态机返回的命令，`build` 会自行完成脚手架、素材内联和浏览器验证。
+正式预览默认打开可编辑页面。用户点击页面即可校对文字，也可选择设计方向，并受限调整配色、字体和圆角；这些修改与文字共享草稿、撤销、重做和还原。完成后程序写回结构化内容并重新生成预览。不要直接修改预览或最终 HTML。生成后停止等待用户确认；确认后仍只执行状态机返回的命令，`build` 会自行完成脚手架、素材内联和浏览器验证。
 
 ## 修改与交付
 
