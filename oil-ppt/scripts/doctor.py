@@ -94,6 +94,13 @@ def smoke_slides() -> list[dict]:
         {"id": "narrative-bento", "title": "不同信息拥有不同权重", "template": "narrative-bento", "variant": "default", "decor": "none", "content": "页面通过面积和位置建立主次", "statement": "核心判断占据最大的连续区域", "statement_body": "其他模块补充证据和条件", "statement_icon": "lightbulb", "quote": "清楚的主次，本身就是设计感。", "quote_icon": "check-circle", "cards": compound_cards[:2]},
         {"id": "sequence-gallery", "title": "过程也值得被看见", "template": "sequence-gallery", "variant": "default", "decor": "none", "content": "三个真实画面共享框架", "steps": gallery_steps, "conclusion": "一致的容器，让变化更容易比较", "media_frame": "content"},
         {"id": "process-cards", "title": "四个动作组成稳定路径", "template": "process-cards", "variant": "terminal-focus", "decor": "none", "content": "每一步都有明确动作，最后一步用深色结果块收束", "steps": [{"title": "发现", "body": "先定位需要回答的问题", "icon": "magnifying-glass"}, {"title": "重排", "body": "让素材和结论形成对应", "icon": "image"}, {"title": "保存", "body": "把外部素材变成本地资产", "icon": "download-simple"}, {"title": "交付", "body": "离线打开仍然保持同样画面", "icon": "file-text"}], "measurements": [{"label": "来源", "value": "已记录"}, {"label": "尺寸", "value": "已检查"}, {"label": "授权", "value": "已核验"}, {"label": "交付", "value": "可离线"}], "measurement_note": "程序化验收", "measurement_meta": "构建时统一完成"},
+        {"id": "artifact-focus", "title": "让单一视觉成为页面焦点", "template": "artifact-focus", "variant": "default", "decor": "none", "content": "短说明只补充观看这张视觉所需的最少语境", "image": image, "image_alt": "居中的焦点视觉", "media_frame": "content"},
+        {"id": "project-card-grid", "title": "六个项目组成统一总览", "template": "project-card-grid", "variant": "default", "decor": "none", "content": "用同一结构快速扫描当前项目", "cards": [{"title": f"项目{i}", "meta": f"阶段 {i}", "body": "明确目标与下一步动作"} for i in range(1, 7)]},
+        {"id": "brand-matrix", "title": "两组工具形成能力矩阵", "template": "brand-matrix", "variant": "default", "decor": "none", "content": "按分组扫描同类工具与用途", "groups": [{"title": "内容工具", "items": [{"title": f"工具{i}", "meta": "支持内容处理"} for i in range(1, 4)]}, {"title": "交付工具", "items": [{"title": f"工具{i}", "meta": "支持结果交付"} for i in range(4, 8)]}]},
+        {"id": "dialogue-vs-task", "title": "对话与任务产生不同结果", "template": "dialogue-vs-task", "variant": "default", "decor": "none", "content": "同一需求可以采用两种工作方式", "sides": [{"title": "开放对话", "lead": "围绕问题持续探索", "points": ["保留上下文", "适合发散"], "result": "持续对话形成新的理解"}, {"title": "明确任务", "lead": "围绕结果完成交付", "points": ["边界清楚", "步骤明确", "适合验收"], "result": "任务完成后得到可验收结果"}]},
+        {"id": "dual-table-matrix", "title": "两组清单并列检查", "template": "dual-table-matrix", "variant": "default", "decor": "none", "content": "共享阅读节奏让差异更容易发现", "tables": [{"title": "输入检查", "rows": [["目标", "已明确"], ["材料", "已收集"]]}, {"title": "输出检查", "rows": [["结构", "可扫描"], ["视觉", "有证据"], ["交付", "可离线"]]}]},
+        {"id": "code-to-render", "title": "源码经过转换成为结果", "template": "code-to-render", "variant": "default", "decor": "none", "content": "把输入与呈现放在同一条阅读路径上", "panels": [{"title": "HTML", "source": "<section>\n  <h2>标题</h2>\n</section>", "render_title": "网页结果", "render_body": "结构化内容被渲染为页面"}, {"title": "MARKDOWN", "source": "## 标题\n\n一段正文", "render_title": "文档结果", "render_body": "轻量标记被渲染为文档"}]},
+        {"id": "step-hero", "title": "把关键步骤单独讲清楚", "template": "step-hero", "variant": "media-right", "decor": "none", "content": "这一页只聚焦一个需要完成的动作", "step_number": "02", "points": ["明确输入", "完成处理", "检查结果"], "conclusion": "步骤完成后进入下一阶段", "image": image, "image_alt": "步骤示意视觉", "media_frame": "content"},
         {"id": "end", "title": "稳定的事情交给程序", "template": "end", "variant": "line", "decor": "none"},
     ]
 
@@ -1482,7 +1489,12 @@ def main() -> None:
             preview_text = preview_file.read_text(encoding="utf-8")
             if preview_text.count('class="page-card"') != len(smoke_slides()):
                 raise RuntimeError("preview did not render every slide as a real template iframe")
-            if 'data-readonly-design-summary' not in preview_text or 'data-design-setting="' in preview_text:
+            if (
+                'data-readonly-design-summary' not in preview_text
+                or 'aria-label="当前视觉"' not in preview_text
+                or 'data-design-setting="' in preview_text
+                or 'data-design-direction="' in preview_text
+            ):
                 raise RuntimeError("formal preview did not keep design settings as a read-only persisted summary")
             if "applyPalette(" in preview_text or 'aria-label="选择配色"' in preview_text:
                 raise RuntimeError("formal preview still exposed the retired temporary palette picker")
@@ -1569,21 +1581,18 @@ def main() -> None:
             if "放大编辑" in authoring_text:
                 raise RuntimeError("text editor still exposed the removed enlarge-edit button")
             if (
-                'class="design-panel"' not in authoring_text
-                or 'data-design-direction="fresh-default"' not in authoring_text
-                or 'data-design-setting="palette"' not in authoring_text
-                or 'data-design-setting="typography"' not in authoring_text
-                or 'data-design-setting="shape"' not in authoring_text
-                or "/api/settings" not in authoring_text
+                'class="design-summary"' not in authoring_text
+                or 'data-readonly-design-summary' not in authoring_text
+                or 'aria-label="当前视觉"' not in authoring_text
+                or "需要调整，直接告诉 Agent。" not in authoring_text
+                or 'aria-label="内容编辑工具栏"' not in authoring_text
             ):
-                raise RuntimeError("authoring HTML did not expose persisted curated design controls")
+                raise RuntimeError("authoring HTML did not expose the read-only visual summary")
             if any(
                 forbidden in authoring_text
-                for forbidden in ('data-design-setting="css"', 'data-design-setting="layout"', 'name="css"', 'name="layout"')
+                for forbidden in ('class="design-panel"', 'data-design-direction="', 'data-design-setting="', "/api/settings")
             ):
-                raise RuntimeError("authoring HTML exposed a free CSS or layout control")
-            if not isinstance(editor.data.get("palette"), str) and 'data-custom-palette-lock' not in authoring_text:
-                raise RuntimeError("authoring HTML did not show the custom palette lock")
+                raise RuntimeError("authoring HTML exposed user-facing design controls")
             if authoring_text.count('class="preview-open"') != len(smoke_slides()):
                 raise RuntimeError("text editor did not make every thumbnail a click-to-open target")
             if authoring_text.count('tabindex="-1" aria-hidden="true"') != len(smoke_slides()):

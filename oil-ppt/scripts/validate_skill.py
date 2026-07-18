@@ -317,7 +317,7 @@ def validate_skill() -> None:
                 if 'data-decor="__DECOR__"' not in text:
                     errors.append(f"{path.name}: declares decorations but has no rendered data-decor slot")
             quality = COMPONENT_QUALITY.get(path.stem) or {}
-            if quality.get("silhouette") not in {"bleed", "browser", "canvas", "card-grid", "cycle", "data-story", "decision-table", "diagram", "editorial-list", "focal", "matrix", "metric", "quadrant", "rail", "relationship-map", "split", "state-panel", "step-grid", "step-cards", "tier-stack", "timeline", "two-panel", "editorial-feature", "catalog", "case-board", "annotated", "bento", "gallery"}:
+            if quality.get("silhouette") not in {"bleed", "browser", "canvas", "card-grid", "cycle", "data-story", "decision-table", "diagram", "editorial-list", "focal", "matrix", "metric", "quadrant", "rail", "relationship-map", "split", "state-panel", "step-grid", "step-cards", "tier-stack", "timeline", "two-panel", "editorial-feature", "catalog", "case-board", "annotated", "bento", "gallery", "project-grid", "brand-matrix", "dialogue-task", "dual-table", "code-render", "step-hero", "artifact-focus"}:
                 errors.append(f"{path.name}: invalid or missing silhouette metadata")
             if quality.get("surface_density") not in {"none", "light", "heavy"}:
                 errors.append(f"{path.name}: invalid or missing surface_density metadata")

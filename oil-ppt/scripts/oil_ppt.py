@@ -803,6 +803,56 @@ def contract_schema() -> dict:
                 },
             },
         },
+        "projectGridCard": {
+            "type": "object", "required": ["title", "body"], "additionalProperties": False,
+            "properties": {
+                "title": bounded_text("project-card-grid", "cards[].title"),
+                "meta": bounded_text("project-card-grid", "cards[].meta"),
+                "body": bounded_text("project-card-grid", "cards[].body"),
+            },
+        },
+        "brandMatrixItem": {
+            "type": "object", "required": ["title", "meta"], "additionalProperties": False,
+            "properties": {
+                "title": bounded_text("brand-matrix", "groups[].items[].title"),
+                "meta": bounded_text("brand-matrix", "groups[].items[].meta"),
+            },
+        },
+        "brandMatrixGroup": {
+            "type": "object", "required": ["title", "items"], "additionalProperties": False,
+            "properties": {
+                "title": bounded_text("brand-matrix", "groups[].title"),
+                "items": {"type": "array", "minItems": 3, "maxItems": 6, "items": {"$ref": "#/$defs/brandMatrixItem"}},
+            },
+        },
+        "dialogueTaskSide": {
+            "type": "object", "required": ["title", "lead", "points", "result"], "additionalProperties": False,
+            "properties": {
+                "title": bounded_text("dialogue-vs-task", "sides[].title"),
+                "lead": bounded_text("dialogue-vs-task", "sides[].lead"),
+                "result": bounded_text("dialogue-vs-task", "sides[].result"),
+                "points": {"type": "array", "minItems": 2, "maxItems": 3, "items": bounded_text("dialogue-vs-task", "sides[].points[]")},
+            },
+        },
+        "dualTable": {
+            "type": "object", "required": ["title", "rows"], "additionalProperties": False,
+            "properties": {
+                "title": bounded_text("dual-table-matrix", "tables[].title"),
+                "rows": {
+                    "type": "array", "minItems": 2, "maxItems": 4,
+                    "items": {"type": "array", "minItems": 2, "maxItems": 2, "items": bounded_text("dual-table-matrix", "tables[].rows[][]")},
+                },
+            },
+        },
+        "codeRenderPanel": {
+            "type": "object", "required": ["title", "source", "render_title", "render_body"], "additionalProperties": False,
+            "properties": {
+                "title": bounded_text("code-to-render", "panels[].title"),
+                "source": bounded_text("code-to-render", "panels[].source"),
+                "render_title": bounded_text("code-to-render", "panels[].render_title"),
+                "render_body": bounded_text("code-to-render", "panels[].render_body"),
+            },
+        },
         "annotation": {
             "type": "object", "required": ["body"], "additionalProperties": False,
             "oneOf": [{"required": ["title"]}, {"required": ["label"]}],
@@ -831,13 +881,16 @@ def contract_schema() -> dict:
         if key not in {
             "cards", "steps", "sides", "groups", "nodes", "links", "criteria", "options",
             "metrics", "annotations", "measurements", "metric", "insight", "chart", "data",
-            "axes", "media_source",
+            "axes", "media_source", "points", "tables", "panels",
         }
     }
     structured_fields = {
         "cards": {"type": "array", "items": {"$ref": "#/$defs/card"}},
         "steps": {"type": "array", "items": {"$ref": "#/$defs/step"}},
         "sides": {"type": "array", "items": {"$ref": "#/$defs/side"}},
+        "points": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "tables": {"type": "array"},
+        "panels": {"type": "array"},
         "groups": {"type": "array"},
         "nodes": {"type": "array", "items": {"$ref": "#/$defs/relationshipNode"}},
         "links": {"type": "array", "items": {"$ref": "#/$defs/relationshipLink"}},
@@ -925,6 +978,7 @@ def contract_schema() -> dict:
         "media_fidelity": {"enum": ["strict", "contextual", "illustrative"]},
         "visual_task": {"type": "string", "minLength": 1, "description": "planning-only recommender hint; not rendered"},
         "media_intent": {"type": "string", "minLength": 1, "description": "planning-only recommender hint; not rendered"},
+        "step_number": bounded_text("step-hero", "step_number"),
     })
     def exactly_one_required(*fields: str) -> dict:
         return {
@@ -948,6 +1002,13 @@ def contract_schema() -> dict:
         return {"not": {"anyOf": [{"required": [field]} for field in fields]}}
 
     component_rules: dict[str, dict] = {
+        "artifact-focus": {
+            "required": ["media_frame"], "allOf": [image_required],
+            "properties": {
+                "content": bounded_text("artifact-focus", "content"),
+                "note": bounded_text("artifact-focus", "content"),
+            },
+        },
         "section": copy_required,
         "three-steps": {"required": ["steps"], "properties": {"steps": {"minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/stepBody"}}}},
         "timeline": {"required": ["steps"], "properties": {"steps": {"minItems": 4, "maxItems": 4, "items": {"$ref": "#/$defs/stepBody"}}}},
@@ -1082,6 +1143,62 @@ def contract_schema() -> dict:
                 "content": bounded_text("tier-stack", "content"),
                 "note": bounded_text("tier-stack", "content"),
                 "steps": {"minItems": 4, "maxItems": 4, "items": {"$ref": "#/$defs/tierStep"}},
+            },
+        },
+        "project-card-grid": {
+            "required": ["cards"], "allOf": [copy_required],
+            "properties": {
+                "content": bounded_text("project-card-grid", "content"),
+                "note": bounded_text("project-card-grid", "content"),
+                "cards": {"minItems": 6, "maxItems": 6, "items": {"$ref": "#/$defs/projectGridCard"}},
+            },
+        },
+        "brand-matrix": {
+            "required": ["groups"], "allOf": [copy_required],
+            "properties": {
+                "content": bounded_text("brand-matrix", "content"),
+                "note": bounded_text("brand-matrix", "content"),
+                "groups": {"minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/brandMatrixGroup"}},
+            },
+        },
+        "dialogue-vs-task": {
+            "required": ["sides"], "allOf": [copy_required],
+            "properties": {
+                "content": bounded_text("dialogue-vs-task", "content"),
+                "note": bounded_text("dialogue-vs-task", "content"),
+                "sides": {
+                    "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/dialogueTaskSide"},
+                    "prefixItems": [
+                        {"allOf": [{"$ref": "#/$defs/dialogueTaskSide"}, {"properties": {"points": {"minItems": 2, "maxItems": 2}}}]},
+                        {"allOf": [{"$ref": "#/$defs/dialogueTaskSide"}, {"properties": {"points": {"minItems": 3, "maxItems": 3}}}]},
+                    ],
+                },
+            },
+        },
+        "dual-table-matrix": {
+            "required": ["tables"], "allOf": [copy_required],
+            "properties": {
+                "content": bounded_text("dual-table-matrix", "content"),
+                "note": bounded_text("dual-table-matrix", "content"),
+                "tables": {"minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/dualTable"}},
+            },
+        },
+        "code-to-render": {
+            "required": ["panels"], "allOf": [copy_required],
+            "properties": {
+                "content": bounded_text("code-to-render", "content"),
+                "note": bounded_text("code-to-render", "content"),
+                "panels": {"minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/codeRenderPanel"}},
+            },
+        },
+        "step-hero": {
+            "required": ["step_number", "points", "conclusion", "media_frame"],
+            "allOf": [copy_required, image_required],
+            "properties": {
+                "content": bounded_text("step-hero", "content"),
+                "note": bounded_text("step-hero", "content"),
+                "points": {"minItems": 2, "maxItems": 4, "items": bounded_text("step-hero", "points[]")},
+                "conclusion": bounded_text("step-hero", "conclusion"),
             },
         },
     }

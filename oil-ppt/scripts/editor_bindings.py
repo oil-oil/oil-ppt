@@ -78,6 +78,7 @@ def slot_pointer(slide: dict, slide_index: int, slot: str) -> str | None:
         "artifact-title": "artifact_title", "artifact-body": "artifact_body",
         "aside-label": "aside_label", "chart-label": "chart.label",
         "insight-title": "insight.title", "insight-body": "insight.body",
+        "step-number": "step_number",
     }
     if slot == "content":
         field = _body_field(slide, content_first=True)
@@ -143,13 +144,13 @@ def slot_pointer(slide: dict, slide_index: int, slot: str) -> str | None:
             return None
         return _slide_pointer(slide_index, "options", index, "title")
 
-    match = re.fullmatch(r"card-(title|body)-(\d+)", slot)
+    match = re.fullmatch(r"card-(title|meta|body)-(\d+)", slot)
     if match:
         index = int(match.group(2)) - 1
         cards = slide.get("cards") or []
         if index >= len(cards) or not isinstance(cards[index], dict):
             return None
-        candidates = ("title", "label", "h2") if match.group(1) == "title" else ("body", "text", "p")
+        candidates = ("title", "label", "h2") if match.group(1) == "title" else (("meta",) if match.group(1) == "meta" else ("body", "text", "p"))
         key = _existing_key(cards[index], candidates)
         return _slide_pointer(slide_index, "cards", index, key) if key else None
 
@@ -266,6 +267,106 @@ def slot_pointer(slide: dict, slide_index: int, slot: str) -> str | None:
         if index >= len(annotations) or not isinstance(annotations[index], dict) or match.group(1) not in annotations[index]:
             return None
         return _slide_pointer(slide_index, "annotations", index, match.group(1))
+
+    match = re.fullmatch(r"bullet-(\d+)", slot)
+    if match:
+        index = int(match.group(1)) - 1
+        points = slide.get("points") or []
+        return _slide_pointer(slide_index, "points", index) if index < len(points) and isinstance(points[index], str) else None
+
+    match = re.fullmatch(r"point-(\d+)", slot)
+    if match:
+        index = int(match.group(1)) - 1
+        points = slide.get("points") or []
+        return _slide_pointer(slide_index, "points", index) if index < len(points) and isinstance(points[index], str) else None
+
+    if slot in {"axis-x", "axis-y"}:
+        group_index = 1 if slot == "axis-x" else 0
+        groups = slide.get("groups") or []
+        if group_index < len(groups) and isinstance(groups[group_index], dict) and "title" in groups[group_index]:
+            return _slide_pointer(slide_index, "groups", group_index, "title")
+        return None
+
+    match = re.fullmatch(r"cell-(title|body)-(\d+)", slot)
+    if match:
+        flat_index = int(match.group(2)) - 1
+        groups = slide.get("groups") or []
+        if slide.get("template") == "brand-matrix":
+            group_index, item_index = divmod(flat_index, 6)
+            if group_index < len(groups) and isinstance(groups[group_index], dict):
+                items = groups[group_index].get("items") or []
+                field = "title" if match.group(1) == "title" else "meta"
+                if item_index < len(items) and isinstance(items[item_index], dict) and field in items[item_index]:
+                    return _slide_pointer(slide_index, "groups", group_index, "items", item_index, field)
+            return None
+        remaining = flat_index
+        for group_index, group in enumerate(groups):
+            items = group.get("items") if isinstance(group, dict) else []
+            if remaining < len(items):
+                item = items[remaining]
+                field = "title" if match.group(1) == "title" else "meta"
+                return _slide_pointer(slide_index, "groups", group_index, "items", remaining, field) if isinstance(item, dict) and field in item else None
+            remaining -= len(items)
+        return None
+
+    match = re.fullmatch(r"(left|right)-(title|body)", slot)
+    if match:
+        if slide.get("template") == "dual-table-matrix" and match.group(2) == "title":
+            table_index = 0 if match.group(1) == "left" else 1
+            tables = slide.get("tables") or []
+            return _slide_pointer(slide_index, "tables", table_index, "title") if table_index < len(tables) else None
+        side_index = 0 if match.group(1) == "left" else 1
+        sides = slide.get("sides") or []
+        if side_index >= len(sides) or not isinstance(sides[side_index], dict):
+            return None
+        if match.group(2) == "title":
+            return _slide_pointer(slide_index, "sides", side_index, "title")
+        return _slide_pointer(slide_index, "sides", side_index, "lead")
+
+    match = re.fullmatch(r"(left|right)-point-(\d+)", slot)
+    if match:
+        side_index = 0 if match.group(1) == "left" else 1
+        sides = slide.get("sides") or []
+        if side_index >= len(sides) or not isinstance(sides[side_index], dict):
+            return None
+        point_index = int(match.group(2)) - 1
+        points = sides[side_index].get("points") or []
+        return _slide_pointer(slide_index, "sides", side_index, "points", point_index) if 0 <= point_index < len(points) else None
+
+    if slot in {"left-conclusion", "right-result"}:
+        side_index = 0 if slot == "left-conclusion" else 1
+        sides = slide.get("sides") or []
+        return _slide_pointer(slide_index, "sides", side_index, "result") if side_index < len(sides) and isinstance(sides[side_index], dict) and "result" in sides[side_index] else None
+
+    match = re.fullmatch(r"(left|right)-(label|value)-(\d+)", slot)
+    if match:
+        table_index = 0 if match.group(1) == "left" else 1
+        row_index = int(match.group(3)) - 1
+        column_index = 0 if match.group(2) == "label" else 1
+        tables = slide.get("tables") or []
+        if table_index < len(tables) and isinstance(tables[table_index], dict):
+            rows = tables[table_index].get("rows") or []
+            if row_index < len(rows) and isinstance(rows[row_index], list) and column_index < len(rows[row_index]):
+                return _slide_pointer(slide_index, "tables", table_index, "rows", row_index, column_index)
+        return None
+
+    code_fields = {"code-label": "title", "source-code": "source", "render-label": "render_title", "render-body": "render_body"}
+    if slot in code_fields:
+        panels = slide.get("panels") or []
+        field = code_fields[slot]
+        return _slide_pointer(slide_index, "panels", 0, field) if panels and isinstance(panels[0], dict) and field in panels[0] else None
+    match = re.fullmatch(r"panel-(\d+)-(source-label|source|render-label|render-body)", slot)
+    if match:
+        panel_index = int(match.group(1)) - 1
+        field = {"source-label": "title", "source": "source", "render-label": "render_title", "render-body": "render_body"}[match.group(2)]
+        panels = slide.get("panels") or []
+        return _slide_pointer(slide_index, "panels", panel_index, field) if panel_index < len(panels) and isinstance(panels[panel_index], dict) and field in panels[panel_index] else None
+    match = re.fullmatch(r"(left|right)-(code-label|source-code|render-label|render-body)", slot)
+    if match:
+        panel_index = 0 if match.group(1) == "left" else 1
+        field = {"code-label": "title", "source-code": "source", "render-label": "render_title", "render-body": "render_body"}[match.group(2)]
+        panels = slide.get("panels") or []
+        return _slide_pointer(slide_index, "panels", panel_index, field) if panel_index < len(panels) and isinstance(panels[panel_index], dict) and field in panels[panel_index] else None
     return None
 
 
@@ -464,7 +565,7 @@ def iter_editable_values(data: dict) -> Iterator[tuple[str, str]]:
             "kicker", "content", "note", "meta", "page_note", "badge", "media_note",
             "quote", "source", "outcome", "conclusion", "statement", "statement_body",
             "measurement_note", "measurement_meta", "artifact_title", "artifact_body",
-            "aside", "aside_label",
+            "aside", "aside_label", "step_number",
         )
         candidates.update(_slide_pointer(slide_index, key) for key in top_level if key in slide)
         for collection, title_keys, body_keys in (
@@ -476,7 +577,7 @@ def iter_editable_values(data: dict) -> Iterator[tuple[str, str]]:
                 if isinstance(item, str):
                     candidates.add(_slide_pointer(slide_index, collection, item_index))
                     continue
-                for key in (*title_keys, *body_keys):
+                for key in (*title_keys, *body_keys, "meta"):
                     if key in item:
                         candidates.add(_slide_pointer(slide_index, collection, item_index, key))
                 if collection == "cards":
@@ -488,14 +589,14 @@ def iter_editable_values(data: dict) -> Iterator[tuple[str, str]]:
         for side_index, side in enumerate(slide.get("sides") or []):
             if not isinstance(side, dict):
                 continue
-            for key in ("title", "label", "body", "text", "lead"):
+            for key in ("title", "label", "body", "text", "lead", "result"):
                 if key in side:
                     candidates.add(_slide_pointer(slide_index, "sides", side_index, key))
             for point_index, item in enumerate(side.get("points") or []):
                 if isinstance(item, str):
                     candidates.add(_slide_pointer(slide_index, "sides", side_index, "points", point_index))
                 elif isinstance(item, dict):
-                    for key in ("title", "label", "body", "text"):
+                    for key in ("title", "label", "body", "text", "meta"):
                         if key in item:
                             candidates.add(_slide_pointer(slide_index, "sides", side_index, "points", point_index, key))
             for evidence_index, evidence in enumerate(side.get("evidence") or []):
@@ -522,6 +623,24 @@ def iter_editable_values(data: dict) -> Iterator[tuple[str, str]]:
                     for key in ("label", "value"):
                         if key in item:
                             candidates.add(_slide_pointer(slide_index, collection, item_index, key))
+        for point_index, point in enumerate(slide.get("points") or []):
+            if isinstance(point, str):
+                candidates.add(_slide_pointer(slide_index, "points", point_index))
+        for table_index, table in enumerate(slide.get("tables") or []):
+            if not isinstance(table, dict):
+                continue
+            if "title" in table:
+                candidates.add(_slide_pointer(slide_index, "tables", table_index, "title"))
+            for row_index, row in enumerate(table.get("rows") or []):
+                if isinstance(row, list):
+                    for column_index, cell in enumerate(row):
+                        if isinstance(cell, str):
+                            candidates.add(_slide_pointer(slide_index, "tables", table_index, "rows", row_index, column_index))
+        for panel_index, panel in enumerate(slide.get("panels") or []):
+            if isinstance(panel, dict):
+                for key in ("title", "source", "render_title", "render_body"):
+                    if key in panel:
+                        candidates.add(_slide_pointer(slide_index, "panels", panel_index, key))
         for collection in ("metric", "insight", "chart"):
             item = slide.get(collection)
             if not isinstance(item, dict):

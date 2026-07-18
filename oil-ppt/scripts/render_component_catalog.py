@@ -25,12 +25,13 @@ PLACEHOLDER = (
     "%3Cpath d='M0 720L360 430l250 210 190-150 400 310H0z' fill='%23c9c6bc'/%3E%3C/svg%3E"
 )
 
-FAMILY_ORDER = ("focal", "data", "sequence", "cards", "comparison", "canvas", "split", "bleed", "compound")
+FAMILY_ORDER = ("focal", "data", "sequence", "cards", "collection", "comparison", "canvas", "split", "bleed", "compound")
 FAMILY_LABELS = {
     "focal": "单焦点",
     "data": "数据关系",
     "sequence": "顺序推进",
     "cards": "主次聚合",
+    "collection": "集合扫描",
     "comparison": "对照判断",
     "canvas": "空间关系",
     "split": "图文并置",
@@ -206,7 +207,7 @@ def render_catalog(output: Path) -> int:
     .family-section{{margin-top:26px;padding:34px;border:0;border-radius:36px;background:var(--surface)}}.section-head{{display:flex;justify-content:space-between;align-items:center;margin:0 0 24px}}.section-head span{{font-size:34px;font-weight:800}}.section-head b{{color:var(--muted);font-size:17px}}
     .component-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}}.component-card{{min-width:0;padding:18px;border-radius:28px;background:#f4f4f1}}.card-meta{{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:4px 6px 16px}}.card-meta>div:first-child{{display:flex;align-items:center;gap:12px}}.eyebrow{{display:grid;place-items:center;width:38px;height:38px;border-radius:13px;background:var(--accent-soft);font-size:13px;font-weight:800}}h3{{margin:0;font-size:22px}}.pills{{display:flex;gap:8px}}.pills span{{padding:7px 10px;border-radius:11px;background:#fff;color:var(--muted);font-size:13px}}
     .preview{{position:relative;aspect-ratio:16/9;border-radius:22px;background:#fff;overflow:hidden}}iframe{{position:absolute;inset:0;width:100%;height:100%;border:0;pointer-events:none}}.component-card footer{{display:flex;justify-content:space-between;padding:15px 6px 3px;color:var(--muted)}}code{{font-size:13px}}
-    body[data-filter]:not([data-filter="all"]) .family-section{{display:none}}body[data-filter="focal"] [data-family-section="focal"],body[data-filter="data"] [data-family-section="data"],body[data-filter="sequence"] [data-family-section="sequence"],body[data-filter="cards"] [data-family-section="cards"],body[data-filter="comparison"] [data-family-section="comparison"],body[data-filter="canvas"] [data-family-section="canvas"],body[data-filter="split"] [data-family-section="split"],body[data-filter="bleed"] [data-family-section="bleed"],body[data-filter="compound"] [data-family-section="compound"]{{display:block!important}}
+    body[data-filter]:not([data-filter="all"]) .family-section{{display:none}}body[data-filter="focal"] [data-family-section="focal"],body[data-filter="data"] [data-family-section="data"],body[data-filter="sequence"] [data-family-section="sequence"],body[data-filter="cards"] [data-family-section="cards"],body[data-filter="collection"] [data-family-section="collection"],body[data-filter="comparison"] [data-family-section="comparison"],body[data-filter="canvas"] [data-family-section="canvas"],body[data-filter="split"] [data-family-section="split"],body[data-filter="bleed"] [data-family-section="bleed"],body[data-filter="compound"] [data-family-section="compound"]{{display:block!important}}
     @media(max-width:980px){{.page{{width:calc(100% - 20px);margin-top:10px}}.hero{{padding:48px 32px;min-height:auto}}h1{{font-size:52px}}.primitives,.component-grid{{grid-template-columns:1fr}}.stats{{flex-wrap:wrap}}}}
     </style></head><body data-filter="all"><main class="page">
       <header class="hero"><span class="shape-window" aria-hidden="true"></span><div class="kicker">OIL-PPT COMPONENT CATALOG</div><h1>把真实可用的组件，放进同一个设计系统里。</h1><p class="lead">目录完全来自当前 CLI 契约。配色收束为一个主题色系、中性灰与可选深色锚点；圆环、点阵和块面由程序自动承担。</p><div class="stats"><div class="stat"><strong>{len(COMPONENT_CONTRACTS)}</strong><span>注册组件</span></div><div class="stat"><strong>{len(slides)}</strong><span>可调用组合</span></div><div class="stat"><strong>1 + N</strong><span>主题色与中性色层级</span></div></div></header>

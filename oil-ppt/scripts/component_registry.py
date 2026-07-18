@@ -43,6 +43,23 @@ def _spec(name: str, **values: object) -> ComponentSpec:
 
 
 COMPONENT_SPECS = {
+    "artifact-focus": _spec(
+        "artifact-focus", family="focal",
+        use_when="一张非二维码的插画、物件或交付物需要以 70–80% 页面高度成为唯一视觉焦点，文字只作短标题或说明。",
+        avoid_when="视觉只是小型附件、需要扫码语义，或正文需要承担主要论证",
+        aliases=("巨型物件焦点", "交付物主视觉", "单一大视觉"), effects=("artifact-focal", "page-blend-illustration"),
+        silhouette="artifact-focus", surface_density="none", frame_owner="none", media=True,
+        page_blend=True, closed_structure=True,
+        variant_quality={"default": {"layout_signature": "artifact-focal", "visual_energy": "anchor"}},
+        variant_help={"default": "单一视觉居中占屏，文字保持克制"},
+    ),
+    "brand-matrix": _spec(
+        "brand-matrix", family="collection",
+        use_when="两组品牌、工具或能力集合需要按分组快速扫描，并保持每个条目同等权重。",
+        avoid_when="条目存在先后顺序、需要长段说明，或分组多于两组",
+        aliases=("品牌矩阵", "工具分组", "品牌墙"), effects=("grouped-brand-matrix",),
+        silhouette="brand-matrix", surface_density="heavy", closed_structure=True, native_visual=True,
+    ),
     "bleed-split": _spec(
         "bleed-split", family="bleed",
         use_when="文字与一张可出血的主视觉共同表达判断；按主体位置选择左右出血。",
@@ -118,6 +135,13 @@ COMPONENT_SPECS = {
             "focus-right": "右侧结论更重要", "focus-left": "左侧结论更重要", "balanced": "两侧完全等权",
         },
     ),
+    "code-to-render": _spec(
+        "code-to-render", family="compound",
+        use_when="两段源码与各自的可见结果需要一一对应，解释从输入到呈现的转换。",
+        avoid_when="只需要展示源码，或源码与结果无法形成明确配对",
+        aliases=("代码到渲染", "源码与结果", "输入输出面板"), effects=("source-to-render",),
+        silhouette="code-render", surface_density="heavy", closed_structure=True, native_visual=True,
+    ),
     "converge": _spec(
         "converge", family="canvas", use_when="多个输入汇聚为一个结果或判断。",
         avoid_when="内容是顺序流程", aliases=("汇聚", "合流", "输入到结果"), effects=("merge-diagram",),
@@ -168,6 +192,20 @@ COMPONENT_SPECS = {
         silhouette="decision-table", surface_density="heavy", closed_structure=True, native_visual=True,
         variant_quality={"default": {"layout_signature": "decision-table", "visual_energy": "structured"}},
         variant_help={"default": "三项方案沿三项同向准则评分，程序汇总并突出唯一推荐项"},
+    ),
+    "dialogue-vs-task": _spec(
+        "dialogue-vs-task", family="comparison",
+        use_when="需要把开放式对话与可交付任务沿输出方式、步骤和结果直接对照。",
+        avoid_when="两侧并非同一问题的两种工作方式，或没有三步任务路径",
+        aliases=("对话与任务", "聊天对任务", "工作方式对比"), effects=("dialogue-task-contrast",),
+        silhouette="dialogue-task", surface_density="heavy", closed_structure=True, native_visual=True,
+    ),
+    "dual-table-matrix": _spec(
+        "dual-table-matrix", family="comparison",
+        use_when="两组二维表格需要使用相同阅读节奏并列检查，最后收束为一个判断。",
+        avoid_when="两表列数不同、单元格需要长段落，或需要计算型数据图",
+        aliases=("双表矩阵", "并列表格", "两组清单矩阵"), effects=("paired-table-matrix",),
+        silhouette="dual-table", surface_density="heavy", closed_structure=True, native_visual=True,
     ),
     "diagonal-split": _spec(
         "diagonal-split", family="bleed",
@@ -269,6 +307,13 @@ COMPONENT_SPECS = {
         },
         variant_help={"steps-6": "两行折返的六步详解", "steps-8": "两行折返的八个短动作总览"},
     ),
+    "project-card-grid": _spec(
+        "project-card-grid", family="collection",
+        use_when="六个项目、计划或资源需要以统一卡片结构组成可扫描的 2×3 集合。",
+        avoid_when="项目不足六个、存在主次或步骤关系，或每项需要长篇叙述",
+        aliases=("项目卡片网格", "六项目总览", "项目集合"), effects=("six-card-collection",),
+        silhouette="project-grid", surface_density="heavy", closed_structure=True, native_visual=True,
+    ),
     "quote": _spec(
         "quote", family="focal", use_when="一段真实引用或一句需要独立停留的原话是页面焦点。",
         avoid_when="没有可核验来源的改写句", aliases=("引言", "原话", "金句"), effects=("editorial-quote",),
@@ -323,6 +368,19 @@ COMPONENT_SPECS = {
         variant_help={
             "media-dominant": "图片约占七栏", "balanced": "图文各半", "copy-dominant": "文字约占七栏",
         },
+    ),
+    "step-hero": _spec(
+        "step-hero", family="sequence",
+        use_when="一个关键步骤需要用大号序号、简短行动要点与一张融页视觉单独停留。",
+        avoid_when="需要在一页总览多个步骤，或没有可支撑该步骤的视觉",
+        aliases=("步骤主视觉", "单步大页", "关键步骤"), effects=("numbered-step-hero", "page-blend-illustration"),
+        variants=("media-right", "media-left"), silhouette="step-hero", surface_density="light", frame_owner="none", media=True,
+        page_blend=True, closed_structure=True,
+        variant_quality={
+            "media-right": {"layout_signature": "numbered-step-hero", "visual_energy": "anchor"},
+            "media-left": {"layout_signature": "numbered-step-hero", "visual_energy": "anchor"},
+        },
+        variant_help={"media-right": "步骤视觉在右", "media-left": "步骤视觉在左"},
     ),
     "tabs": _spec(
         "tabs", family="comparison", use_when="同一对象的多个状态或视图需要切换式对照。",

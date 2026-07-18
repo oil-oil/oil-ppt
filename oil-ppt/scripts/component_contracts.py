@@ -35,7 +35,7 @@ def quality_for(template: str, variant: str | None = None) -> dict:
     base.setdefault(
         "visual_energy",
         "anchor"
-        if base["silhouette"] in {"bleed", "browser", "canvas", "diagram", "metric", "rail", "timeline"}
+        if base["silhouette"] in {"artifact-focus", "bleed", "browser", "canvas", "diagram", "metric", "rail", "timeline"}
         else "structured",
     )
     return base
@@ -49,6 +49,8 @@ def effective_media_surface(slide: dict) -> str:
     template = str(slide.get("template") or "")
     if template not in PAGE_BLEND_TEMPLATES:
         return "component"
+    if template == "artifact-focus":
+        return "page-blend"
     if str(slide.get("media_frame") or "").strip() == "self-framed":
         return "page-blend"
     fidelity = str(slide.get("media_fidelity") or "").lower()
