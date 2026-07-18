@@ -2,8 +2,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "8eb5b01b20719a41b653e4ab643134d237915920d7c0c6831c061fee375feb54",
-      "size": 6122
+      "sha256": "2c71fbd990e0625f25bffc3d6981a6d41a5eb68e1f978884f0c43ad58ede465b",
+      "size": 7563
     },
     {
       "path": "agents/openai.yaml",
@@ -387,8 +387,8 @@
     },
     {
       "path": "scripts/oil_ppt.py",
-      "sha256": "2a719433525368be036cae5d63aab2cf078c6f5d61a30271d57e58c187266700",
-      "size": 147766
+      "sha256": "5f2251d19a5fe6b689ffb6ff26c014809b780003874db327c44660b4338b3158",
+      "size": 148415
     },
     {
       "path": "scripts/outline_schema.py",
@@ -437,8 +437,13 @@
     },
     {
       "path": "scripts/validate_skill.py",
-      "sha256": "58fb259c8d098599b3ca5bd4704f6f38456ce826f2cb0e15fbf0b8ffc144903a",
-      "size": 38256
+      "sha256": "33bd55c4d4ad44e15c4be543d122c72ce4eb76d9277c40d4afbe4075b2e41b42",
+      "size": 39426
+    },
+    {
+      "path": "scripts/workflow_contract.py",
+      "sha256": "1b0664e984bc6b0c0477fe4144f25a3c70b2abc16a9a16585fb4fa817e14639e",
+      "size": 2184
     },
     {
       "path": "tests/test_cli_contract.py",
@@ -469,9 +474,14 @@
       "path": "tests/test_version_cli.py",
       "sha256": "85d92e9a88ab157682f2d3bc925a220eb15573014f57832667500c394a38ac3b",
       "size": 943
+    },
+    {
+      "path": "tests/test_workflow_contract.py",
+      "sha256": "76938aa24544fb2553868da106beea8ec0f2cf680a8f8081f42a9ca0a3f7f852",
+      "size": 2915
     }
   ],
   "package_version": "0.3.0",
   "schema_version": "oil-ppt.package/v1",
-  "tree_sha256": "029da4b1fcf11a074fbd89327822f3fa31315a8380a140f45b7f088ca25f98e7"
+  "tree_sha256": "c7fb10393708f9db909f180a46a35bc4130d53e0ab25d37ef402671fbf849e5e"
 }
