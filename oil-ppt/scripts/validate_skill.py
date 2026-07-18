@@ -18,6 +18,7 @@ from icon_registry import ICON_CATALOG, verify_icons
 from outline_schema import DECK_FIELDS, SHARED_SLIDE_FIELDS, SLIDE_ALLOWED_FIELDS, TEMPLATE_CONTENT_HELP, TEMPLATE_FAMILIES, TEMPLATE_VISIBLE_FIELDS, VARIANT_INPUT_GUIDANCE
 from palette_tokens import PALETTES
 from media_plan import MEDIA_SLOTS, MEDIA_VARIANT_SLOTS
+from workflow_contract import BATCH_NEXT_ACTIONS
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -128,6 +129,7 @@ def validate_skill() -> None:
         "scripts/oil-ppt",
         "scripts/oil-ppt.cmd",
         "scripts/oil_ppt.py",
+        "scripts/workflow_contract.py",
         "scripts/package_manifest.py",
         "scripts/init_deck.py",
         "scripts/add_slide.py",
@@ -408,6 +410,25 @@ def validate_skill() -> None:
             label = source.relative_to(ROOT) if ROOT in source.parents else source.name
             errors.append(f"{label} still exposes the retired oil-slides public name")
     skill_text = SKILL.read_text(encoding="utf-8")
+    action_contract = re.search(
+        r"<!-- next-action-contract:start -->(.*?)<!-- next-action-contract:end -->",
+        skill_text,
+        re.S,
+    )
+    if action_contract is None:
+        errors.append("SKILL.md must contain the delimited next.action contract")
+    else:
+        documented_actions = set(re.findall(r"^- `([a-z_]+)`：", action_contract.group(1), re.M))
+        if documented_actions != set(BATCH_NEXT_ACTIONS):
+            missing = sorted(set(BATCH_NEXT_ACTIONS) - documented_actions)
+            extra = sorted(documented_actions - set(BATCH_NEXT_ACTIONS))
+            errors.append(f"SKILL.md next.action contract mismatch; missing={missing}, extra={extra}")
+    required_fix_media_text = (
+        "如果 `next.reference_command` 存在，先原样执行它以生成槽位与比例计划；"
+        "然后只处理 `next.path` 和 `next.issues`，完成后原样执行 `next.rerun`"
+    )
+    if required_fix_media_text not in skill_text:
+        errors.append("SKILL.md must route fix_media through reference_command, path/issues, then rerun")
     for reference in sorted((ROOT / "references").glob("*.md")):
         relative = f"references/{reference.name}"
         if relative not in skill_text:

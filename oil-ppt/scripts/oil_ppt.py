@@ -33,6 +33,7 @@ from icon_registry import print_icon_results
 from outline_schema import BASE_VISIBLE_FIELDS, DECK_FIELDS, MAX_ABS_DATA_VALUE, MEDIA_TEMPLATES, SHARED_SLIDE_FIELDS, SLIDE_ALLOWED_FIELDS, TEMPLATE_CONTENT_HELP, TEMPLATE_FAMILIES, TEMPLATE_VISIBLE_FIELDS, VARIANT_INPUT_GUIDANCE, text_budgets_for, validate_outline
 from palette_tokens import PALETTES, TOKEN_KEYS, canonical_name, named_palette, normalize_palette
 from profile_tokens import SHAPE_PROFILES, TYPE_PROFILES
+from workflow_contract import validate_batch_payload, validate_status_payload
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -1875,7 +1876,7 @@ def batch_projects(
         }
     else:
         next_step = {"action": "complete", "command": None}
-    return {
+    return validate_batch_payload({
         "schema_version": "oil-ppt.batch/v1",
         # An actionable human/model gate is a valid batch result, not a CLI
         # failure. Reserve the non-zero exit for a deterministic step that
@@ -1884,7 +1885,7 @@ def batch_projects(
         "summary": summary,
         "projects": results,
         "next": next_step,
-    }
+    })
 
 
 def read_config(project: Path) -> tuple[Path, dict]:
@@ -2274,7 +2275,7 @@ def preview_state_status(outline: Path) -> tuple[str, dict | None, str | None]:
     return "confirmed" if state.get("confirmed") is True else "awaiting-confirmation", state, None
 
 
-def status_payload(project_arg: Path, *, intent: str = "continue") -> dict:
+def _status_payload_unchecked(project_arg: Path, *, intent: str = "continue") -> dict:
     if intent not in {"continue", "edit"}:
         raise ValueError(f"Unsupported status intent: {intent}")
     requested = project_arg.expanduser()
@@ -2536,6 +2537,11 @@ def status_payload(project_arg: Path, *, intent: str = "continue") -> dict:
         "blockers": blockers,
         "next": {"action": next_action, "command": next_command, **next_details},
     }
+
+
+def status_payload(project_arg: Path, *, intent: str = "continue") -> dict:
+    """Return a status envelope only after enforcing its closed next-action contract."""
+    return validate_status_payload(_status_payload_unchecked(project_arg, intent=intent))
 
 
 def print_status(project: Path, *, as_json: bool, intent: str = "continue") -> None:
@@ -2863,7 +2869,10 @@ def parse_args() -> argparse.Namespace:
         description="Create and validate an oil-ppt project through one stateful CLI.",
         epilog=(
             "Existing work: batch TARGET [TARGET ...]. New work: init PROJECT, write outline.md, then repeat "
-            "status PROJECT --json and follow its single next action. Run command_on_confirm only after user approval."
+            "status PROJECT --json and follow its single next action. Run command_on_confirm only after user approval. "
+            "Status may return absolute commands for callable workflow commands intentionally omitted from this "
+            "top-level help. Execute only the exact command string returned by status; never reconstruct or "
+            "hand-write an omitted workflow command."
         ),
     )
     public_commands = ("init", "batch", "status", "contract", "media", "icon", "doctor", "version")

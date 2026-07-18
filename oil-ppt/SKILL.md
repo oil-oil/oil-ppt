@@ -33,13 +33,22 @@ scripts/oil-ppt batch <项目或父目录> [更多项目或父目录]
 scripts/oil-ppt status <项目> --json
 ```
 
-之后形成一个循环：执行 `next.command` 或编辑 `next.path`，再重新运行 `status --json`。只解释以下动作，不另外拼接流程：
+之后形成一个循环：执行程序返回的完整命令或编辑 `next.path`，再重新运行 `status --json`。顶层帮助会故意隐藏部分仍可调用的内部工作流命令；只能原样执行 `status` / `batch` 返回的绝对命令，不能根据命令名、帮助或记忆手拼。`next.action` 是以下封闭集合，出现集合外的值必须视为程序错误并停止：
 
-- `run_command`：直接执行 `next.command`；它已是可从任意目录运行的绝对命令。
-- `edit_outline` / `write_visual_plan` / `fix_media`：只处理 `next.path` 和 `next.issues`，完成后重新运行 `status`。
-- `ask_user_to_confirm_*`：展示 `next.artifact` 并停止；只有用户明确确认后才执行 `next.command_on_confirm`。
+<!-- next-action-contract:start -->
+- `ask_user_to_confirm_outline`：展示 `next.artifact` 并停止；只有用户明确确认后才原样执行 `next.command_on_confirm`。
+- `ask_user_to_confirm_preview`：展示 `next.artifact` 并停止；只有用户明确确认后才原样执行 `next.command_on_confirm`。
+- `ask_user_to_confirm_previews`：展示 `next.artifacts` 并停止；只有用户明确确认全部预览后才原样执行 `next.command_on_confirm`。
+- `ask_user_to_confirm_text_only`：展示 `next.artifact` 并停止；只有用户明确要求整套无图片后才原样执行 `next.command_on_confirm`。
+- `choose_project_directory`：停止并请用户选择项目目录，不猜测或创建路径。
+- `complete`：停止，流程已完成。
+- `edit_outline`：只编辑 `next.path`，完成后重新运行 `status`。
+- `fix_media`：如果 `next.reference_command` 存在，先原样执行它以生成槽位与比例计划；然后只处理 `next.path` 和 `next.issues`，完成后原样执行 `next.rerun`。该参考命令不会自动生成或获取任意外部素材。
+- `run_command`：原样执行 `next.command`；它已是可从任意目录运行的绝对命令。
 - `start_editor`：启动 `next.command` 后立即把页面交给用户，不等待这个本地服务退出；用户点击“完成编辑”后重新运行 `status`。
-- `wait_for_editor` / `complete` / `choose_project_directory`：停止，不猜测下一命令。
+- `wait_for_editor`：停止，等待用户完成或关闭当前编辑器。
+- `write_visual_plan`：只编辑 `next.path`；可先原样执行 `next.reference_command` 查看合法参考，完成后重新运行 `status`。
+<!-- next-action-contract:end -->
 
 需要重新打开已完成演示的文字编辑器时，不重走构建流程：
 
@@ -84,7 +93,7 @@ scripts/oil-ppt contract --id <组件>
 
 一页只表达一个主要判断。内容少时选择聚焦组件，不用小字、空卡片或装饰填满空间；有真实证据时优先使用截图、材料或照片。标题中确有需要记住的短语时最多设置一处 `highlight`。
 
-`status` 返回 `fix_media` 时，一次处理完 `next.issues`；`next.reference_command` 会生成槽位与比例计划。真实截图使用程序化适配，不让图片模型重画。
+`status` 返回 `fix_media` 时严格遵循上面的动作路由：先运行已有的 `next.reference_command`，再依据生成的槽位与比例计划一次处理完 `next.path` / `next.issues`，最后运行 `next.rerun`。程序只负责规划、检查和已提供素材的程序化适配，不会自动生成或获取任意外部素材；真实截图不让图片模型重画。
 
 只有需要获取外部素材时读取 `references/media.md`；生成概念插画时读取 `references/illustration.md`；用代码绘制 UI、流程、关系或图表时读取 `references/programmatic-visuals.md`。
 
