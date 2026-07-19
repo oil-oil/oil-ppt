@@ -20,6 +20,9 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install PPTX test dependencies
+        run: python -m pip install --disable-pip-version-check Pillow python-pptx
+
       - name: Verify package manifest
         run: python oil-ppt/scripts/package_manifest.py --verify --json
 
