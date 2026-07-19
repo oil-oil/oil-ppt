@@ -2,10 +2,11 @@
 """Program-owned visual directions composed from legal oil-ppt settings."""
 from __future__ import annotations
 
+import copy
 from dataclasses import asdict, dataclass
 
-from palette_tokens import PALETTES, canonical_name
-from profile_tokens import SHAPE_PROFILES, TYPE_PROFILES
+from palette_tokens import PALETTE_META, PALETTES, canonical_name
+from profile_tokens import SHAPE_META, SHAPE_PROFILES, TYPE_META, TYPE_PROFILES
 
 
 @dataclass(frozen=True)
@@ -95,6 +96,94 @@ def registry_issues() -> list[str]:
 
 def public_registry() -> list[dict[str, str]]:
     return [asdict(direction) for direction in DESIGN_DIRECTIONS]
+
+
+def public_settings() -> dict[str, list[dict[str, str]]]:
+    """Describe the canonical fine-tuning enums without introducing aliases."""
+    return {
+        "palette": [
+            {"id": item_id, **PALETTE_META[item_id]}
+            for item_id in sorted(PALETTES)
+        ],
+        "typography": [
+            {"id": item_id, **TYPE_META[item_id]}
+            for item_id in sorted(TYPE_PROFILES)
+        ],
+        "shape": [
+            {"id": item_id, **SHAPE_META[item_id]}
+            for item_id in sorted(SHAPE_PROFILES)
+        ],
+    }
+
+
+def validated_design_updates(
+    payload: object, *, allow_multiple_settings: bool = True,
+) -> tuple[str, dict[str, str]]:
+    """Return one closed, validated update set from a direction or fine tuning.
+
+    The registry and token dictionaries remain the only sources of legal values.
+    Callers choose whether multiple fine-tuning fields may be changed in one
+    transaction; a direction can never be mixed with those fields.
+    """
+    if not isinstance(payload, dict):
+        raise ValueError("Design settings must be a JSON object.")
+    allowed = {"direction", "palette", "typography", "shape"}
+    unknown = sorted(set(payload) - allowed)
+    if unknown:
+        raise ValueError(f"Unsupported design setting(s): {', '.join(unknown)}.")
+    selected = [key for key in ("direction", "palette", "typography", "shape") if key in payload]
+    if not selected:
+        raise ValueError("Supply one design direction or at least one fine-tuning setting.")
+    if "direction" in selected and len(selected) != 1:
+        raise ValueError("A design direction cannot be mixed with fine-tuning settings.")
+    if not allow_multiple_settings and len(selected) != 1:
+        raise ValueError("Change exactly one design direction or fine-tuning setting at a time.")
+    for key in selected:
+        if not isinstance(payload[key], str):
+            raise ValueError(f"Design setting {key} must be a string enum value.")
+    if selected == ["direction"]:
+        direction_id = payload["direction"]
+        direction = DESIGN_DIRECTION_BY_ID.get(direction_id)
+        if direction is None:
+            raise ValueError(
+                "Design direction must be one of: "
+                + ", ".join(DESIGN_DIRECTION_BY_ID)
+                + "."
+            )
+        return "direction", {
+            "palette": direction.palette,
+            "typography": direction.typography,
+            "shape": direction.shape,
+        }
+    registries = {
+        "palette": PALETTES,
+        "typography": TYPE_PROFILES,
+        "shape": SHAPE_PROFILES,
+    }
+    labels = {"palette": "Palette", "typography": "Typography", "shape": "Shape"}
+    updates: dict[str, str] = {}
+    for key in selected:
+        value = payload[key]
+        if value not in registries[key]:
+            raise ValueError(
+                f"{labels[key]} must be one of: " + ", ".join(registries[key]) + "."
+            )
+        updates[key] = value
+    return "settings", updates
+
+
+def apply_design_updates(
+    data: dict, payload: object, *, allow_multiple_settings: bool = True,
+) -> tuple[dict, str, dict[str, str]]:
+    """Apply validated design settings to a copy of an outline object."""
+    mode, updates = validated_design_updates(
+        payload, allow_multiple_settings=allow_multiple_settings,
+    )
+    candidate = copy.deepcopy(data)
+    candidate.update(updates)
+    if "palette" in updates:
+        candidate.pop("palette_source", None)
+    return candidate, mode, updates
 
 
 def matching_direction(data: dict) -> str | None:

@@ -2,13 +2,13 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "df670f182c811892ae26a69ad62f66e36cac2e126b6384c5dc9b1f65cea878fe",
-      "size": 8177
+      "sha256": "7c748ab5c138f2aba55f75d4155844016c5d59d299ebbd6bf316b523499bc584",
+      "size": 9005
     },
     {
       "path": "agents/openai.yaml",
-      "sha256": "d9c9ad00b6e17f710bec2c4c224afa4c7ee87b388c09dbdadba1c0f0cdbbf98d",
-      "size": 228
+      "sha256": "8485db5f16b6f7a41e80e377e74fa2ea7a7db55f0074a6fbdc50691a0d3b51d5",
+      "size": 266
     },
     {
       "path": "assets/icons/LICENSE",
@@ -201,6 +201,21 @@
       "size": 4694
     },
     {
+      "path": "assets/templates/evidence-matrix.html",
+      "sha256": "dbfcd67f9ba168b384e416aadba0ad4999a4c2ba715b4b86852363aeb039ebe6",
+      "size": 4511
+    },
+    {
+      "path": "assets/templates/gantt-roadmap.html",
+      "sha256": "92226844c1c881145b0cd48dd7c815e336968af6e8bbc1a3594ba4145093b28e",
+      "size": 6509
+    },
+    {
+      "path": "assets/templates/hierarchy-tree.html",
+      "sha256": "d17f71e785a006c0363942d281cf45724d8b7eed710254180a3b4bb05dcf65e7",
+      "size": 3649
+    },
+    {
       "path": "assets/templates/metric.html",
       "sha256": "53db847cbedbd12bab94b3ed568fb4a937da9f516a2c61e137b00ccfa7d3baa3",
       "size": 4775
@@ -337,13 +352,13 @@
     },
     {
       "path": "scripts/capability_catalog.py",
-      "sha256": "68fbd7aef316b3ea8fc0faa7d5de8a35476b8656a395ebfc49222a24efaacf3e",
-      "size": 9236
+      "sha256": "e2072c54131797ca80dfe65ef2cf0a6797aec4f4f817ac04d5ef1b65a35474a5",
+      "size": 9605
     },
     {
       "path": "scripts/capability_recommender.py",
-      "sha256": "a68ec37f7b1f995bd7752f26da16d8260563448b52342e7125b5b46b961e18b1",
-      "size": 12230
+      "sha256": "d304540234da027b8838a0ff8f4f4af7a2ab3a9b4cf47640eec2469a7f2e8398",
+      "size": 13142
     },
     {
       "path": "scripts/cdp_validate.py",
@@ -357,13 +372,13 @@
     },
     {
       "path": "scripts/component_registry.py",
-      "sha256": "8f86cad8dacf00f76e9904d47f1751b35723ee114e6062b9823da40420f30502",
-      "size": 32037
+      "sha256": "33ca5cb3f38514df09307d484ca3f82621d1bba8577bb3c2714dc38988565c0b",
+      "size": 34428
     },
     {
       "path": "scripts/design_directions.py",
-      "sha256": "eb56171f1d3a4eb9602a6e0af71b88d5b3056e916000d54d7aafffe096c31e2a",
-      "size": 3870
+      "sha256": "9de201f841f322ec4b09d63e49fa99fcbe2505494c7da441d095b7daeb04b4de",
+      "size": 7431
     },
     {
       "path": "scripts/design_quality.py",
@@ -372,18 +387,18 @@
     },
     {
       "path": "scripts/doctor.py",
-      "sha256": "e1ba71444183bc0ff3c22448773c5dbe1a07ad7187b86efb1ad84e7544ebdea6",
-      "size": 120436
+      "sha256": "e2323233fe5a00042a9fd0f97d80b442509f6bec90435f7802fc93006b7cba59",
+      "size": 123273
     },
     {
       "path": "scripts/editor_bindings.py",
-      "sha256": "bd15e63a58a00c44de395bbe8485ebffb1b210d1232a4a16a8220f8d44c1b676",
-      "size": 34654
+      "sha256": "64024b1a14172267a69c3899d3899fd667cb8d6a7482f89a2995e179ebd8a59c",
+      "size": 37169
     },
     {
       "path": "scripts/fill_slots.py",
-      "sha256": "32d18a4b55988f81a1c3afa56943efb6df67d4c65b5270c49253d515f3e3cd6d",
-      "size": 57157
+      "sha256": "f3c0b19e95d33ffaec0ce05049ed52d9b539a96a807ffc4c117fe1ebb7bece17",
+      "size": 66509
     },
     {
       "path": "scripts/fill_templates.py",
@@ -402,8 +417,8 @@
     },
     {
       "path": "scripts/media_assets.py",
-      "sha256": "c2a7f5d047199d7f0d87f0428b75912824cc209e620664a4617da78a07956d9b",
-      "size": 11908
+      "sha256": "94148561fb57d8910f42d57cfbff55c0b36abe4dfb0e71d5438876eee159a643",
+      "size": 16551
     },
     {
       "path": "scripts/media_frame.py",
@@ -427,13 +442,13 @@
     },
     {
       "path": "scripts/oil_ppt.py",
-      "sha256": "8c59d62c8ca47278ac5b20318f7fc7f661b70f80cb0a9d72dcb54b2d4a62c856",
-      "size": 154479
+      "sha256": "ba13853d2d3477f99967219ad32cd987df45b43a2ef7f7caaee43338ba898eb3",
+      "size": 175852
     },
     {
       "path": "scripts/outline_schema.py",
-      "sha256": "2233b170d653829f7ebfd5927e3c7fc1201cbaab8a127e5443050230c52540ad",
-      "size": 90479
+      "sha256": "6de57325011257406e8dcf5ffbe27746ad58bb98b0216799351edefa10e415d3",
+      "size": 108985
     },
     {
       "path": "scripts/package_manifest.py",
@@ -444,6 +459,11 @@
       "path": "scripts/palette_tokens.py",
       "sha256": "00cdbb15e186b236f40bc2a1046ed74944985079bc24545ef02c1544bd5b5266",
       "size": 9768
+    },
+    {
+      "path": "scripts/pptx_export.py",
+      "sha256": "b7c0557bb8102c1d9b8fed477656fea86289bec37eab7f546bbd906220d28994",
+      "size": 33157
     },
     {
       "path": "scripts/profile_tokens.py",
@@ -457,8 +477,8 @@
     },
     {
       "path": "scripts/render_outline_review.py",
-      "sha256": "af8da5f57bfac27fc25cd4eb9b2bbf9b51bd2a4383f696583a1d6bf7c059068b",
-      "size": 39808
+      "sha256": "da685b20819b6e9b1ffa048dbb57024072712d428a42cae6fac805a766c19fd4",
+      "size": 49861
     },
     {
       "path": "scripts/render_programmatic_visual.py",
@@ -472,13 +492,13 @@
     },
     {
       "path": "scripts/text_editor.py",
-      "sha256": "a97948f04b1221a8f6ed836602305811da1ca2597e1b83282095df5b5f6d8858",
-      "size": 32120
+      "sha256": "7b7f18a6f193bda03037ce6300fd037373c56b394ad14f7632743e0e291c13f3",
+      "size": 49156
     },
     {
       "path": "scripts/validate_skill.py",
-      "sha256": "3eabd91f92766389ccc1ae163d4353f397747525161047bf7b3d705e6a1d920f",
-      "size": 39535
+      "sha256": "c9a2731105b7202713dd3b4e1a234466ff3a1f9cf74fd1bd3c0df0b57e2a09d7",
+      "size": 39623
     },
     {
       "path": "scripts/workflow_contract.py",
@@ -501,6 +521,11 @@
       "size": 2319
     },
     {
+      "path": "tests/test_design_cli.py",
+      "sha256": "13618efd0014b041b53fa3afede6a8a720afdc9319c15fb1b0364548794fc724",
+      "size": 12927
+    },
+    {
       "path": "tests/test_design_directions.py",
       "sha256": "8b0467096a4eee4f7717aec4f89973504c2b89b60c45ddd1a2e7f6b379ef851a",
       "size": 9853
@@ -511,6 +536,16 @@
       "size": 6813
     },
     {
+      "path": "tests/test_hybrid_pptx_export.py",
+      "sha256": "fdd175e7542b9890199f4338b4ec58c8e3d246a030a0ac0ed64efd87a7706f37",
+      "size": 11238
+    },
+    {
+      "path": "tests/test_information_components.py",
+      "sha256": "2f3847c5cb286113dd811e57fa754791b479983d55fcfd9a8514f026c8df853b",
+      "size": 8427
+    },
+    {
       "path": "tests/test_package_manifest.py",
       "sha256": "4ee104e873a877bfb81a16a3bcc02c2bddf8095713a83d5a83d57283d6df2d7d",
       "size": 5776
@@ -519,6 +554,16 @@
       "path": "tests/test_structured_components.py",
       "sha256": "11a033dda374e1874a30a6ca4e98215e817f7f99b2d28f141fc3e8b8416c549b",
       "size": 6286
+    },
+    {
+      "path": "tests/test_transactional_media_replacement.py",
+      "sha256": "443d30520f572961871508965ffecb68b98732668480bfbbdb1c19b61a6d6597",
+      "size": 15537
+    },
+    {
+      "path": "tests/test_transactional_slide_operations.py",
+      "sha256": "5f286819ba8d05ddf7440c008661810a290800c52d9e07a2bfce9f5ad8b7ee0e",
+      "size": 12036
     },
     {
       "path": "tests/test_version_cli.py",
@@ -533,5 +578,5 @@
   ],
   "package_version": "0.3.0",
   "schema_version": "oil-ppt.package/v1",
-  "tree_sha256": "378579f733227dcba8bbc3040cd312d462c0a16852f4a28dcaf8b4d86b96e774"
+  "tree_sha256": "c6184e1ab9caa7a709efa17fb9ea93ffd56c9b5bd31900f64acb86f972ebf5f7"
 }

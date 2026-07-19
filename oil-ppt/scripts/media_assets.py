@@ -63,6 +63,17 @@ RASTER_MIME = {
     ".webp": "image/webp",
 }
 
+EDITOR_UPLOAD_MIME = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+}
+MAX_EDITOR_UPLOAD_BYTES = 8 * 1024 * 1024
+MAX_EDITOR_IMAGE_DIMENSION = 16_384
+MAX_EDITOR_IMAGE_PIXELS = 80_000_000
+
 
 def _jpeg_dimensions(data: bytes) -> tuple[int, int]:
     with io.BytesIO(data) as handle:
@@ -144,15 +155,12 @@ def _svg_dimensions(data: bytes) -> tuple[int, int]:
     return round(width), round(height)
 
 
-def inspect_image(path: Path) -> dict:
-    path = path.expanduser().resolve()
-    if not path.is_file():
-        raise ValueError(f"media file is missing: {path}")
-    size = path.stat().st_size
-    suffix = path.suffix.lower()
+def inspect_image_bytes(data: bytes, suffix: str) -> dict:
+    """Inspect image bytes according to their declared filename extension."""
+    suffix = suffix.lower()
+    size = len(data)
     if suffix == ".svg" and size > 8 * 1024 * 1024:
         raise ValueError("SVG exceeds the 8 MB inspection limit")
-    data = path.read_bytes()
     if suffix == ".svg":
         mime = "image/svg+xml"
         width, height = _svg_dimensions(data)
@@ -177,7 +185,6 @@ def inspect_image(path: Path) -> dict:
     if width <= 0 or height <= 0:
         raise ValueError("image dimensions must be positive")
     return {
-        "path": str(path),
         "mime": mime,
         "width": width,
         "height": height,
@@ -187,6 +194,106 @@ def inspect_image(path: Path) -> dict:
     }
 
 
+def inspect_image(path: Path) -> dict:
+    path = path.expanduser().resolve()
+    if not path.is_file():
+        raise ValueError(f"media file is missing: {path}")
+    details = inspect_image_bytes(path.read_bytes(), path.suffix)
+    return {"path": str(path), **details}
+
+
+def validate_editor_upload(filename: str, content_type: str, data: bytes) -> dict:
+    """Validate an editor upload without trusting browser-supplied metadata."""
+    if not isinstance(filename, str) or not filename or len(filename) > 255:
+        raise ValueError("Upload filename must contain 1 to 255 characters.")
+    if "\x00" in filename or "/" in filename or "\\" in filename or filename in {".", ".."}:
+        raise ValueError("Upload filename must not contain a path.")
+    if Path(filename).name != filename:
+        raise ValueError("Upload filename must not contain a path.")
+    suffix = Path(filename).suffix.lower()
+    expected_mime = EDITOR_UPLOAD_MIME.get(suffix)
+    if expected_mime is None:
+        raise ValueError("Upload must be a PNG, JPEG, WebP, or SVG image.")
+    if not data:
+        raise ValueError("Upload payload is empty.")
+    if len(data) > MAX_EDITOR_UPLOAD_BYTES:
+        raise ValueError(f"Upload exceeds the {MAX_EDITOR_UPLOAD_BYTES // (1024 * 1024)} MB limit.")
+    normalized_type = str(content_type or "").split(";", 1)[0].strip().lower()
+    if normalized_type != expected_mime:
+        raise ValueError(
+            f"Upload content type {normalized_type or '(missing)'} does not match {suffix}."
+        )
+    if suffix == ".svg":
+        try:
+            svg_text = data.decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise ValueError("SVG must be UTF-8 encoded") from error
+        if re.search(r"<!\s*(?:DOCTYPE|ENTITY)\b|<\?", svg_text, re.I):
+            raise ValueError("SVG declarations and processing instructions are forbidden.")
+        if re.search(r"\son[a-z0-9_-]+\s*=|javascript\s*:", svg_text, re.I):
+            raise ValueError("SVG event handlers and script URLs are forbidden.")
+        if re.search(r"(?:href|src)\s*=\s*[\"'](?!#)[^\"']+", svg_text, re.I):
+            raise ValueError("SVG embedded and external references are forbidden.")
+        if re.search(r"url\(\s*[\"']?(?!#)[^)]+|@import\b", svg_text, re.I):
+            raise ValueError("SVG embedded and external CSS resources are forbidden.")
+    details = inspect_image_bytes(data, suffix)
+    if details["mime"] != expected_mime:
+        raise ValueError("Upload extension and image content do not match.")
+    width, height = int(details["width"]), int(details["height"])
+    if width > MAX_EDITOR_IMAGE_DIMENSION or height > MAX_EDITOR_IMAGE_DIMENSION:
+        raise ValueError(f"Image dimensions must not exceed {MAX_EDITOR_IMAGE_DIMENSION} px per side.")
+    if width * height > MAX_EDITOR_IMAGE_PIXELS:
+        raise ValueError(f"Image dimensions exceed the {MAX_EDITOR_IMAGE_PIXELS:,} pixel limit.")
+    return details
+
+
+def _json_pointer(*parts: object) -> str:
+    return "/" + "/".join(str(part).replace("~", "~0").replace("/", "~1") for part in parts)
+
+
+def _outline_media_binding_parts(slide: dict) -> list[tuple[str, tuple[object, ...], object]]:
+    """Return display labels, relative JSON paths, and values for rendered media."""
+    bindings: list[tuple[str, tuple[object, ...], object]] = []
+    top_key = next((key for key in ("image", "media", "artifact_image") if slide.get(key)), None)
+    if top_key:
+        bindings.append(("image", (top_key,), slide[top_key]))
+    if slide.get("secondary_image"):
+        bindings.append(("secondary_image", ("secondary_image",), slide["secondary_image"]))
+    if slide.get("template") == "sequence-gallery":
+        for step_index, step in enumerate(slide.get("steps") or []):
+            if isinstance(step, dict) and step.get("image"):
+                bindings.append((
+                    f"steps[{step_index + 1}].image", ("steps", step_index, "image"), step["image"],
+                ))
+    if slide.get("template") == "comparison":
+        for side_index, side in enumerate(slide.get("sides") or []):
+            if not isinstance(side, dict):
+                continue
+            for item_index, item in enumerate(side.get("evidence") or []):
+                image = item.get("image") if isinstance(item, dict) else item
+                if image:
+                    bindings.append((
+                        f"sides[{side_index + 1}].evidence[{item_index + 1}].image",
+                        ("sides", side_index, "evidence", item_index, "image") if isinstance(item, dict)
+                        else ("sides", side_index, "evidence", item_index),
+                        image,
+                    ))
+    if slide.get("template") == "card-trio":
+        for card_index, card in enumerate(slide.get("cards") or []):
+            if not isinstance(card, dict):
+                continue
+            for item_index, item in enumerate(card.get("images") or []):
+                image = item.get("image") if isinstance(item, dict) else item
+                if image:
+                    bindings.append((
+                        f"cards[{card_index + 1}].images[{item_index + 1}].image",
+                        ("cards", card_index, "images", item_index, "image") if isinstance(item, dict)
+                        else ("cards", card_index, "images", item_index),
+                        image,
+                    ))
+    return bindings
+
+
 def outline_media_bindings(slide: dict) -> list[tuple[str, object]]:
     """Return every local image field consumed by a template.
 
@@ -194,33 +301,18 @@ def outline_media_bindings(slide: dict) -> list[tuple[str, object]]:
     traditional single-image slides without asking the authoring model to
     remember extra verification commands.
     """
-    bindings: list[tuple[str, object]] = []
-    value = slide.get("image") or slide.get("media") or slide.get("artifact_image")
-    if value:
-        bindings.append(("image", value))
-    if slide.get("secondary_image"):
-        bindings.append(("secondary_image", slide["secondary_image"]))
-    if slide.get("template") == "sequence-gallery":
-        for step_index, step in enumerate(slide.get("steps") or [], start=1):
-            if isinstance(step, dict) and step.get("image"):
-                bindings.append((f"steps[{step_index}].image", step["image"]))
-    if slide.get("template") == "comparison":
-        for side_index, side in enumerate(slide.get("sides") or [], start=1):
-            if not isinstance(side, dict):
-                continue
-            for item_index, item in enumerate(side.get("evidence") or [], start=1):
-                image = item.get("image") if isinstance(item, dict) else item
-                if image:
-                    bindings.append((f"sides[{side_index}].evidence[{item_index}].image", image))
-    if slide.get("template") == "card-trio":
-        for card_index, card in enumerate(slide.get("cards") or [], start=1):
-            if not isinstance(card, dict):
-                continue
-            for item_index, item in enumerate(card.get("images") or [], start=1):
-                image = item.get("image") if isinstance(item, dict) else item
-                if image:
-                    bindings.append((f"cards[{card_index}].images[{item_index}].image", image))
-    return bindings
+    return [(label, value) for label, _parts, value in _outline_media_binding_parts(slide)]
+
+
+def editable_outline_media(data: dict) -> dict[str, str]:
+    """Map every rendered media binding to the JSON pointer used by the editor."""
+    result: dict[str, str] = {}
+    for slide_index, slide in enumerate(data.get("slides") or []):
+        if not isinstance(slide, dict):
+            continue
+        for _label, parts, value in _outline_media_binding_parts(slide):
+            result[_json_pointer("slides", slide_index, *parts)] = str(value)
+    return result
 
 
 def inspect_outline_media(data: dict, base: Path) -> dict:

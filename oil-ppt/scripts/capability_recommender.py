@@ -74,6 +74,10 @@ def slide_recommendation(slide: dict) -> dict | None:
     options = slide.get("options") if isinstance(slide.get("options"), list) else []
     tables = slide.get("tables") if isinstance(slide.get("tables"), list) else []
     panels = slide.get("panels") if isinstance(slide.get("panels"), list) else []
+    claims = slide.get("claims") if isinstance(slide.get("claims"), list) else []
+    evidence_items = slide.get("evidence") if isinstance(slide.get("evidence"), list) else []
+    periods = slide.get("periods") if isinstance(slide.get("periods"), list) else []
+    lanes = slide.get("lanes") if isinstance(slide.get("lanes"), list) else []
     image = slide.get("image") or slide.get("media") or slide.get("artifact_image")
     secondary_image = slide.get("secondary_image")
     data = slide.get("data") if isinstance(slide.get("data"), dict) else None
@@ -108,6 +112,12 @@ def slide_recommendation(slide: dict) -> dict | None:
         candidates.append(_candidate("code-to-render", "TWO_SOURCE_TO_RENDER_EXAMPLES"))
     elif selected == "step-hero" and image and slide.get("step_number") and 2 <= len(slide.get("points") or []) <= 4:
         candidates.append(_candidate("step-hero", "ONE_NUMBERED_STEP_WITH_HERO_VISUAL", variant=str(slide.get("variant") or "media-right")))
+    elif selected == "evidence-matrix" and 2 <= len(claims) <= 4 and 2 <= len(evidence_items) <= 5:
+        candidates.append(_candidate("evidence-matrix", "TWO_TO_FOUR_CLAIMS_LINKED_TO_REAL_SOURCES"))
+    elif selected == "gantt-roadmap" and 3 <= len(periods) <= 8 and 2 <= len(lanes) <= 5:
+        candidates.append(_candidate("gantt-roadmap", "TIME_BOUNDED_TASKS_ACROSS_LANES"))
+    elif selected == "hierarchy-tree" and 4 <= len(nodes) <= 9 and slide.get("root_id"):
+        candidates.append(_candidate("hierarchy-tree", "ONE_ROOT_CONNECTED_PARENT_CHILD_STRUCTURE"))
     elif (
         selected == "relationship-map"
         and 4 <= len(nodes) <= 6

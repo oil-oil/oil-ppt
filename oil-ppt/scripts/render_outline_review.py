@@ -16,7 +16,7 @@ from background_presets import effective_background
 from design_directions import DESIGN_DIRECTION_BY_ID, matching_direction
 from editor_bindings import annotate_editable_fragment
 from fill_slots import FILLERS, apply_media_attributes, inject_backdrop_text
-from media_assets import verify_outline_media
+from media_assets import editable_outline_media, verify_outline_media
 from outline_schema import validate_outline
 from palette_tokens import PALETTE_META, canonical_name, named_palette, normalize_palette
 from profile_tokens import SHAPE_META, SHAPE_PROFILES, TYPE_META, TYPE_PROFILES
@@ -35,6 +35,8 @@ EDITOR_FRAME_CSS = r"""
 [data-edit-path][contenteditable="plaintext-only"]:hover{outline-color:color-mix(in srgb,var(--ink) 30%,transparent)}
 [data-edit-path]:focus{outline-color:color-mix(in srgb,var(--accent) 74%,var(--ink) 26%);outline-offset:-1px;animation:oil-editor-focus-in .22s cubic-bezier(.22,1,.36,1)}
 [data-edit-path]:empty::after{content:"点击输入";color:var(--ink-3);opacity:.58;font-weight:500}
+[data-media-path]{cursor:pointer;outline:3px solid transparent;outline-offset:-3px;transition:outline-color .16s ease,filter .16s ease}
+[data-media-path][aria-disabled="false"]:hover,[data-media-path][aria-disabled="false"]:focus{outline-color:color-mix(in srgb,var(--accent) 82%,#fff 18%);filter:brightness(.94)}
 body[data-oil-authoring="true"] .oil-slide{user-select:none}
 body[data-oil-authoring="true"] [data-edit-path]{user-select:text;-webkit-user-select:text}
 @keyframes oil-editor-focus-in{from{outline-color:color-mix(in srgb,var(--ink) 30%,transparent);outline-offset:-3px}to{outline-color:color-mix(in srgb,var(--accent) 74%,var(--ink) 26%);outline-offset:-1px}}
@@ -45,15 +47,23 @@ body[data-oil-authoring="true"] [data-edit-path]{user-select:text;-webkit-user-s
 EDITOR_FRAME_JS = r"""
 (() => {
   const editable = [...document.querySelectorAll('[data-edit-path]')];
+  const media = [...document.querySelectorAll('[data-media-path]')];
   const timers = new WeakMap();
   const composing = new WeakSet();
+  let isInteractive = false;
   const normalized = value => String(value || '').replace(/\s+/g, ' ').trim();
   function post(type, detail={}) { parent.postMessage({type, slideId:document.querySelector('.oil-slide')?.dataset.slideId || '', ...detail}, '*'); }
   function setInteractive(interactive) {
+    isInteractive = interactive;
     editable.forEach(node => {
       if (!interactive) node.blur();
       node.setAttribute('contenteditable', interactive ? 'plaintext-only' : 'false');
       node.style.cursor = interactive ? '' : 'default';
+    });
+    media.forEach(node => {
+      node.tabIndex = interactive ? 0 : -1;
+      node.style.cursor = interactive ? '' : 'default';
+      node.setAttribute('aria-disabled', interactive ? 'false' : 'true');
     });
   }
   function sync(path, value, source) {
@@ -124,6 +134,28 @@ EDITOR_FRAME_JS = r"""
       node.dispatchEvent(new InputEvent('input', {bubbles:true, inputType:'insertText', data:text}));
     });
   });
+  media.forEach(node => {
+    node.setAttribute('tabindex', '-1');
+    node.setAttribute('role', 'button');
+    node.setAttribute('aria-label', '替换这张图片');
+    node.setAttribute('aria-disabled', 'true');
+    node.setAttribute('title', '点击替换图片');
+    const choose = () => {
+      if (!isInteractive) return;
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.png,.jpg,.jpeg,.webp,.svg,image/png,image/jpeg,image/webp,image/svg+xml';
+      input.addEventListener('change', () => {
+        const file = input.files?.[0];
+        if (file) post('oil-ppt-editor-media', {path:node.dataset.mediaPath, file});
+      }, {once:true});
+      input.click();
+    };
+    node.addEventListener('click', event => { event.preventDefault(); choose(); });
+    node.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); choose(); }
+    });
+  });
   addEventListener('message', event => {
     const message = event.data || {};
     if (message.type === 'oil-ppt-editor-sync' && message.values) {
@@ -134,6 +166,11 @@ EDITOR_FRAME_JS = r"""
       report();
     }
     if (message.type === 'oil-ppt-editor-request-report') report();
+    if (message.type === 'oil-ppt-editor-media-sync' && message.values) {
+      media.forEach(node => {
+        if (node.dataset.mediaPath in message.values) node.src = message.values[node.dataset.mediaPath];
+      });
+    }
     if (message.type === 'oil-ppt-editor-mode') setInteractive(Boolean(message.interactive));
     if (message.type === 'oil-ppt-editor-lock') setInteractive(false);
   });
@@ -145,12 +182,12 @@ EDITOR_FRAME_JS = r"""
 
 PREVIEW_SHELL_CSS = r"""
 .design-summary{margin:0 0 28px;padding:12px 15px;display:flex;align-items:center;gap:12px;border:1px solid #dededb;border-radius:14px;background:#fff;color:#555;font-size:13px;line-height:1.45}.design-summary-main{min-width:0;display:flex;align-items:center;gap:5px;flex-wrap:wrap}.design-summary-main strong{color:#292929}.design-summary-palette{display:inline-flex;align-items:center;gap:7px}.mini-palette{display:inline-flex;gap:3px}.mini-palette i{width:10px;height:10px;border:1px solid rgba(0,0,0,.08);border-radius:3px;background:var(--color)}.design-summary-note{margin-left:auto;flex:0 0 auto;color:#888;font-size:12px}
-.page-card{position:relative}.frame-wrap{position:relative}.frame-wrap>iframe{pointer-events:none}.preview-open{position:absolute;inset:0;z-index:3;border:0;border-radius:11px;background:transparent;color:transparent;cursor:zoom-in}.preview-open:focus-visible{outline:3px solid #292929;outline-offset:4px}
+.page-card{position:relative}.frame-wrap{position:relative}.frame-wrap>iframe{pointer-events:none}.preview-open{position:absolute;inset:0;z-index:3;border:0;border-radius:11px;background:transparent;color:transparent;cursor:zoom-in}.preview-open:focus-visible{outline:3px solid #292929;outline-offset:4px}.slide-actions{margin-top:11px;display:flex;align-items:center;gap:6px}.slide-actions button{height:34px;padding:0 10px;border:1px solid #dededb;border-radius:10px;background:#fff;color:#555;font:650 12px/1 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;cursor:pointer}.slide-actions button:hover:not(:disabled){border-color:#999;color:#292929}.slide-actions button:disabled{opacity:.32;cursor:default}.slide-actions .delete{margin-left:auto;color:#9b4438}.slide-actions .delete:hover:not(:disabled){border-color:#c8877d;color:#7b3328}
 .slide-lightbox{width:min(96vw,1680px);height:min(96vh,1000px);max-width:none;max-height:calc(100vh - 20px);padding:0;border:1px solid rgba(41,41,41,.08);border-radius:24px;background:#f7f7f5;box-shadow:0 30px 88px rgba(0,0,0,.22),0 1px 0 rgba(255,255,255,.8) inset;overflow:hidden}.slide-lightbox[open]{display:grid;grid-template-rows:auto minmax(0,1fr) auto;animation:oil-lightbox-in .28s cubic-bezier(.22,1,.36,1)}.slide-lightbox::backdrop{background:rgba(28,28,26,.44);backdrop-filter:blur(12px) saturate(.9)}.slide-lightbox[open]::backdrop{animation:oil-backdrop-in .22s ease-out}.lightbox-bar{height:62px;padding:0 14px 0 22px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #dededb;background:rgba(255,255,255,.94)}.lightbox-bar strong{min-width:0;margin-right:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.lightbox-page{color:#777;font-size:13px}.lightbox-bar button{height:38px;min-width:38px;padding:0 13px;border:1px solid #dededb;border-radius:12px;background:#fff;color:#292929;font:650 14px/1 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;cursor:pointer}.lightbox-bar button:hover{border-color:#aaa;background:#fafafa}.lightbox-bar button:disabled{opacity:.38;cursor:default}.lightbox-stage{min-height:0;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);place-items:center;padding:18px;overflow:hidden;background:#efefed}.lightbox-stage iframe{min-width:0;min-height:0;width:auto;height:100%;max-width:100%;max-height:100%;aspect-ratio:16/9;border:0;border-radius:13px;box-shadow:0 12px 38px rgba(0,0,0,.1);background:#fff}
 @keyframes oil-lightbox-in{from{opacity:0;transform:translateY(12px) scale(.985)}to{opacity:1;transform:none}}@keyframes oil-backdrop-in{from{background:rgba(28,28,26,0);backdrop-filter:blur(0)}to{background:rgba(28,28,26,.44);backdrop-filter:blur(12px) saturate(.9)}}
 .editor-toolbar{position:fixed;z-index:40;left:50%;bottom:20px;transform:translateX(-50%);width:min(920px,calc(100% - 28px));min-height:68px;padding:12px 14px 12px 18px;display:flex;align-items:center;gap:12px;border:1px solid rgba(41,41,41,.14);border-radius:20px;background:rgba(255,255,255,.94);box-shadow:0 18px 54px rgba(0,0,0,.16);backdrop-filter:blur(18px)}.editor-state{min-width:0;margin-right:auto;display:flex;align-items:center;gap:10px}.editor-dot{width:9px;height:9px;border-radius:50%;background:#61a56d;box-shadow:0 0 0 5px rgba(97,165,109,.13)}.editor-state strong{font-size:14px}.editor-state span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#777;font-size:13px}.editor-actions{display:flex;gap:8px}.editor-actions button{height:42px;padding:0 15px;border:1px solid #dededb;border-radius:13px;background:#fff;color:#292929;font:700 13px/1 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;cursor:pointer}.editor-actions button:hover:not(:disabled){border-color:#999}.editor-actions button:disabled{opacity:.38;cursor:default}.editor-actions .finish{border-color:#292929;background:#292929;color:#fff}.editor-errors{position:fixed;z-index:39;left:50%;bottom:102px;transform:translateX(-50%);width:min(920px,calc(100% - 28px));padding:16px 18px;border:1px solid #e6b5aa;border-radius:18px;background:#fff8f5;box-shadow:0 14px 40px rgba(0,0,0,.12);color:#7b3328}.editor-errors strong{display:block;margin-bottom:6px}.editor-errors ul{margin:0;padding-left:20px;font-size:13px;line-height:1.55}
 .slide-lightbox .editor-toolbar{position:static;z-index:auto;left:auto;bottom:auto;transform:none;width:100%;min-height:66px;border-width:1px 0 0;border-radius:0;box-shadow:none;backdrop-filter:none}.slide-lightbox .editor-errors{position:absolute;z-index:2;bottom:78px;width:min(920px,calc(100% - 28px))}
-@media(max-width:720px){.design-summary{align-items:flex-start;flex-direction:column;gap:5px}.design-summary-note{margin-left:0}.slide-lightbox{width:100vw;height:100dvh;max-height:100dvh;border-radius:0}.lightbox-bar{height:56px;padding-left:12px}.lightbox-bar strong{display:none}.lightbox-stage{padding:8px}.lightbox-stage iframe{width:100%;height:auto;max-height:100%}.editor-toolbar{bottom:10px;padding:10px 10px 10px 14px;flex-wrap:wrap}.editor-state{width:100%}.editor-actions{width:100%;display:grid;grid-template-columns:repeat(4,1fr)}.editor-actions button{padding:0 8px}.editor-errors{bottom:132px}}
+@media(max-width:720px){.design-summary{align-items:flex-start;flex-direction:column;gap:5px}.design-summary-note{margin-left:0}.slide-actions{display:grid;grid-template-columns:repeat(3,1fr)}.slide-actions button{padding:0 6px}.slide-actions .delete{margin-left:0}.slide-lightbox{width:100vw;height:100dvh;max-height:100dvh;border-radius:0}.lightbox-bar{height:56px;padding-left:12px}.lightbox-bar strong{display:none}.lightbox-stage{padding:8px}.lightbox-stage iframe{width:100%;height:auto;max-height:100%}.editor-toolbar{bottom:10px;padding:10px 10px 10px 14px;flex-wrap:wrap}.editor-state{width:100%}.editor-actions{width:100%;display:grid;grid-template-columns:repeat(4,1fr)}.editor-actions button{padding:0 8px}.editor-errors{bottom:132px}}
 @media(prefers-reduced-motion:reduce){.slide-lightbox[open],.slide-lightbox[open]::backdrop{animation:none}}
 """
 
@@ -208,10 +245,11 @@ PREVIEW_SHELL_JS = r"""
 """
 
 
-def editor_shell_js(token: str, recovery_id: str, settings_signature: str) -> str:
+def editor_shell_js(token: str, recovery_id: str, settings_signature: str, structure_signature: str) -> str:
     token_json = json.dumps(token, ensure_ascii=False)
     recovery_key_json = json.dumps(f"oil-ppt.text-editor-recovery/v1/{recovery_id}", ensure_ascii=False)
     settings_signature_json = json.dumps(settings_signature, ensure_ascii=False)
+    structure_signature_json = json.dumps(structure_signature, ensure_ascii=False)
     return r"""
 (() => {
   const token=__TOKEN__;
@@ -228,13 +266,18 @@ def editor_shell_js(token: str, recovery_id: str, settings_signature: str) -> st
   let changedPaths=new Set();
   let settingsChanged=false;
   const settingsSignatureAtLoad=__SETTINGS_SIGNATURE__;
+  const structureSignatureAtLoad=__STRUCTURE_SIGNATURE__;
+  let revision=0;
   let latestValues={};
   const recoveryKey=__RECOVERY_KEY__;
+  const structuralRecoveryKey=`${recoveryKey}/slide-transaction`;
   let leaseOwner=false;
   let releaseLeaseHold=()=>{};
   let leaseUnavailableMessage='';
   let recovery={};
   try { recovery=JSON.parse(localStorage.getItem(recoveryKey)||'{}')||{}; } catch (_) { recovery={}; }
+  let pendingStructure=null;
+  try { pendingStructure=JSON.parse(localStorage.getItem(structuralRecoveryKey)||'null'); } catch (_) { pendingStructure=null; }
   const reports=new Map();
   let mutationQueue=Promise.resolve();
   function setStatus(message, state='saved') {
@@ -246,6 +289,11 @@ def editor_shell_js(token: str, recovery_id: str, settings_signature: str) -> st
     redo.disabled=!state.can_redo;
     if (state.changed_paths) changedPaths=new Set(state.changed_paths);
     if (state.changed_settings) settingsChanged=state.changed_settings.length>0;
+    if (Number.isInteger(state.revision)) revision=state.revision;
+  }
+  function broadcastMedia(values) {
+    if (!values) return;
+    document.querySelectorAll('iframe').forEach(frame=>frame.contentWindow?.postMessage({type:'oil-ppt-editor-media-sync',values},'*'));
   }
   function fieldLabel(path='') {
     const match=path.match(/^\/slides\/(\d+)\/(.+)$/);
@@ -262,7 +310,7 @@ def editor_shell_js(token: str, recovery_id: str, settings_signature: str) -> st
   }
   function lockEditor(message='另一个标签页正在编辑这份演示，请回到原标签页继续。') {
     document.body.classList.add('is-editor-readonly');
-    document.querySelectorAll('.editor-actions button').forEach(button=>button.disabled=true);
+    document.querySelectorAll('.editor-actions button,[data-slide-action]').forEach(button=>button.disabled=true);
     document.querySelectorAll('iframe').forEach(frame=>frame.contentWindow?.postMessage({type:'oil-ppt-editor-lock'},'*'));
     showErrors([{message}]); setStatus('当前标签页只读','error');
   }
@@ -313,6 +361,27 @@ def editor_shell_js(token: str, recovery_id: str, settings_signature: str) -> st
     if (!response.ok || !result.ok) throw new Error((result.errors||[result.message||'操作失败']).join('；'));
     return result;
   }
+  async function uploadMedia(path, file) {
+    if (!ensureLease()) return;
+    pending+=1; finish.disabled=true; setStatus('正在上传图片…','saving');
+    return enqueue(async()=>{
+      try {
+        const response=await fetch('/api/media',{method:'POST',headers:{
+          'Content-Type':file.type||'application/octet-stream',
+          'X-Oil-Ppt-Token':token,
+          'X-Oil-Ppt-Media-Path':encodeURIComponent(path),
+          'X-Oil-Ppt-Filename':encodeURIComponent(file.name)
+        },body:file});
+        const result=await response.json();
+        if (!response.ok||!result.ok) throw new Error((result.errors||[result.message||'上传失败']).join('；'));
+        setHistory(result); broadcastMedia(result.media_values); showErrors([]); setStatus('已自动保存');
+      } catch(error) {
+        showErrors([{message:error.message}]); setStatus('上传失败','error');
+      } finally {
+        pending-=1; finish.disabled=pending>0;
+      }
+    });
+  }
   function broadcast(values, force=false) {
     if (!values) return;
     latestValues={...latestValues,...values};
@@ -332,7 +401,7 @@ def editor_shell_js(token: str, recovery_id: str, settings_signature: str) -> st
     pending+=1; finish.disabled=true; setStatus('正在保存…','saving');
     return enqueue(async()=>{
       try {
-        const result=await api('/api/edit',{path,value});
+        const result=await api('/api/edit',{path,value,expected_revision:revision});
         if (path in recovery && normalized(recovery[path])===normalized(value)) { delete recovery[path]; persistRecovery(); }
         saveErrors.delete(path); setHistory(result); broadcast({...result.values,...recovery}); showErrors([]);
       } catch (error) {
@@ -362,11 +431,54 @@ def editor_shell_js(token: str, recovery_id: str, settings_signature: str) -> st
     if (!await flushEdits()) { showErrors([{message:saveErrorMessage()}]); return; }
     return enqueue(async()=>{
       try {
-        const result=await api(path); setHistory(result); broadcast(result.values,true); showErrors([]); setStatus('已自动保存');
-        if (result.settings_signature!==settingsSignatureAtLoad) location.reload();
+        const result=await api(path); setHistory(result); broadcast(result.values,true); broadcastMedia(result.media_values); showErrors([]); setStatus('已自动保存');
+        if (result.settings_signature!==settingsSignatureAtLoad || result.structure_signature!==structureSignatureAtLoad) location.reload();
       }
       catch (error) { showErrors([{message:error.message}]); setStatus('操作失败','error'); }
     });
+  }
+  function operationId() {
+    if (crypto.randomUUID) return crypto.randomUUID();
+    return `op-${Date.now().toString(36)}-${crypto.getRandomValues(new Uint32Array(2)).join('-')}`;
+  }
+  function persistStructure(transaction) {
+    pendingStructure=transaction;
+    if (transaction) localStorage.setItem(structuralRecoveryKey,JSON.stringify(transaction));
+    else localStorage.removeItem(structuralRecoveryKey);
+  }
+  async function runSlideTransaction(transaction, {recoveryRun=false}={}) {
+    if (!ensureLease()) return false;
+    finish.disabled=true;
+    setStatus(recoveryRun?'正在恢复页面操作…':'正在保存页面结构…','saving');
+    try {
+      const result=await enqueue(()=>api(`/api/slides/${transaction.action}`,transaction));
+      setHistory(result);
+      persistStructure(null);
+      recovery={}; persistRecovery();
+      location.reload();
+      return true;
+    } catch (error) {
+      finish.disabled=false;
+      showErrors([{message:error.message}]);
+      setStatus(recoveryRun?'页面操作恢复失败':'页面操作失败','error');
+      return false;
+    }
+  }
+  async function slideAction(button) {
+    if (!ensureLease() || button.disabled) return;
+    const action=button.dataset.slideAction;
+    const slideId=button.closest('[data-slide-id]')?.dataset.slideId||'';
+    if (action==='delete' && !confirm('删除这一页？可以使用撤销恢复。')) return;
+    if (!await flushEdits()) { showErrors([{message:saveErrorMessage()}]); return; }
+    const transaction={
+      action,
+      slide_id:slideId,
+      expected_revision:revision,
+      operation_id:operationId()
+    };
+    if (action==='move') transaction.direction=button.dataset.direction;
+    persistStructure(transaction);
+    await runSlideTransaction(transaction);
   }
   addEventListener('message', event => {
     const message=event.data||{};
@@ -374,6 +486,7 @@ def editor_shell_js(token: str, recovery_id: str, settings_signature: str) -> st
       event.source?.postMessage({type:'oil-ppt-editor-mode',interactive:leaseOwner && event.source===editorViewer?.contentWindow},'*');
       event.source?.postMessage({type:'oil-ppt-editor-sync',values:latestValues,force:true},'*');
     }
+    if (message.type==='oil-ppt-editor-media' && message.file) uploadMedia(message.path,message.file);
     if (message.type==='oil-ppt-editor-local-edit') {
       if (!ensureLease()) return;
       recovery[message.path]=String(message.value||''); persistRecovery();
@@ -384,11 +497,12 @@ def editor_shell_js(token: str, recovery_id: str, settings_signature: str) -> st
   });
   undo.addEventListener('click',()=>historyAction('/api/undo'));
   redo.addEventListener('click',()=>historyAction('/api/redo'));
+  document.querySelectorAll('[data-slide-action]').forEach(button=>button.addEventListener('click',()=>slideAction(button)));
   document.querySelector('[data-editor-discard]').addEventListener('click',async()=>{
     if (!ensureLease()) return;
     if (!confirm('还原这次文字编辑？已经保存的编辑草稿会被删除。')) return;
     if (!await waitForPending()) { showErrors([{message:'仍有文字正在保存，请稍后再试'}]); return; }
-    try { await enqueue(()=>api('/api/discard')); recovery={}; persistRecovery(); releaseLease(); location.reload(); }
+    try { await enqueue(()=>api('/api/discard')); recovery={}; persistRecovery(); persistStructure(null); releaseLease(); location.reload(); }
     catch (error) { showErrors([{message:error.message}]); }
   });
   finish.addEventListener('click',async()=>{
@@ -419,13 +533,16 @@ def editor_shell_js(token: str, recovery_id: str, settings_signature: str) -> st
     if (!owner) lockEditor(leaseUnavailableMessage||'另一个标签页正在编辑这份演示，请回到原标签页继续。');
     return enqueue(()=>api('/api/state'));
   }).then(result=>{
-    setHistory(result); broadcast(result.values);
+    setHistory(result); broadcast(result.values); broadcastMedia(result.media_values);
     if (!leaseOwner) return;
+    if (pendingStructure?.action && pendingStructure?.operation_id) {
+      return runSlideTransaction(pendingStructure,{recoveryRun:true});
+    }
     if (Object.keys(recovery).length) { broadcast(recovery,true); Object.entries(recovery).forEach(([path,value])=>save(path,value)); }
   }).catch(error=>{showErrors([{message:error.message}]);setStatus('无法读取编辑草稿','error');});
   addEventListener('pagehide',releaseLease);
 })();
-""".replace("__TOKEN__", token_json).replace("__RECOVERY_KEY__", recovery_key_json).replace("__SETTINGS_SIGNATURE__", settings_signature_json)
+""".replace("__TOKEN__", token_json).replace("__RECOVERY_KEY__", recovery_key_json).replace("__SETTINGS_SIGNATURE__", settings_signature_json).replace("__STRUCTURE_SIGNATURE__", structure_signature_json)
 
 
 def parse_args() -> argparse.Namespace:
@@ -471,6 +588,18 @@ def settings_signature(data: dict) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def structure_signature(data: dict) -> str:
+    payload = {
+        "slides": [
+            {"id": slide.get("id"), "template": slide.get("template")}
+            for slide in data.get("slides", [])
+            if isinstance(slide, dict)
+        ],
+    }
+    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def theme_css(data: dict) -> str:
     palette = palette_for(data)
     typography = TYPE_PROFILES[data["typography"]]
@@ -489,6 +618,36 @@ def theme_css(data: dict) -> str:
         f"--surface-radius:{shape['radius']};--surface-radius-sm:{shape['radius_sm']};--surface-radius-lg:{shape['radius_lg']};",
         f"--media-radius:{shape['media_radius']};--icon-radius:{shape['icon_radius']};--surface-shadow:{shape['shadow']};",
     )) + "}"
+
+
+def annotate_media_fragment(fragment: str, slide: dict, slide_index: int) -> str:
+    """Mark every rendered media node with its stable outline JSON pointer."""
+    bindings = editable_outline_media({"slides": [slide]})
+    for local_pointer, value in bindings.items():
+        pointer = local_pointer.replace("/slides/0/", f"/slides/{slide_index}/", 1)
+        escaped_value = html.escape(value, quote=True)
+        pattern = re.compile(
+            r'<img\b(?P<attrs>[^>]*\bsrc=(?P<quote>["\'])'
+            + re.escape(escaped_value)
+            + r'(?P=quote)[^>]*)>',
+            re.I,
+        )
+        annotated = False
+
+        def add_pointer(match: re.Match[str]) -> str:
+            nonlocal annotated
+            attrs = match.group("attrs")
+            if annotated or re.search(r"\bdata-media-path=", attrs, re.I):
+                return match.group(0)
+            annotated = True
+            return f'<img{attrs} data-media-path="{html.escape(pointer, quote=True)}">'
+
+        fragment = pattern.sub(add_pointer, fragment)
+        if not annotated:
+            raise SystemExit(
+                f"Rendered media binding {pointer} has no image node in {slide.get('template')}."
+            )
+    return fragment
 
 
 def prepared_slide(slide: dict, index: int, *, authoring: bool = False) -> tuple[str, str]:
@@ -533,6 +692,8 @@ def prepared_slide(slide: dict, index: int, *, authoring: bool = False) -> tuple
     # them in every preview so a render error can point back to outline.json
     # without asking the model to reverse-engineer template DOM.
     fragment = annotate_editable_fragment(fragment, slide, index - 1)
+    if authoring:
+        fragment = annotate_media_fragment(fragment, slide, index - 1)
     return css, fragment
 
 
@@ -607,11 +768,32 @@ def validate_asset_paths(data: dict, base: Path) -> None:
 def render(data: dict, *, authoring: bool = False, editor_token: str = "", editor_recovery_id: str = "") -> str:
     slides = validate_outline(data, TEMPLATES)
     cards = []
+    content_slide_count = sum(slide.get("template") not in {"cover", "end"} for slide in slides)
     for index, slide in enumerate(slides, start=1):
         document = html.escape(iframe_document(data, slide, index, authoring=authoring), quote=True)
         open_label = f"打开第 {index} 页"
-        cards.append(f"""<article class="page-card" data-page-index="{index - 1}"><div class="meta"><b>{index:02d}</b><strong>{esc(slide['title'])}</strong></div>
-<div class="frame-wrap"><iframe title="{esc(slide['title'])}" srcdoc="{document}" tabindex="-1" aria-hidden="true"></iframe><button class="preview-open" type="button" aria-label="{esc(open_label)}"></button></div><p>{esc(visual_label(slide))}</p></article>""")
+        slide_controls = ""
+        author_attrs = ""
+        if authoring:
+            position = index - 1
+            boundary = slide.get("template") in {"cover", "end"}
+            previous_boundary = position == 0 or slides[position - 1].get("template") in {"cover", "end"}
+            next_boundary = position == len(slides) - 1 or slides[position + 1].get("template") in {"cover", "end"}
+            up_disabled = " disabled" if boundary or previous_boundary else ""
+            down_disabled = " disabled" if boundary or next_boundary else ""
+            duplicate_disabled = " disabled" if boundary else ""
+            delete_disabled = " disabled" if boundary or content_slide_count <= 1 else ""
+            author_attrs = f' data-slide-id="{esc(slide["id"])}"'
+            slide_controls = (
+                '<nav class="slide-actions" aria-label="页面结构操作">'
+                f'<button type="button" data-slide-action="move" data-direction="up"{up_disabled} aria-label="上移第 {index} 页">↑ 上移</button>'
+                f'<button type="button" data-slide-action="move" data-direction="down"{down_disabled} aria-label="下移第 {index} 页">↓ 下移</button>'
+                f'<button type="button" data-slide-action="duplicate"{duplicate_disabled} aria-label="复制第 {index} 页">复制</button>'
+                f'<button type="button" class="delete" data-slide-action="delete"{delete_disabled} aria-label="删除第 {index} 页">删除</button>'
+                '</nav>'
+            )
+        cards.append(f"""<article class="page-card" data-page-index="{index - 1}"{author_attrs}><div class="meta"><b>{index:02d}</b><strong>{esc(slide['title'])}</strong></div>
+<div class="frame-wrap"><iframe title="{esc(slide['title'])}" srcdoc="{document}" tabindex="-1" aria-hidden="true"></iframe><button class="preview-open" type="button" aria-label="{esc(open_label)}"></button></div><p>{esc(visual_label(slide))}</p>{slide_controls}</article>""")
     author_class = " class=\"is-authoring\"" if authoring else ""
     editor_toolbar = ""
     editor_script = ""
@@ -622,7 +804,7 @@ def render(data: dict, *, authoring: bool = False, editor_token: str = "", edito
             raise ValueError("authoring preview requires a project-bound recovery id")
         editor_toolbar = """<section id="editor-errors" class="editor-errors" hidden aria-live="assertive"><strong>这些内容还需要处理</strong><ul></ul></section>
 <aside class="editor-toolbar" aria-label="内容编辑工具栏"><div class="editor-state"><i class="editor-dot"></i><strong>内容编辑</strong><span id="editor-status">已自动保存</span></div><div class="editor-actions"><button type="button" data-editor-undo>撤销</button><button type="button" data-editor-redo>重做</button><button type="button" data-editor-discard>还原</button><button type="button" class="finish" data-editor-finish>完成编辑</button></div></aside>"""
-        editor_script = f"<script>{editor_shell_js(editor_token, editor_recovery_id, settings_signature(data))}</script>"
+        editor_script = f"<script>{editor_shell_js(editor_token, editor_recovery_id, settings_signature(data), structure_signature(data))}</script>"
     settings = design_summary(data)
     lightbox = f"""<dialog id="slide-lightbox" class="slide-lightbox" aria-label="幻灯片大图预览"><header class="lightbox-bar"><strong class="lightbox-title"></strong><span class="lightbox-page"></span><button type="button" data-lightbox-prev aria-label="上一页">←</button><button type="button" data-lightbox-next aria-label="下一页">→</button><button type="button" data-lightbox-close>关闭</button></header><div class="lightbox-stage"><iframe title="大图预览"></iframe></div>{editor_toolbar}</dialog>"""
     return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(data['title'])} · 预览</title>

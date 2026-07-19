@@ -53,6 +53,9 @@ TEMPLATE_CONTENT_HELP = {
     "tier-stack": "content + steps[4] with title + body, ordered from broad/base input to focused/apex result; funnel and pyramid reuse the same input",
     "relationship-map": "content + nodes[4..6] with id + title + body and exactly one emphasis=true; links use source→target + label to connect every peripheral node to the center",
     "decision-matrix": "content + source + criteria[3] + options[3], each option with title + scores[3] integers from 1 to 5 where 5 is better; totals must produce one unique recommendation",
+    "evidence-matrix": "content + claims[2..4] with id + title + evidence[2..5] with id + title + source(label + https url) + links[1..4](claim + relation); every claim must have evidence",
+    "gantt-roadmap": "content + periods[3..8] with id + label + lanes[2..5] with id + title + items[1..4](id + title + start + end; optional note + depends_on[1..2])",
+    "hierarchy-tree": "content + root_id + nodes[4..9] with id + title; every non-root node requires parent, optional body collapses, and depth is at most 3 levels",
     "project-card-grid": "content + cards[6], each with title + optional meta + body",
     "brand-matrix": "content + groups[2], each with title + items[3..6], each item with title + meta",
     "dialogue-vs-task": "content + sides[2]: each has title + lead + result; left has points[2], right has points[3]",
@@ -190,6 +193,33 @@ VARIANT_INPUT_GUIDANCE = {
                 "criteria[]": "text",
                 "options[]": {"title": "text", "scores[]": "3 integers, each 1..5"},
             },
+        },
+    },
+    "evidence-matrix": {
+        "default": {
+            "minimum": ["content", "claims[2..4]: id + title", "evidence[2..5]: id + title + source.label + source.url", "evidence[].links[1..4]: claim + relation", "every claim linked by at least one evidence item"],
+            "optional": ["evidence[].note"],
+            "field_shape": {
+                "claims[]": {"id": "lowercase-id", "title": "text"},
+                "evidence[]": {"id": "lowercase-id", "title": "text", "source": {"label": "text", "url": "https-url"}, "links[]": {"claim": "claim-id", "relation": "supports | challenges | context"}, "note": "optional text"},
+            },
+        },
+    },
+    "gantt-roadmap": {
+        "default": {
+            "minimum": ["content", "periods[3..8]: id + label in chronological order", "lanes[2..5]: id + title + items[1..4]", "items[]: id + title + start period id + end period id"],
+            "optional": ["items[].note", "items[].depends_on[1..2] task ids"],
+            "field_shape": {
+                "periods[]": {"id": "lowercase-id", "label": "text"},
+                "lanes[]": {"id": "lowercase-id", "title": "text", "items[]": {"id": "lowercase-id", "title": "text", "start": "period-id", "end": "period-id", "note": "optional text", "depends_on[]": "earlier task-id"}},
+            },
+        },
+    },
+    "hierarchy-tree": {
+        "default": {
+            "minimum": ["content", "root_id", "nodes[4..9]: id + title", "every non-root node has parent referencing a declared node"],
+            "optional": ["nodes[].body"],
+            "field_shape": {"nodes[]": {"id": "lowercase-id", "title": "text", "parent": "required except root", "body": "optional text"}},
         },
     },
     "catalog-board": {
@@ -349,6 +379,15 @@ COMPONENT_TEXT_BUDGETS = {
             "options[].title": 16,
         },
     },
+    "evidence-matrix": {
+        "*": {"content": 48, "claims[].title": 14, "evidence[].title": 22, "evidence[].source.label": 24, "evidence[].note": 36},
+    },
+    "gantt-roadmap": {
+        "*": {"content": 48, "periods[].label": 10, "lanes[].title": 12, "lanes[].items[].title": 18, "lanes[].items[].note": 28},
+    },
+    "hierarchy-tree": {
+        "*": {"content": 48, "nodes[].title": 16, "nodes[].body": 32},
+    },
     "project-card-grid": {
         "*": {"content": 48, "cards[].title": 16, "cards[].meta": 12, "cards[].body": 42},
     },
@@ -404,6 +443,7 @@ SLIDE_ALLOWED_FIELDS = frozenset({
     "media_frame", "media_fit", "media_position", "media_treatment", "media_surface",
     "media_role", "media_fidelity", "media_question", "media_source",
     "cards", "steps", "sides", "groups", "nodes", "links", "criteria", "options", "outcome",
+    "claims", "evidence", "periods", "lanes", "root_id",
     "points", "tables", "panels", "step_number",
     "quote", "source", "metric", "metrics", "insight", "chart", "data", "axes", "annotations",
     "statement", "statement_body", "statement_icon", "quote_icon", "conclusion",
@@ -461,6 +501,9 @@ TEMPLATE_VISIBLE_FIELDS = {
     "tier-stack": {"content", "note", "steps"},
     "relationship-map": {"content", "note", "nodes", "links"},
     "decision-matrix": {"content", "note", "source", "criteria", "options"},
+    "evidence-matrix": {"content", "note", "claims", "evidence"},
+    "gantt-roadmap": {"content", "note", "periods", "lanes"},
+    "hierarchy-tree": {"content", "note", "root_id", "nodes"},
     "project-card-grid": {"content", "note", "cards"},
     "brand-matrix": {"content", "note", "groups"},
     "dialogue-vs-task": {"content", "note", "sides"},
@@ -847,6 +890,258 @@ def _validate_decision_matrix(slide: dict, index: int) -> None:
         )
 
 
+def _canonical_key(value: object, index: int, path: str) -> str:
+    key = _text(value)
+    if value != key or re.fullmatch(r"[a-z][a-z0-9-]*", key) is None:
+        raise SystemExit(
+            f"Outline slide {index} {path} must be a canonical lowercase id using letters, digits, and hyphens."
+        )
+    return key
+
+
+def _validate_evidence_matrix(slide: dict, index: int) -> None:
+    budgets = text_budgets_for("evidence-matrix")
+    _require_bounded_content(slide, index, budgets["content"])
+    claims = _items(slide, "claims")
+    if not 2 <= len(claims) <= 4:
+        raise SystemExit(f"Outline slide {index} evidence-matrix requires 2–4 claims.")
+    claim_ids: list[str] = []
+    claim_titles: list[str] = []
+    for claim_index, claim in enumerate(claims, start=1):
+        if not isinstance(claim, dict) or set(claim) != {"id", "title"}:
+            raise SystemExit(f"Outline slide {index} claims[{claim_index}] requires exactly id and title.")
+        claim_id = _canonical_key(claim.get("id"), index, f"claims[{claim_index}].id")
+        title = _text(claim.get("title"))
+        if not title:
+            raise SystemExit(f"Outline slide {index} claims[{claim_index}].title must be non-empty.")
+        _max_chars(title, index, f"claims[{claim_index}].title", budgets["claims[].title"])
+        claim_ids.append(claim_id)
+        claim_titles.append(title.casefold())
+    if len(set(claim_ids)) != len(claim_ids):
+        raise SystemExit(f"Outline slide {index} evidence-matrix claim ids must be unique.")
+    if len(set(claim_titles)) != len(claim_titles):
+        raise SystemExit(f"Outline slide {index} evidence-matrix claim titles must be unique.")
+
+    evidence = _items(slide, "evidence")
+    if not 2 <= len(evidence) <= 5:
+        raise SystemExit(f"Outline slide {index} evidence-matrix requires 2–5 evidence items.")
+    evidence_ids: list[str] = []
+    source_urls: list[str] = []
+    covered_claims: set[str] = set()
+    fake_source = re.compile(r"(?:example\.com|placeholder|\bfake\b|\btbd\b|\btodo\b|待补|占位|示例来源)", re.I)
+    for evidence_index, item in enumerate(evidence, start=1):
+        allowed = {"id", "title", "source", "links", "note"}
+        if not isinstance(item, dict) or not {"id", "title", "source", "links"} <= set(item) or set(item) - allowed:
+            raise SystemExit(
+                f"Outline slide {index} evidence[{evidence_index}] requires id, title, source, links and optional note only."
+            )
+        evidence_id = _canonical_key(item.get("id"), index, f"evidence[{evidence_index}].id")
+        title = _text(item.get("title"))
+        if not title:
+            raise SystemExit(f"Outline slide {index} evidence[{evidence_index}].title must be non-empty.")
+        _max_chars(title, index, f"evidence[{evidence_index}].title", budgets["evidence[].title"])
+        source = item.get("source")
+        if not isinstance(source, dict) or set(source) != {"label", "url"}:
+            raise SystemExit(
+                f"Outline slide {index} evidence[{evidence_index}].source requires exactly label and url."
+            )
+        source_label = _text(source.get("label"))
+        source_url = _text(source.get("url"))
+        if not source_label or not re.fullmatch(r"https://[^\s]+", source_url) or fake_source.search(source_label + " " + source_url):
+            raise SystemExit(
+                f"Outline slide {index} evidence[{evidence_index}].source must name a real source with a non-placeholder HTTPS URL."
+            )
+        _max_chars(source_label, index, f"evidence[{evidence_index}].source.label", budgets["evidence[].source.label"])
+        if "note" in item:
+            if not _text(item.get("note")):
+                raise SystemExit(f"Outline slide {index} evidence[{evidence_index}].note must be non-empty when provided.")
+            _max_chars(item.get("note"), index, f"evidence[{evidence_index}].note", budgets["evidence[].note"])
+        links = item.get("links")
+        if not isinstance(links, list) or not 1 <= len(links) <= len(claims):
+            raise SystemExit(
+                f"Outline slide {index} evidence[{evidence_index}].links requires 1–{len(claims)} claim relationships."
+            )
+        linked: set[str] = set()
+        for link_index, link in enumerate(links, start=1):
+            if not isinstance(link, dict) or set(link) != {"claim", "relation"}:
+                raise SystemExit(
+                    f"Outline slide {index} evidence[{evidence_index}].links[{link_index}] requires exactly claim and relation."
+                )
+            claim = _canonical_key(link.get("claim"), index, f"evidence[{evidence_index}].links[{link_index}].claim")
+            relation = link.get("relation")
+            if claim not in claim_ids:
+                raise SystemExit(
+                    f"Outline slide {index} evidence[{evidence_index}].links[{link_index}] references unknown claim {claim!r}."
+                )
+            if claim in linked:
+                raise SystemExit(
+                    f"Outline slide {index} evidence[{evidence_index}] links claim {claim!r} more than once."
+                )
+            if relation not in {"supports", "challenges", "context"}:
+                raise SystemExit(
+                    f"Outline slide {index} evidence[{evidence_index}].links[{link_index}].relation must be supports, challenges, or context."
+                )
+            linked.add(claim)
+            covered_claims.add(claim)
+        evidence_ids.append(evidence_id)
+        source_urls.append(source_url.casefold())
+    if len(set(evidence_ids)) != len(evidence_ids):
+        raise SystemExit(f"Outline slide {index} evidence-matrix evidence ids must be unique.")
+    if len(set(source_urls)) != len(source_urls):
+        raise SystemExit(f"Outline slide {index} evidence-matrix source URLs must be unique.")
+    missing = sorted(set(claim_ids) - covered_claims)
+    if missing:
+        raise SystemExit(f"Outline slide {index} evidence-matrix leaves claim(s) without evidence: {', '.join(missing)}.")
+
+
+def _validate_gantt_roadmap(slide: dict, index: int) -> None:
+    budgets = text_budgets_for("gantt-roadmap")
+    _require_bounded_content(slide, index, budgets["content"])
+    periods = _items(slide, "periods")
+    if not 3 <= len(periods) <= 8:
+        raise SystemExit(f"Outline slide {index} gantt-roadmap requires 3–8 periods.")
+    period_ids: list[str] = []
+    period_labels: list[str] = []
+    for period_index, period in enumerate(periods, start=1):
+        if not isinstance(period, dict) or set(period) != {"id", "label"}:
+            raise SystemExit(f"Outline slide {index} periods[{period_index}] requires exactly id and label.")
+        period_id = _canonical_key(period.get("id"), index, f"periods[{period_index}].id")
+        label = _text(period.get("label"))
+        if not label:
+            raise SystemExit(f"Outline slide {index} periods[{period_index}].label must be non-empty.")
+        _max_chars(label, index, f"periods[{period_index}].label", budgets["periods[].label"])
+        period_ids.append(period_id)
+        period_labels.append(label.casefold())
+    if len(set(period_ids)) != len(period_ids) or len(set(period_labels)) != len(period_labels):
+        raise SystemExit(f"Outline slide {index} gantt-roadmap period ids and labels must be unique.")
+    period_order = {period_id: position for position, period_id in enumerate(period_ids)}
+
+    lanes = _items(slide, "lanes")
+    if not 2 <= len(lanes) <= 5:
+        raise SystemExit(f"Outline slide {index} gantt-roadmap requires 2–5 lanes.")
+    lane_ids: list[str] = []
+    task_ids: list[str] = []
+    tasks: list[tuple[int, int, int, dict]] = []
+    for lane_index, lane in enumerate(lanes, start=1):
+        if not isinstance(lane, dict) or set(lane) != {"id", "title", "items"}:
+            raise SystemExit(f"Outline slide {index} lanes[{lane_index}] requires exactly id, title, and items.")
+        lane_id = _canonical_key(lane.get("id"), index, f"lanes[{lane_index}].id")
+        title = _text(lane.get("title"))
+        items = lane.get("items")
+        if not title or not isinstance(items, list) or not 1 <= len(items) <= 4:
+            raise SystemExit(f"Outline slide {index} lanes[{lane_index}] requires title and 1–4 items.")
+        _max_chars(title, index, f"lanes[{lane_index}].title", budgets["lanes[].title"])
+        lane_ids.append(lane_id)
+        for task_index, task in enumerate(items, start=1):
+            allowed = {"id", "title", "start", "end", "note", "depends_on"}
+            if not isinstance(task, dict) or not {"id", "title", "start", "end"} <= set(task) or set(task) - allowed:
+                raise SystemExit(
+                    f"Outline slide {index} lanes[{lane_index}].items[{task_index}] requires id, title, start, end and optional note/depends_on only."
+                )
+            task_id = _canonical_key(task.get("id"), index, f"lanes[{lane_index}].items[{task_index}].id")
+            title = _text(task.get("title"))
+            start = _canonical_key(task.get("start"), index, f"lanes[{lane_index}].items[{task_index}].start")
+            end = _canonical_key(task.get("end"), index, f"lanes[{lane_index}].items[{task_index}].end")
+            if not title:
+                raise SystemExit(f"Outline slide {index} lanes[{lane_index}].items[{task_index}].title must be non-empty.")
+            if start not in period_order or end not in period_order:
+                raise SystemExit(
+                    f"Outline slide {index} lanes[{lane_index}].items[{task_index}] span must reference declared period ids."
+                )
+            if period_order[start] > period_order[end]:
+                raise SystemExit(
+                    f"Outline slide {index} lanes[{lane_index}].items[{task_index}] has invalid span: start occurs after end."
+                )
+            _max_chars(title, index, f"lanes[{lane_index}].items[{task_index}].title", budgets["lanes[].items[].title"])
+            if "note" in task:
+                if not _text(task.get("note")):
+                    raise SystemExit(f"Outline slide {index} lanes[{lane_index}].items[{task_index}].note must be non-empty when provided.")
+                _max_chars(task.get("note"), index, f"lanes[{lane_index}].items[{task_index}].note", budgets["lanes[].items[].note"])
+            dependencies = task.get("depends_on")
+            if dependencies is not None and (
+                not isinstance(dependencies, list) or not 1 <= len(dependencies) <= 2
+                or any(not isinstance(value, str) for value in dependencies)
+            ):
+                raise SystemExit(f"Outline slide {index} lanes[{lane_index}].items[{task_index}].depends_on requires 1–2 task ids.")
+            task_ids.append(task_id)
+            tasks.append((lane_index, task_index, period_order[start], task))
+    if len(set(lane_ids)) != len(lane_ids):
+        raise SystemExit(f"Outline slide {index} gantt-roadmap lane ids must be unique.")
+    if len(set(task_ids)) != len(task_ids):
+        raise SystemExit(f"Outline slide {index} gantt-roadmap task ids must be unique across all lanes.")
+    task_by_id = {str(task[3]["id"]): task for task in tasks}
+    for lane_index, task_index, start_index, task in tasks:
+        dependencies = task.get("depends_on") or []
+        if len(set(dependencies)) != len(dependencies):
+            raise SystemExit(f"Outline slide {index} task {task['id']!r} has duplicate dependency links.")
+        for dependency_index, dependency_value in enumerate(dependencies, start=1):
+            dependency = _canonical_key(
+                dependency_value, index, f"task {task['id']}.depends_on[{dependency_index}]"
+            )
+            if dependency not in task_by_id or dependency == task["id"]:
+                raise SystemExit(f"Outline slide {index} task {task['id']!r} has invalid dependency link {dependency!r}.")
+            predecessor = task_by_id[dependency][3]
+            if period_order[str(predecessor["end"])] >= start_index:
+                raise SystemExit(
+                    f"Outline slide {index} task {task['id']!r} dependency {dependency!r} must finish before the task starts."
+                )
+
+
+def _validate_hierarchy_tree(slide: dict, index: int) -> None:
+    budgets = text_budgets_for("hierarchy-tree")
+    _require_bounded_content(slide, index, budgets["content"])
+    root_id = _canonical_key(slide.get("root_id"), index, "root_id")
+    nodes = _items(slide, "nodes")
+    if not 4 <= len(nodes) <= 9:
+        raise SystemExit(f"Outline slide {index} hierarchy-tree requires 4–9 nodes.")
+    node_ids: list[str] = []
+    parents: dict[str, str | None] = {}
+    for node_index, node in enumerate(nodes, start=1):
+        allowed = {"id", "title", "parent", "body"}
+        if not isinstance(node, dict) or not {"id", "title"} <= set(node) or set(node) - allowed:
+            raise SystemExit(f"Outline slide {index} nodes[{node_index}] requires id, title, optional parent/body only.")
+        node_id = _canonical_key(node.get("id"), index, f"nodes[{node_index}].id")
+        title = _text(node.get("title"))
+        if not title:
+            raise SystemExit(f"Outline slide {index} nodes[{node_index}].title must be non-empty.")
+        _max_chars(title, index, f"nodes[{node_index}].title", budgets["nodes[].title"])
+        if "body" in node:
+            if not _text(node.get("body")):
+                raise SystemExit(f"Outline slide {index} nodes[{node_index}].body must be non-empty when provided.")
+            _max_chars(node.get("body"), index, f"nodes[{node_index}].body", budgets["nodes[].body"])
+        parent = None
+        if "parent" in node:
+            parent = _canonical_key(node.get("parent"), index, f"nodes[{node_index}].parent")
+        node_ids.append(node_id)
+        parents[node_id] = parent
+    if len(set(node_ids)) != len(node_ids):
+        raise SystemExit(f"Outline slide {index} hierarchy-tree node ids must be unique.")
+    if root_id not in parents:
+        raise SystemExit(f"Outline slide {index} hierarchy-tree root_id must reference a declared node.")
+    if parents[root_id] is not None:
+        raise SystemExit(f"Outline slide {index} hierarchy-tree root node must not declare parent.")
+    roots = [node_id for node_id, parent in parents.items() if parent is None]
+    if len(roots) != 1 or roots[0] != root_id:
+        raise SystemExit(f"Outline slide {index} hierarchy-tree requires exactly one root matching root_id.")
+    for node_id, parent in parents.items():
+        if node_id == root_id:
+            continue
+        if parent is None or parent not in parents or parent == node_id:
+            raise SystemExit(f"Outline slide {index} hierarchy-tree node {node_id!r} has invalid or missing parent link.")
+        seen = {node_id}
+        current = node_id
+        depth = 0
+        while current != root_id:
+            next_id = parents.get(current)
+            if next_id is None or next_id in seen:
+                raise SystemExit(f"Outline slide {index} hierarchy-tree contains a cycle or disconnected node at {node_id!r}.")
+            seen.add(next_id)
+            current = next_id
+            depth += 1
+        if depth > 2:
+            raise SystemExit(f"Outline slide {index} hierarchy-tree supports at most three visible levels.")
+
+
 def _validate_project_card_grid(slide: dict, index: int) -> None:
     budgets = text_budgets_for("project-card-grid")
     _require_bounded_content(slide, index, budgets["content"])
@@ -1193,6 +1488,12 @@ def validate_slide_content(slide: dict, index: int) -> None:
         _validate_relationship_map(slide, index)
     elif template == "decision-matrix":
         _validate_decision_matrix(slide, index)
+    elif template == "evidence-matrix":
+        _validate_evidence_matrix(slide, index)
+    elif template == "gantt-roadmap":
+        _validate_gantt_roadmap(slide, index)
+    elif template == "hierarchy-tree":
+        _validate_hierarchy_tree(slide, index)
     elif template == "data-story":
         _validate_data_story(slide, index)
     elif template == "cycle":
