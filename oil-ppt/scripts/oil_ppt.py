@@ -17,13 +17,19 @@ import webbrowser
 from pathlib import Path
 
 from background_presets import BACKGROUND_PRESETS, INTERNAL_BACKGROUNDS, template_background
-from build_deck import VALIDATION_STATE_NAME, browser_validate, current_validation_failure, validation_state_path
+from build_deck import VALIDATION_STATE_NAME, browser_validate, chrome_binary, current_validation_failure, validation_state_path
 from capability_catalog import (
     FAMILY_GUIDANCE, PROGRAM_OWNED_CAPABILITIES, SELECTION_ORDER,
     TEMPLATE_DISCOVERY, VARIANT_HELP,
 )
 from capability_recommender import recommend_outline
 from component_contracts import COMPONENT_CONTRACTS, PAGE_BLEND_TEMPLATES, VARIANT_QUALITY, quality_for
+from design_directions import (
+    apply_design_updates,
+    matching_direction,
+    public_registry as public_design_directions,
+    public_settings as public_design_settings,
+)
 from design_quality import audit_summary, enforce_outline_quality
 from media_assets import inspect_outline_media, outline_media_bindings, print_sources, verify_outline_media
 from media_frame import frame_media
@@ -40,6 +46,8 @@ ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "scripts"
 TEMPLATES = ROOT / "assets" / "templates"
 DEFAULT_FINAL_NAME = "演示文稿.html"
+DEFAULT_PPTX_NAME = "演示文稿.pptx"
+DEFAULT_PPTX_REPORT_NAME = "pptx-editability.json"
 PROJECT_STATE_NAME = ".oil-ppt-state.json"
 BUILD_STATE_NAME = ".oil-ppt-build.json"
 EDIT_DRAFT_NAME = ".oil-ppt-edit-draft.json"
@@ -91,6 +99,21 @@ def atomic_write_json(path: Path, data: dict) -> None:
         with os.fdopen(handle, "w", encoding="utf-8") as stream:
             json.dump(data, stream, ensure_ascii=False, indent=2)
             stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def atomic_write_bytes(path: Path, data: bytes) -> None:
+    """Atomically restore an exact file image during a multi-file transaction."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(handle, "wb") as stream:
+            stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
@@ -803,6 +826,72 @@ def contract_schema() -> dict:
                 },
             },
         },
+        "evidenceClaim": {
+            "type": "object", "required": ["id", "title"], "additionalProperties": False,
+            "properties": {
+                "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+                "title": bounded_text("evidence-matrix", "claims[].title"),
+            },
+        },
+        "evidenceSource": {
+            "type": "object", "required": ["label", "url"], "additionalProperties": False,
+            "properties": {
+                "label": bounded_text("evidence-matrix", "evidence[].source.label"),
+                "url": {"type": "string", "pattern": "^https://\\S+$"},
+            },
+        },
+        "evidenceClaimLink": {
+            "type": "object", "required": ["claim", "relation"], "additionalProperties": False,
+            "properties": {
+                "claim": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+                "relation": {"enum": ["supports", "challenges", "context"]},
+            },
+        },
+        "evidenceMatrixItem": {
+            "type": "object", "required": ["id", "title", "source", "links"], "additionalProperties": False,
+            "properties": {
+                "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+                "title": bounded_text("evidence-matrix", "evidence[].title"),
+                "source": {"$ref": "#/$defs/evidenceSource"},
+                "links": {"type": "array", "minItems": 1, "maxItems": 4, "items": {"$ref": "#/$defs/evidenceClaimLink"}},
+                "note": bounded_text("evidence-matrix", "evidence[].note"),
+            },
+        },
+        "roadmapPeriod": {
+            "type": "object", "required": ["id", "label"], "additionalProperties": False,
+            "properties": {
+                "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+                "label": bounded_text("gantt-roadmap", "periods[].label"),
+            },
+        },
+        "roadmapTask": {
+            "type": "object", "required": ["id", "title", "start", "end"], "additionalProperties": False,
+            "properties": {
+                "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+                "title": bounded_text("gantt-roadmap", "lanes[].items[].title"),
+                "start": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+                "end": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+                "note": bounded_text("gantt-roadmap", "lanes[].items[].note"),
+                "depends_on": {"type": "array", "minItems": 1, "maxItems": 2, "uniqueItems": True, "items": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"}},
+            },
+        },
+        "roadmapLane": {
+            "type": "object", "required": ["id", "title", "items"], "additionalProperties": False,
+            "properties": {
+                "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+                "title": bounded_text("gantt-roadmap", "lanes[].title"),
+                "items": {"type": "array", "minItems": 1, "maxItems": 4, "items": {"$ref": "#/$defs/roadmapTask"}},
+            },
+        },
+        "hierarchyNode": {
+            "type": "object", "required": ["id", "title"], "additionalProperties": False,
+            "properties": {
+                "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+                "title": bounded_text("hierarchy-tree", "nodes[].title"),
+                "parent": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+                "body": bounded_text("hierarchy-tree", "nodes[].body"),
+            },
+        },
         "projectGridCard": {
             "type": "object", "required": ["title", "body"], "additionalProperties": False,
             "properties": {
@@ -880,6 +969,7 @@ def contract_schema() -> dict:
         for key in SLIDE_ALLOWED_FIELDS
         if key not in {
             "cards", "steps", "sides", "groups", "nodes", "links", "criteria", "options",
+            "claims", "evidence", "periods", "lanes",
             "metrics", "annotations", "measurements", "metric", "insight", "chart", "data",
             "axes", "media_source", "points", "tables", "panels",
         }
@@ -896,6 +986,10 @@ def contract_schema() -> dict:
         "links": {"type": "array", "items": {"$ref": "#/$defs/relationshipLink"}},
         "criteria": {"type": "array", "items": bounded_text("decision-matrix", "criteria[]")},
         "options": {"type": "array", "items": {"$ref": "#/$defs/decisionOption"}},
+        "claims": {"type": "array", "items": {"$ref": "#/$defs/evidenceClaim"}},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidenceMatrixItem"}},
+        "periods": {"type": "array", "items": {"$ref": "#/$defs/roadmapPeriod"}},
+        "lanes": {"type": "array", "items": {"$ref": "#/$defs/roadmapLane"}},
         "metrics": {"type": "array", "items": {"$ref": "#/$defs/measurement"}},
         "annotations": {"type": "array", "items": {"$ref": "#/$defs/annotation"}},
         "measurements": {"type": "array", "items": {"$ref": "#/$defs/measurement"}},
@@ -1051,6 +1145,33 @@ def contract_schema() -> dict:
                 "source": bounded_text("decision-matrix", "source"),
                 "criteria": {"minItems": 3, "maxItems": 3},
                 "options": {"minItems": 3, "maxItems": 3},
+            },
+        },
+        "evidence-matrix": {
+            "required": ["claims", "evidence"], "allOf": [copy_required],
+            "properties": {
+                "content": bounded_text("evidence-matrix", "content"),
+                "note": bounded_text("evidence-matrix", "content"),
+                "claims": {"minItems": 2, "maxItems": 4, "uniqueItems": True},
+                "evidence": {"minItems": 2, "maxItems": 5, "uniqueItems": True},
+            },
+        },
+        "gantt-roadmap": {
+            "required": ["periods", "lanes"], "allOf": [copy_required],
+            "properties": {
+                "content": bounded_text("gantt-roadmap", "content"),
+                "note": bounded_text("gantt-roadmap", "content"),
+                "periods": {"minItems": 3, "maxItems": 8, "uniqueItems": True},
+                "lanes": {"minItems": 2, "maxItems": 5, "uniqueItems": True},
+            },
+        },
+        "hierarchy-tree": {
+            "required": ["root_id", "nodes"], "allOf": [copy_required],
+            "properties": {
+                "content": bounded_text("hierarchy-tree", "content"),
+                "note": bounded_text("hierarchy-tree", "content"),
+                "root_id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+                "nodes": {"minItems": 4, "maxItems": 9, "uniqueItems": True, "items": {"$ref": "#/$defs/hierarchyNode"}},
             },
         },
         "data-story": {
@@ -2305,6 +2426,234 @@ def json_digest(path: Path) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def design_settings_snapshot(data: dict) -> dict:
+    """Return the complete user-relevant design state before or after a change."""
+    return {
+        "direction": matching_direction(data),
+        "palette": json.loads(json.dumps(data.get("palette"), ensure_ascii=False)),
+        "palette_source": data.get("palette_source"),
+        "typography": data.get("typography"),
+        "shape": data.get("shape"),
+    }
+
+
+def design_catalog(project_arg: Path | None = None) -> dict:
+    """Expose canonical visual choices and, optionally, one project's apply binding."""
+    payload = {
+        "schema_version": "oil-ppt.design-list/v1",
+        "directions": public_design_directions(),
+        "settings": public_design_settings(),
+        "application": {
+            "modes": {
+                "direction": "Supply exactly one complete --direction.",
+                "fine_tuning": "Supply one or more of --palette, --typography, and --shape.",
+            },
+            "mixed_modes_allowed": False,
+            "custom_palette_policy": (
+                "A custom user/brand palette is preserved unless --palette or a complete --direction "
+                "explicitly replaces it."
+            ),
+            "expected_digest_argument": "--expected-sha256",
+            "apply_command": cli_command("design", "apply"),
+        },
+    }
+    if project_arg is None:
+        return payload
+    project = require_initialized_project(project_arg, "Design discovery")
+    outline = project / "outline.json"
+    if not outline.is_file():
+        raise SystemExit(
+            f"Design discovery requires the initialized project's outline.json: {outline}. "
+            f"Run {cli_command('status', project, '--json')} and follow its next action."
+        )
+    try:
+        data = json.loads(outline.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise SystemExit(f"Invalid JSON in {outline}: {error}") from error
+    validate_outline(data, TEMPLATES)
+    digest = outline_digest(outline)
+    payload["project"] = {
+        "path": str(project),
+        "outline": str(outline),
+        "outline_sha256": digest,
+        "current": design_settings_snapshot(data),
+        "apply_command_prefix": cli_command(
+            "design", "apply", project, "--expected-sha256", digest,
+        ),
+    }
+    return payload
+
+
+def _strict_project_state(project: Path) -> dict:
+    """Read state without recovery writes so a design transaction can stay all-or-nothing."""
+    path = project_state_path(project)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise SystemExit(f"Cannot apply design settings while {path.name} is invalid: {error}") from error
+    if not isinstance(data, dict):
+        raise SystemExit(f"Cannot apply design settings while {path.name} is not a JSON object.")
+    return data
+
+
+def apply_project_design(
+    project_arg: Path, *, expected_sha256: str,
+    direction: str | None = None, palette: str | None = None,
+    typography: str | None = None, shape: str | None = None,
+) -> dict:
+    """Atomically apply one digest-bound design adjustment to an initialized project."""
+    project = require_initialized_project(project_arg, "Design adjustment")
+    require_no_edit_draft(project, "Design adjustment")
+    editor_pid = active_editor_pid(project)
+    if editor_pid is not None:
+        raise SystemExit(
+            f"Design adjustment blocked while the text editor is open for this project (pid {editor_pid}). "
+            "Finish editing or close that editor process first."
+        )
+    outline = project / "outline.json"
+    if not outline.is_file():
+        raise SystemExit(
+            f"Design adjustment requires {outline}. "
+            f"Run {cli_command('status', project, '--json')} and follow its next action."
+        )
+    if re.fullmatch(r"[0-9a-f]{64}", expected_sha256 or "") is None:
+        raise SystemExit("--expected-sha256 must be the lowercase SHA256 returned by design list PROJECT.")
+    actual_sha256 = outline_digest(outline)
+    if expected_sha256 != actual_sha256:
+        raise SystemExit(
+            "Design adjustment is stale: outline.json changed after its settings were inspected. "
+            f"Run {cli_command('design', 'list', project)} and use the new outline_sha256."
+        )
+    try:
+        data = json.loads(outline.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise SystemExit(f"Invalid JSON in {outline}: {error}") from error
+    validate_outline(data, TEMPLATES)
+    enforce_outline_quality(data)
+
+    requested = {
+        key: value
+        for key, value in {
+            "direction": direction,
+            "palette": palette,
+            "typography": typography,
+            "shape": shape,
+        }.items()
+        if value is not None
+    }
+    try:
+        candidate, mode, updates = apply_design_updates(data, requested)
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
+    validate_outline(candidate, TEMPLATES)
+    enforce_outline_quality(candidate)
+
+    before = design_settings_snapshot(data)
+    after = design_settings_snapshot(candidate)
+    status_command = cli_command("status", project, "--json")
+    if candidate == data:
+        return {
+            "schema_version": "oil-ppt.design-apply/v1",
+            "ok": True,
+            "changed": False,
+            "project": str(project),
+            "outline": str(outline),
+            "outline_sha256_before": actual_sha256,
+            "outline_sha256_after": actual_sha256,
+            "applied": {"mode": mode, **requested},
+            "before": before,
+            "after": after,
+            "next": {"action": "run_command", "command": status_command},
+        }
+
+    before_json_sha256 = json_digest(outline)
+    state = _strict_project_state(project)
+    after_canonical = json.dumps(
+        candidate, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    )
+    after_json_sha256 = hashlib.sha256(after_canonical.encode("utf-8")).hexdigest()
+    visual_plan = state.get("visual_plan")
+    if isinstance(visual_plan, dict) and visual_plan.get("outline_sha256") == before_json_sha256:
+        visual_plan["outline_sha256"] = after_json_sha256
+    media_confirmation = state.get("media_policy_confirmation")
+    if (
+        isinstance(media_confirmation, dict)
+        and media_confirmation.get("outline_sha256") == before_json_sha256
+    ):
+        media_confirmation["outline_sha256"] = after_json_sha256
+    state.pop("active_text_edit", None)
+    history = state.setdefault("history", [])
+    if not isinstance(history, list):
+        raise SystemExit(f"Cannot apply design settings while {PROJECT_STATE_NAME}.history is not a list.")
+    history.append({
+        "event": "design_adjusted",
+        "mode": mode,
+        "settings": requested,
+        "outline_sha256_before": before_json_sha256,
+        "outline_sha256_after": after_json_sha256,
+    })
+
+    preview_state = preview_state_path(outline)
+    build_state = project / BUILD_STATE_NAME
+    validation_state = validation_state_path(project)
+    paths = (outline, project_state_path(project), preview_state, build_state, validation_state)
+    backups = {path: path.read_bytes() if path.is_file() else None for path in paths}
+    try:
+        atomic_write_json(outline, candidate)
+        atomic_write_json(project_state_path(project), state)
+        if preview_state.is_file():
+            try:
+                preview_data = json.loads(preview_state.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                preview_data = None
+            if isinstance(preview_data, dict):
+                preview_data["confirmed"] = False
+                preview_data["invalidated_by_outline_sha256"] = after_json_sha256
+                atomic_write_json(preview_state, preview_data)
+            else:
+                preview_state.unlink(missing_ok=True)
+        build_state.unlink(missing_ok=True)
+        validation_state.unlink(missing_ok=True)
+    except (OSError, ValueError, SystemExit) as error:
+        recovery_errors: list[str] = []
+        for path, backup in backups.items():
+            try:
+                if backup is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    atomic_write_bytes(path, backup)
+            except OSError as recovery_error:
+                recovery_errors.append(f"{path.name}: {recovery_error}")
+        detail = f"Could not apply design settings atomically: {error}"
+        if recovery_errors:
+            detail += "; rollback errors: " + "; ".join(recovery_errors)
+        raise SystemExit(detail) from error
+
+    after_file_sha256 = outline_digest(outline)
+    return {
+        "schema_version": "oil-ppt.design-apply/v1",
+        "ok": True,
+        "changed": True,
+        "project": str(project),
+        "outline": str(outline),
+        "outline_sha256_before": actual_sha256,
+        "outline_sha256_after": after_file_sha256,
+        "applied": {"mode": mode, **requested},
+        "changed_settings": sorted(
+            key for key in ("palette", "palette_source", "typography", "shape")
+            if before.get(key) != after.get(key)
+        ),
+        "before": before,
+        "after": after,
+        "invalidated": {
+            "preview_confirmation": backups[preview_state] is not None,
+            "build_confirmation": backups[build_state] is not None,
+            "browser_validation": backups[validation_state] is not None,
+        },
+        "next": {"action": "run_command", "command": status_command},
+    }
+
+
 def renderer_digest() -> str:
     """Fingerprint only files that can change preview or final visual output."""
     script_names = {
@@ -2922,6 +3271,59 @@ def build_project(project_arg: Path) -> None:
     }, ensure_ascii=False, indent=2))
 
 
+def export_pptx_project(
+    project_arg: Path, *, output: Path | None = None, report: Path | None = None,
+) -> None:
+    """Export only a current, completed canonical HTML build."""
+    project = require_initialized_project(project_arg, "PPTX export")
+    require_no_edit_draft(project, "PPTX export")
+    workflow = status_payload(project)
+    if workflow.get("phase") != "complete":
+        detail = (workflow.get("blockers") or [{}])[0].get("message") or workflow.get("phase")
+        raise SystemExit(
+            "PPTX export requires a completed, confirmed, current oil-ppt project with browser build evidence. "
+            f"Current state: {detail}. Run {cli_command('status', project, '--json')} and follow its next action."
+        )
+    outline_path = project / "outline.json"
+    try:
+        data = json.loads(outline_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise SystemExit(f"PPTX export requires a valid outline.json: {error}") from error
+    validate_outline(data, TEMPLATES)
+    require_preview_confirmation(outline_path)
+    html_path = final_output_path(project)
+    from pptx_export import export_hybrid_pptx, require_python_pptx
+
+    require_python_pptx()
+    browser = chrome_binary()
+    if not browser:
+        raise SystemExit(
+            "PPTX export requires Chrome/Chromium/Edge/Brave to capture deterministic slide backgrounds. "
+            "Install a supported browser or set CHROME_BIN."
+        )
+    destination = (output or project / DEFAULT_PPTX_NAME).expanduser().resolve()
+    report_destination = (report or project / DEFAULT_PPTX_REPORT_NAME).expanduser().resolve()
+    protected = {
+        project_state_path(project).resolve(), outline_path.resolve(), (project / "outline.md").resolve(),
+        html_path.resolve(), (project / BUILD_STATE_NAME).resolve(), preview_state_path(outline_path).resolve(),
+        validation_state_path(project).resolve(),
+    }
+    conflict = next((path for path in (destination, report_destination) if path in protected), None)
+    if conflict:
+        raise SystemExit(f"PPTX export output conflicts with a protected project file: {conflict.name}")
+    coverage = export_hybrid_pptx(
+        project=project, outline=data, html_path=html_path, chrome=browser,
+        output=destination, report_output=report_destination,
+    )
+    print(json.dumps({
+        "ok": True, "phase": "complete", "project": str(project),
+        "pptx": str(destination), "coverage_report": str(report_destination),
+        "summary": coverage["summary"],
+        "canonical_html": str(html_path),
+        "next": {"action": "complete", "command": None},
+    }, ensure_ascii=False, indent=2))
+
+
 def scaffold(project: Path, outline_path: Path) -> None:
     project = require_initialized_project(project, "Scaffold")
     require_no_edit_draft(project, "Scaffold")
@@ -2992,7 +3394,7 @@ def parse_args() -> argparse.Namespace:
             "hand-write an omitted workflow command."
         ),
     )
-    public_commands = ("init", "batch", "status", "contract", "media", "icon", "doctor", "version")
+    public_commands = ("init", "batch", "status", "export-pptx", "contract", "design", "media", "icon", "doctor", "version")
     sub = parser.add_subparsers(dest="command", metavar="{" + ",".join(public_commands) + "}")
     init_parser = sub.add_parser("init", help="initialize outline.md, assets, and project state")
     init_parser.add_argument("project", type=Path, help="one project root directory")
@@ -3016,6 +3418,16 @@ def parse_args() -> argparse.Namespace:
     status_parser.add_argument(
         "--intent", choices=("continue", "edit"), default="continue",
         help="continue the workflow, or explicitly reopen the current formal preview for text editing",
+    )
+    export_parser = sub.add_parser(
+        "export-pptx",
+        help="export a completed confirmed HTML project as hybrid editable PPTX plus coverage JSON",
+    )
+    export_parser.add_argument("project", type=Path, help="completed project root")
+    export_parser.add_argument("--out", type=Path, help=f"PPTX path (default: project/{DEFAULT_PPTX_NAME})")
+    export_parser.add_argument(
+        "--report", type=Path,
+        help=f"coverage JSON path (default: project/{DEFAULT_PPTX_REPORT_NAME})",
     )
     plan_parser = sub.add_parser("plan", help="validate and install the visual outline.json after Markdown approval")
     plan_parser.add_argument("project", type=Path, help="project root")
@@ -3049,6 +3461,29 @@ def parse_args() -> argparse.Namespace:
     contract_parser.add_argument("--schema", action="store_true", help="print the full schema, or one component schema with --id")
     contract_parser.add_argument("--pretty", action="store_true", help=argparse.SUPPRESS)
     contract_parser.add_argument("--compact", action="store_true", help="emit compact JSON")
+    design_parser = sub.add_parser("design", help="list and atomically apply Agent-facing visual settings")
+    design_sub = design_parser.add_subparsers(
+        dest="design_command", required=True, metavar="{list,apply}",
+    )
+    design_list = design_sub.add_parser("list", help="list canonical directions and fine-tuning settings as JSON")
+    design_list.add_argument(
+        "project", type=Path, nargs="?",
+        help="optional initialized project; includes current settings and its required outline digest",
+    )
+    design_list.add_argument("--json", action="store_true", help="emit the machine-readable JSON contract (default)")
+    design_list.add_argument("--compact", action="store_true", help="emit JSON on one line")
+    design_apply = design_sub.add_parser("apply", help="apply one digest-bound design transaction to a project")
+    design_apply.add_argument("project", type=Path, help="initialized project root")
+    design_apply.add_argument(
+        "--expected-sha256", required=True,
+        help="current outline_sha256 returned by design list PROJECT",
+    )
+    design_apply.add_argument("--direction", choices=tuple(item["id"] for item in public_design_directions()))
+    design_apply.add_argument("--palette", choices=tuple(sorted(PALETTES)))
+    design_apply.add_argument("--typography", choices=tuple(sorted(TYPE_PROFILES)))
+    design_apply.add_argument("--shape", choices=tuple(sorted(SHAPE_PROFILES)))
+    design_apply.add_argument("--json", action="store_true", help="emit the machine-readable JSON result (default)")
+    design_apply.add_argument("--compact", action="store_true", help="emit JSON on one line")
     preview_parser = sub.add_parser("preview", help="create and open the editable final-material preview")
     preview_parser.add_argument("outline", type=Path, help="project root")
     preview_parser.add_argument("--out", type=Path)
@@ -3147,6 +3582,8 @@ def main() -> None:
             raise SystemExit(1)
     elif args.command == "status":
         print_status(args.project, as_json=args.json, intent=args.intent)
+    elif args.command == "export-pptx":
+        export_pptx_project(args.project, output=args.out, report=args.report)
     elif args.command == "plan":
         plan_project(args.project, args.input, args.user_confirmed_text_only)
     elif args.command == "check":
@@ -3181,6 +3618,19 @@ def main() -> None:
             show_list=bool(getattr(args, "list", False)),
             family_id=getattr(args, "family", None),
         )
+    elif args.command == "design":
+        if args.design_command == "list":
+            emit_json(design_catalog(args.project), pretty=not args.compact)
+        else:
+            payload = apply_project_design(
+                args.project,
+                expected_sha256=args.expected_sha256,
+                direction=args.direction,
+                palette=args.palette,
+                typography=args.typography,
+                shape=args.shape,
+            )
+            emit_json(payload, pretty=not args.compact)
     elif args.command == "preview":
         interactive = not bool(args.no_open)
         payload = generate_preview(args.outline, args.out, False, emit=not interactive)

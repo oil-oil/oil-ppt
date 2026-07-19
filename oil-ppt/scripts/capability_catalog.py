@@ -15,7 +15,7 @@ FAMILY_GUIDANCE = {
         "reading_path": "单焦点",
     },
     "sequence": {
-        "question": "内容是否有明确的先后、阶段、多步路径，或四个阶段构成闭环？",
+        "question": "内容是否有明确的先后、阶段、多步路径、有界跨期排期，或四个阶段构成闭环？",
         "reading_path": "顺序推进",
     },
     "cards": {
@@ -27,7 +27,7 @@ FAMILY_GUIDANCE = {
         "reading_path": "集合扫描",
     },
     "comparison": {
-        "question": "对象是否需要沿共享维度对照、评分决策、在两个概念维度中定位，或切换同一对象的状态？",
+        "question": "对象是否需要沿共享维度对照、评分决策、把真实来源对应到主张、在两个概念维度中定位，或切换同一对象的状态？",
         "reading_path": "共享维度判断",
     },
     "data": {
@@ -176,12 +176,16 @@ PROGRAM_OWNED_CAPABILITIES = {
         "component": "metric",
     },
     "relationship_expression": {
-        "components": ["cycle", "quadrant", "tier-stack", "relationship-map"],
-        "automatic": "Agent 只提交阶段、象限、轴、层级、节点与命名关系；程序拥有环形箭头、二维坐标、强调象限、漏斗/金字塔轮廓，以及中心关系图的布局与连线。",
+        "components": ["cycle", "quadrant", "tier-stack", "relationship-map", "hierarchy-tree"],
+        "automatic": "Agent 只提交阶段、象限、轴、层级、节点与命名关系；程序拥有环形箭头、二维坐标、强调象限、漏斗/金字塔轮廓、中心关系图，以及父子树的布局与连线。",
     },
     "decision_expression": {
-        "components": ["decision-matrix"],
-        "automatic": "Agent 提交三个候选项、三个共享准则与 1–5 分；程序汇总总分并只突出唯一推荐项。",
+        "components": ["decision-matrix", "evidence-matrix"],
+        "automatic": "Agent 提交候选项与共享准则，或带真实 HTTPS 来源的主张证据关系；程序汇总评分或生成证据矩阵。",
+    },
+    "roadmap_expression": {
+        "components": ["gantt-roadmap"],
+        "automatic": "Agent 提交按顺序排列的时间段、泳道、任务跨度与前置任务 id；程序拥有时间轴、泳道、任务几何和依赖连接。",
     },
     "icons": {
         "family": "Phosphor regular",

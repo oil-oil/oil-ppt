@@ -128,6 +128,60 @@ def slot_pointer(slide: dict, slide_index: int, slot: str) -> str | None:
             return None
         return _slide_pointer(slide_index, "links", index, "label")
 
+    match = re.fullmatch(r"claim-title-(\d+)", slot)
+    if match:
+        index = int(match.group(1)) - 1
+        claims = slide.get("claims") or []
+        return (
+            _slide_pointer(slide_index, "claims", index, "title")
+            if index < len(claims) and isinstance(claims[index], dict) and "title" in claims[index] else None
+        )
+
+    match = re.fullmatch(r"evidence-(title|note|source)-(\d+)", slot)
+    if match:
+        field, raw_index = match.groups()
+        index = int(raw_index) - 1
+        evidence = slide.get("evidence") or []
+        if index >= len(evidence) or not isinstance(evidence[index], dict):
+            return None
+        if field == "source":
+            source = evidence[index].get("source")
+            return _slide_pointer(slide_index, "evidence", index, "source", "label") if isinstance(source, dict) and "label" in source else None
+        return _slide_pointer(slide_index, "evidence", index, field) if field in evidence[index] else None
+
+    match = re.fullmatch(r"period-label-(\d+)", slot)
+    if match:
+        index = int(match.group(1)) - 1
+        periods = slide.get("periods") or []
+        return _slide_pointer(slide_index, "periods", index, "label") if index < len(periods) else None
+
+    match = re.fullmatch(r"lane-title-(\d+)", slot)
+    if match:
+        index = int(match.group(1)) - 1
+        lanes = slide.get("lanes") or []
+        return _slide_pointer(slide_index, "lanes", index, "title") if index < len(lanes) else None
+
+    match = re.fullmatch(r"roadmap-(title|note)-(\d+)-(\d+)", slot)
+    if match:
+        field, lane_raw, task_raw = match.groups()
+        lane_index, task_index = int(lane_raw) - 1, int(task_raw) - 1
+        lanes = slide.get("lanes") or []
+        if lane_index >= len(lanes) or not isinstance(lanes[lane_index], dict):
+            return None
+        tasks = lanes[lane_index].get("items") or []
+        if task_index >= len(tasks) or not isinstance(tasks[task_index], dict) or field not in tasks[task_index]:
+            return None
+        return _slide_pointer(slide_index, "lanes", lane_index, "items", task_index, field)
+
+    match = re.fullmatch(r"tree-(title|body)-(\d+)", slot)
+    if match:
+        field, raw_index = match.groups()
+        index = int(raw_index) - 1
+        nodes = slide.get("nodes") or []
+        if index >= len(nodes) or not isinstance(nodes[index], dict) or field not in nodes[index]:
+            return None
+        return _slide_pointer(slide_index, "nodes", index, field)
+
     match = re.fullmatch(r"criterion-(\d+)", slot)
     if match:
         index = int(match.group(1)) - 1

@@ -1,4 +1,4 @@
 interface:
   display_name: "oil-ppt"
-  short_description: "创建、续做和批量构建 oil 风格 HTML 演示文稿"
+  short_description: "创建、续做和批量构建 oil 风格 HTML 演示文稿，并按需导出混合可编辑 PPTX"
   default_prompt: "使用 $oil-ppt 根据我提供的主题或材料创建一份 16:9 HTML 演示文稿。"

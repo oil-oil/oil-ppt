@@ -736,6 +736,182 @@ def fill_decision_matrix(fragment: str, slide: dict) -> str:
     return set_slot_html_force(fragment, "decision-rows", "".join(rows))
 
 
+def fill_evidence_matrix(fragment: str, slide: dict) -> str:
+    fragment = fill_common_slots(fragment, slide)
+    claims = slide.get("claims") or []
+    evidence = slide.get("evidence") or []
+    fragment = fragment.replace(
+        'class="evidence-matrix" data-layout',
+        f'class="evidence-matrix" data-claim-count="{len(claims)}" data-evidence-count="{len(evidence)}" data-layout',
+        1,
+    )
+    head = ['<span class="source-heading" data-small-ok>证据 / 来源</span>']
+    head.extend(
+        f'<span class="claim-heading" data-slot="claim-title-{claim_index}" data-fit data-min-size="16">'
+        f'{esc(str(claim["title"]))}</span>'
+        for claim_index, claim in enumerate(claims, start=1)
+    )
+    fragment = set_slot_html_force(fragment, "evidence-head", "".join(head))
+    rows: list[str] = []
+    claim_index_by_id = {str(claim["id"]): index for index, claim in enumerate(claims, start=1)}
+    labels = {"supports": "支持", "challenges": "质疑", "context": "语境"}
+    for evidence_index, item in enumerate(evidence, start=1):
+        relation_by_claim = {str(link["claim"]): str(link["relation"]) for link in item["links"]}
+        source = item["source"]
+        note = item.get("note")
+        note_markup = (
+            f'<p class="evidence-note" data-slot="evidence-note-{evidence_index}" data-fit data-min-size="14">'
+            f'{esc(str(note))}</p>' if note else ""
+        )
+        cells = []
+        for claim in claims:
+            relation = relation_by_claim.get(str(claim["id"]))
+            if relation:
+                cells.append(
+                    f'<span class="relation relation-{relation}" aria-label="{labels[relation]}" '
+                    f'data-claim-column="{claim_index_by_id[str(claim["id"])]}">'
+                    f'<b aria-hidden="true"></b><small>{labels[relation]}</small></span>'
+                )
+            else:
+                cells.append('<span class="relation relation-none" aria-label="无直接关系"><b aria-hidden="true"></b></span>')
+        rows.append(
+            f'<article class="evidence-row oil-surface" data-tone="neutral" data-visual-node data-bound>'
+            f'<div class="evidence-copy"><h2 data-slot="evidence-title-{evidence_index}" data-fit data-min-size="18">'
+            f'{esc(str(item["title"]))}</h2>{note_markup}'
+            f'<a class="evidence-source" href="{html.escape(str(source["url"]), quote=True)}" '
+            f'data-slot="evidence-source-{evidence_index}" data-fit data-min-size="13">{esc(str(source["label"]))}</a></div>'
+            f'{"".join(cells)}</article>'
+        )
+    return set_slot_html_force(fragment, "evidence-rows", "".join(rows))
+
+
+def fill_gantt_roadmap(fragment: str, slide: dict) -> str:
+    fragment = fill_common_slots(fragment, slide)
+    periods = slide.get("periods") or []
+    lanes = slide.get("lanes") or []
+    period_index = {str(period["id"]): index for index, period in enumerate(periods)}
+    fragment = fragment.replace(
+        'class="gantt-roadmap" data-layout',
+        f'class="gantt-roadmap" data-period-count="{len(periods)}" data-lane-count="{len(lanes)}" data-layout',
+        1,
+    )
+    axis = '<span class="lane-axis-label" data-small-ok>工作泳道</span>' + "".join(
+        f'<span data-slot="period-label-{index}" data-fit data-min-size="14">{esc(str(period["label"]))}</span>'
+        for index, period in enumerate(periods, start=1)
+    )
+    fragment = set_slot_html_force(fragment, "roadmap-axis", axis)
+
+    task_positions: dict[str, tuple[float, float, float]] = {}
+    lane_markup: list[str] = []
+    lane_height = 1000 / len(lanes)
+    for lane_number, lane in enumerate(lanes, start=1):
+        tasks = lane["items"]
+        task_markup: list[str] = []
+        for task_number, task in enumerate(tasks, start=1):
+            start = period_index[str(task["start"])]
+            end = period_index[str(task["end"])]
+            span = end - start + 1
+            note = task.get("note")
+            note_markup = (
+                f'<small data-slot="roadmap-note-{lane_number}-{task_number}" data-small-ok>'
+                f'{esc(str(note))}</small>' if note else ""
+            )
+            task_markup.append(
+                f'<article class="roadmap-task task-start-{start + 1} task-span-{span}" '
+                f'data-task-id="{html.escape(str(task["id"]), quote=True)}" data-visual-node data-bound>'
+                f'<b data-slot="roadmap-title-{lane_number}-{task_number}" data-small-ok>'
+                f'{esc(str(task["title"]))}</b>{note_markup}</article>'
+            )
+            x_start = start / len(periods) * 1400
+            x_end = (end + 1) / len(periods) * 1400
+            y = (lane_number - 1) * lane_height + (task_number - 0.5) / len(tasks) * lane_height
+            task_positions[str(task["id"])] = (x_start, x_end, y)
+        lane_markup.append(
+            f'<div class="roadmap-lane" data-task-count="{len(tasks)}">'
+            f'<h2 data-slot="lane-title-{lane_number}" data-fit data-min-size="16">{esc(str(lane["title"]))}</h2>'
+            f'<div class="lane-track">{"".join(task_markup)}</div></div>'
+        )
+    fragment = set_slot_html_force(fragment, "roadmap-lanes", "".join(lane_markup))
+
+    connector_markup: list[str] = []
+    for lane in lanes:
+        for task in lane["items"]:
+            target = task_positions[str(task["id"])]
+            for dependency in task.get("depends_on") or []:
+                source = task_positions[str(dependency)]
+                start_x, start_y = source[1] - 8, source[2]
+                end_x, end_y = target[0] + 8, target[2]
+                bend = max(4.0, (end_x - start_x) * 0.35)
+                connector_markup.append(
+                    f'<path class="roadmap-connector" data-visual-edge '
+                    f'd="M {start_x:.1f} {start_y:.1f} C {start_x + bend:.1f} {start_y:.1f}, '
+                    f'{end_x - bend:.1f} {end_y:.1f}, {end_x:.1f} {end_y:.1f}"/>'
+                    f'<circle class="roadmap-arrow" cx="{end_x:.1f}" cy="{end_y:.1f}" r="7"/>'
+                )
+    fragment = set_slot_html_force(fragment, "roadmap-connectors", "".join(connector_markup))
+    return fragment
+
+
+def fill_hierarchy_tree(fragment: str, slide: dict) -> str:
+    fragment = fill_common_slots(fragment, slide)
+    nodes = slide.get("nodes") or []
+    root_id = str(slide["root_id"])
+    by_id = {str(node["id"]): node for node in nodes}
+    depths = {root_id: 0}
+    unresolved = set(by_id) - {root_id}
+    while unresolved:
+        resolved_this_round = []
+        for node_id in unresolved:
+            parent = str(by_id[node_id]["parent"])
+            if parent in depths:
+                depths[node_id] = depths[parent] + 1
+                resolved_this_round.append(node_id)
+        for node_id in resolved_this_round:
+            unresolved.remove(node_id)
+    levels = [[node for node in nodes if depths[str(node["id"])] == depth] for depth in range(max(depths.values()) + 1)]
+    positions: dict[str, tuple[float, float]] = {}
+    y_by_depth = {0: 82.0, 1: 330.0, 2: 590.0}
+    level_markup: list[str] = []
+    original_indexes = {str(node["id"]): index for index, node in enumerate(nodes, start=1)}
+    for depth, level in enumerate(levels):
+        nodes_markup: list[str] = []
+        for position, node in enumerate(level, start=1):
+            node_id = str(node["id"])
+            x = (position - 0.5) / len(level) * 1760
+            positions[node_id] = (x, y_by_depth[depth])
+            original_index = original_indexes[node_id]
+            body = node.get("body")
+            body_markup = (
+                f'<p data-slot="tree-body-{original_index}" data-fit data-min-size="15">{esc(str(body))}</p>'
+                if body else ""
+            )
+            tone = "soft" if node_id == root_id else "neutral"
+            nodes_markup.append(
+                f'<article class="tree-node oil-surface" data-tone="{tone}" data-node-id="{html.escape(node_id, quote=True)}" '
+                f'data-node-role="{"root" if node_id == root_id else "child"}" data-visual-node data-bound>'
+                f'<span data-small-ok>{"ROOT" if node_id == root_id else f"L{depth}"}</span>'
+                f'<h2 data-slot="tree-title-{original_index}" data-fit data-min-size="20">{esc(str(node["title"]))}</h2>'
+                f'{body_markup}</article>'
+            )
+        level_markup.append(
+            f'<div class="tree-level" data-tree-level="{depth}" data-node-count="{len(level)}">{"".join(nodes_markup)}</div>'
+        )
+    fragment = set_slot_html_force(fragment, "tree-levels", "".join(level_markup))
+    connectors = []
+    for node in nodes:
+        if str(node["id"]) == root_id:
+            continue
+        parent = positions[str(node["parent"])]
+        child = positions[str(node["id"])]
+        midpoint = (parent[1] + child[1]) / 2
+        connectors.append(
+            f'<path class="tree-connector" data-visual-edge d="M {parent[0]:.1f} {parent[1] + 66:.1f} '
+            f'C {parent[0]:.1f} {midpoint:.1f}, {child[0]:.1f} {midpoint:.1f}, {child[0]:.1f} {child[1] - 66:.1f}"/>'
+        )
+    fragment = set_slot_html_force(fragment, "tree-connectors", "".join(connectors))
+    return fragment
+
+
 def fill_editorial(fragment: str, slide: dict) -> str:
     fragment = fill_split_like(fragment, slide)
     image = slide.get("image") or slide.get("media")
@@ -1124,6 +1300,9 @@ FILLERS = {
     "tier-stack": fill_tier_stack,
     "relationship-map": fill_relationship_map,
     "decision-matrix": fill_decision_matrix,
+    "evidence-matrix": fill_evidence_matrix,
+    "gantt-roadmap": fill_gantt_roadmap,
+    "hierarchy-tree": fill_hierarchy_tree,
 }
 
 

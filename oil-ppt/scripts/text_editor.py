@@ -20,9 +20,15 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from design_quality import enforce_outline_quality
-from design_directions import DESIGN_DIRECTION_BY_ID, matching_direction
+from design_directions import apply_design_updates, matching_direction
 from editor_bindings import editable_values, pointer_parts, set_pointer
-from media_assets import verify_outline_media
+from media_assets import (
+    MAX_EDITOR_UPLOAD_BYTES,
+    editable_outline_media,
+    inspect_image,
+    validate_editor_upload,
+    verify_outline_media,
+)
 from oil_ppt import (
     EDIT_LOCK_NAME,
     TEMPLATES,
@@ -48,6 +54,8 @@ from render_outline_review import render
 DRAFT_NAME = ".oil-ppt-edit-draft.json"
 DRAFT_SCHEMA = "oil-ppt.text-edit-draft/v1"
 MAX_REQUEST_BYTES = 1_000_000
+MAX_APPLIED_OPERATIONS = 200
+EDITOR_ASSET_DIRECTORY = Path("assets") / "oil-ppt-editor"
 
 
 def parse_args() -> argparse.Namespace:
@@ -113,6 +121,46 @@ def _settings_state(data: dict) -> dict:
     }
 
 
+def _structure_signature(data: dict) -> str:
+    return _digest({
+        "slides": [
+            {"id": slide.get("id"), "template": slide.get("template")}
+            for slide in data.get("slides", [])
+            if isinstance(slide, dict)
+        ],
+    })
+
+
+def _validate_structural_invariants(data: dict) -> None:
+    slides = data.get("slides")
+    if not isinstance(slides, list) or not slides:
+        raise ValueError("A deck must contain at least one slide.")
+    ids = [slide.get("id") for slide in slides if isinstance(slide, dict)]
+    if len(ids) != len(slides) or len(ids) != len(set(ids)):
+        raise ValueError("Slide ids must remain unique.")
+    cover_indexes = [index for index, slide in enumerate(slides) if slide.get("template") == "cover"]
+    end_indexes = [index for index, slide in enumerate(slides) if slide.get("template") == "end"]
+    if cover_indexes and cover_indexes != [0]:
+        raise ValueError("The cover slide must remain the first slide and cannot be duplicated.")
+    if end_indexes and end_indexes != [len(slides) - 1]:
+        raise ValueError("The end slide must remain the last slide and cannot be duplicated.")
+    if (cover_indexes or end_indexes) and not any(
+        slide.get("template") not in {"cover", "end"} for slide in slides
+    ):
+        raise ValueError("A deck must retain at least one content slide between its boundary slides.")
+
+
+def _unique_duplicate_id(slides: list[dict], source_id: str) -> str:
+    used = {str(slide.get("id") or "") for slide in slides}
+    base = f"{source_id}-copy"
+    if base not in used:
+        return base
+    suffix = 2
+    while f"{base}-{suffix}" in used:
+        suffix += 1
+    return f"{base}-{suffix}"
+
+
 def _atomic_write_bytes(path: Path, value: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
@@ -149,6 +197,9 @@ class EditorSession:
         self.lock = threading.RLock()
         self.history: list[dict] = []
         self.future: list[dict] = []
+        self.revision = 0
+        self.applied_operations: dict[str, str] = {}
+        self.staged_assets: set[str] = set()
         self.last_edit_path = ""
         self.last_edit_at = 0.0
         self.startup_notices: list[str] = []
@@ -157,6 +208,9 @@ class EditorSession:
         self._acquire_project_lock()
         try:
             if discard_draft:
+                self._load_staged_asset_names_for_discard()
+                self._delete_staged_assets(self.staged_assets)
+                self.staged_assets.clear()
                 self.draft_path.unlink(missing_ok=True)
                 self._clear_active_edit()
             self.base_data = json.loads(self.outline.read_text(encoding="utf-8"))
@@ -233,14 +287,83 @@ class EditorSession:
         if self.editing_complete:
             raise ValueError("This text editing session has already completed. Reopen the editor to make more changes.")
 
-    def _memory_snapshot(self) -> tuple[dict, list[dict], list[dict], str, float]:
+    def _memory_snapshot(self) -> tuple[dict, list[dict], list[dict], set[str], str, float, int, dict[str, str]]:
         return (
             copy.deepcopy(self.data), copy.deepcopy(self.history), copy.deepcopy(self.future),
-            self.last_edit_path, self.last_edit_at,
+            set(self.staged_assets), self.last_edit_path, self.last_edit_at,
+            self.revision, copy.deepcopy(self.applied_operations),
         )
 
-    def _restore_memory(self, snapshot: tuple[dict, list[dict], list[dict], str, float]) -> None:
-        self.data, self.history, self.future, self.last_edit_path, self.last_edit_at = snapshot
+    def _restore_memory(
+        self,
+        snapshot: tuple[dict, list[dict], list[dict], set[str], str, float, int, dict[str, str]],
+    ) -> None:
+        (
+            self.data, self.history, self.future, self.staged_assets,
+            self.last_edit_path, self.last_edit_at, self.revision, self.applied_operations,
+        ) = snapshot
+
+    def _managed_asset_path(self, relative: str, *, require_file: bool = False) -> Path:
+        if not isinstance(relative, str) or not relative or "\\" in relative:
+            raise ValueError("Staged media path is invalid.")
+        raw = Path(relative)
+        if raw.is_absolute() or any(part in {"", ".", ".."} for part in raw.parts):
+            raise ValueError("Staged media path is invalid.")
+        if tuple(raw.parts[:len(EDITOR_ASSET_DIRECTORY.parts)]) != EDITOR_ASSET_DIRECTORY.parts:
+            raise ValueError("Staged media must stay in the editor-owned asset directory.")
+        candidate = (self.project / raw).resolve()
+        root = self.project.resolve()
+        directory = (self.project / EDITOR_ASSET_DIRECTORY).resolve()
+        if not candidate.is_relative_to(root) or not candidate.is_relative_to(directory) or candidate == directory:
+            raise ValueError("Staged media must stay inside the project.")
+        if require_file and not candidate.is_file():
+            raise ValueError(f"Staged media file is missing: {relative}")
+        return candidate
+
+    def _draft_staged_asset_names(self) -> set[str]:
+        if not self.draft_path.is_file():
+            return set()
+        try:
+            envelope = json.loads(self.draft_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return set()
+        raw = envelope.get("staged_assets") if isinstance(envelope, dict) else None
+        return set(raw) if isinstance(raw, list) and all(isinstance(item, str) for item in raw) else set()
+
+    def _load_staged_asset_names_for_discard(self) -> None:
+        for relative in self._draft_staged_asset_names():
+            self._managed_asset_path(relative, require_file=True)
+            self.staged_assets.add(relative)
+
+    def _delete_staged_assets(self, paths: set[str]) -> None:
+        for relative in sorted(paths):
+            self._managed_asset_path(relative).unlink(missing_ok=True)
+
+    def _quarantine_assets(self, paths: set[str]) -> list[tuple[Path, Path]]:
+        moved: list[tuple[Path, Path]] = []
+        try:
+            for relative in sorted(paths):
+                original = self._managed_asset_path(relative, require_file=True)
+                quarantine = original.with_name(f".{original.name}.discard-{secrets.token_hex(8)}")
+                os.replace(original, quarantine)
+                moved.append((original, quarantine))
+        except OSError:
+            for original, quarantine in reversed(moved):
+                os.replace(quarantine, original)
+            raise
+        return moved
+
+    @staticmethod
+    def _restore_quarantine(moved: list[tuple[Path, Path]]) -> None:
+        for original, quarantine in reversed(moved):
+            if quarantine.exists():
+                os.replace(quarantine, original)
+
+    @staticmethod
+    def _delete_quarantine(moved: list[tuple[Path, Path]]) -> None:
+        for _original, quarantine in moved:
+            quarantine.unlink(missing_ok=True)
+
 
     def _load_draft(self) -> None:
         try:
@@ -253,12 +376,30 @@ class EditorSession:
             raise ValueError("outline.json changed while a text edit draft existed. Reopen with --discard-draft only after deciding to delete that draft.")
         try:
             validate_outline(envelope["data"], TEMPLATES)
-        except SystemExit as error:
+            _validate_structural_invariants(envelope["data"])
+        except (SystemExit, ValueError) as error:
             raise ValueError(
                 f"Text edit draft no longer matches the current component contract: {error}. "
                 "Reopen with --discard-draft only after deciding to delete that draft."
             ) from error
         self.data = envelope["data"]
+        revision = envelope.get("revision", 0)
+        operations = envelope.get("applied_operations", {})
+        if isinstance(revision, bool) or not isinstance(revision, int) or revision < 0:
+            raise ValueError("Text edit draft has an invalid transaction revision.")
+        if not isinstance(operations, dict) or any(
+            not isinstance(key, str) or not isinstance(value, str) for key, value in operations.items()
+        ):
+            raise ValueError("Text edit draft has invalid applied-operation records.")
+        self.revision = revision
+        self.applied_operations = dict(list(operations.items())[-MAX_APPLIED_OPERATIONS:])
+        staged_assets = envelope.get("staged_assets", [])
+        if not isinstance(staged_assets, list) or not all(isinstance(item, str) for item in staged_assets):
+            raise ValueError("Text edit draft has invalid staged media metadata.")
+        for relative in staged_assets:
+            path = self._managed_asset_path(relative, require_file=True)
+            inspect_image(path)
+        self.staged_assets = set(staged_assets)
 
     def _quarantine_invalid_draft(self) -> Path:
         timestamp = time.strftime("%Y%m%d-%H%M%S")
@@ -278,7 +419,7 @@ class EditorSession:
         project_state = project_state_path(self.project)
         backups = {path: _backup(path) for path in (self.draft_path, state_path, project_state)}
         try:
-            if self._is_unchanged():
+            if self._is_unchanged() and not self.staged_assets:
                 self.draft_path.unlink(missing_ok=True)
                 self._clear_active_edit()
                 return
@@ -286,7 +427,10 @@ class EditorSession:
                 "schema_version": DRAFT_SCHEMA,
                 "base_outline_sha256": self.base_digest,
                 "updated_at": int(time.time()),
+                "revision": self.revision,
+                "applied_operations": self.applied_operations,
                 "data": self.data,
+                "staged_assets": sorted(self.staged_assets),
             })
             self._invalidate_preview_confirmation()
         except (OSError, SystemExit) as error:
@@ -326,26 +470,53 @@ class EditorSession:
         base = editable_values(self.base_data)
         current_settings = _setting_values(self.data)
         base_settings = _setting_values(self.base_data)
+        current_media = editable_outline_media(self.data)
+        base_media = editable_outline_media(self.base_data)
         return {
             "ok": True,
             "values": current,
+            "media_values": current_media,
             "changed_paths": sorted(path for path, value in current.items() if base.get(path) != value),
             "changed_settings": sorted(
                 key for key, value in current_settings.items() if base_settings.get(key) != value
             ),
+            "changed_media_paths": sorted(
+                path for path, value in current_media.items() if base_media.get(path) != value
+            ),
             "settings": _settings_state(self.data),
             "settings_signature": _settings_signature(self.data),
+            "structure_signature": _structure_signature(self.data),
+            "revision": self.revision,
             "can_undo": bool(self.history),
             "can_redo": bool(self.future),
             "draft": self.draft_path.is_file(),
             "notices": [*self.startup_notices, *(notices or [])],
         }
 
-    def apply_edit(self, path: str, value: object) -> dict:
+    def _assert_revision(self, expected_revision: object) -> None:
+        if isinstance(expected_revision, bool) or not isinstance(expected_revision, int):
+            raise ValueError("An editor transaction requires an integer expected_revision.")
+        if expected_revision != self.revision:
+            raise ValueError(
+                f"Stale editor transaction: expected revision {expected_revision}, current revision is {self.revision}."
+            )
+
+    def _push_history(self) -> None:
+        self.history.append(copy.deepcopy(self.data))
+        if len(self.history) > 100:
+            self.history.pop(0)
+        self.future.clear()
+
+    def _advance_revision(self) -> None:
+        self.revision += 1
+
+    def apply_edit(self, path: str, value: object, *, expected_revision: object | None = None) -> dict:
         with self.lock:
             self._ensure_editable()
             snapshot = self._memory_snapshot()
             try:
+                if expected_revision is not None:
+                    self._assert_revision(expected_revision)
                 allowed = editable_values(self.data)
                 if path not in allowed:
                     raise ValueError("This text field is not editable in the current component.")
@@ -355,10 +526,9 @@ class EditorSession:
                 now = time.monotonic()
                 coalesce = path == self.last_edit_path and now - self.last_edit_at < 1.2 and bool(self.history)
                 if not coalesce:
-                    self.history.append(copy.deepcopy(self.data))
-                    if len(self.history) > 100:
-                        self.history.pop(0)
-                self.future.clear()
+                    self._push_history()
+                else:
+                    self.future.clear()
                 set_pointer(self.data, path, text)
                 notices: list[str] = []
                 parts = pointer_parts(path)
@@ -370,10 +540,70 @@ class EditorSession:
                         notices.append("标题已改变，原来不再匹配的高亮短语已移除。")
                 self.last_edit_path = path
                 self.last_edit_at = now
+                self._advance_revision()
                 self._write_draft()
                 return self.state(notices=notices)
             except (ValueError, KeyError, IndexError, OSError):
                 self._restore_memory(snapshot)
+                raise
+
+    def _store_uploaded_asset(self, filename: str, data: bytes, sha256: str) -> tuple[str, Path]:
+        directory = self.project / EDITOR_ASSET_DIRECTORY
+        directory.mkdir(parents=True, exist_ok=True)
+        resolved_directory = directory.resolve()
+        if not resolved_directory.is_relative_to(self.project) or directory.is_symlink():
+            raise ValueError("Editor-owned asset directory must be a real directory inside the project.")
+        suffix = Path(filename).suffix.lower()
+        raw_stem = Path(filename).stem.strip()
+        stem = re.sub(r"[^\w.-]+", "-", raw_stem, flags=re.UNICODE).strip(".-_") or "image"
+        stem = stem[:48]
+        base = f"{stem}-{sha256[:12]}"
+        for ordinal in range(1, 10_001):
+            name = f"{base}{suffix}" if ordinal == 1 else f"{base}-{ordinal}{suffix}"
+            target = resolved_directory / name
+            try:
+                descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            except FileExistsError:
+                continue
+            try:
+                with os.fdopen(descriptor, "wb") as stream:
+                    stream.write(data)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+            except Exception:
+                target.unlink(missing_ok=True)
+                raise
+            relative = target.relative_to(self.project).as_posix()
+            return relative, target
+        raise ValueError("Could not allocate a unique editor asset filename.")
+
+    def replace_media(self, path: str, filename: str, content_type: str, payload: bytes) -> dict:
+        with self.lock:
+            self._ensure_editable()
+            snapshot = self._memory_snapshot()
+            stored: Path | None = None
+            try:
+                allowed = editable_outline_media(self.data)
+                if path not in allowed:
+                    raise ValueError("This media binding is not editable in the current component.")
+                details = validate_editor_upload(filename, content_type, payload)
+                relative, stored = self._store_uploaded_asset(filename, payload, str(details["sha256"]))
+                self._push_history()
+                set_pointer(self.data, path, relative)
+                self.staged_assets.add(relative)
+                self.last_edit_path = ""
+                self.last_edit_at = 0.0
+                try:
+                    validate_outline(self.data, TEMPLATES)
+                except SystemExit as error:
+                    raise ValueError(str(error)) from error
+                self._advance_revision()
+                self._write_draft()
+                return self.state()
+            except (ValueError, KeyError, IndexError, OSError):
+                self._restore_memory(snapshot)
+                if stored is not None:
+                    stored.unlink(missing_ok=True)
                 raise
 
     def apply_settings(self, payload: dict) -> dict:
@@ -381,59 +611,20 @@ class EditorSession:
             self._ensure_editable()
             snapshot = self._memory_snapshot()
             try:
-                if not isinstance(payload, dict):
-                    raise ValueError("Design settings must be a JSON object.")
-                allowed = {"direction", "palette", "typography", "shape"}
-                unknown = sorted(set(payload) - allowed)
-                if unknown:
-                    raise ValueError(f"Unsupported design setting(s): {', '.join(unknown)}.")
-                selected = [key for key in allowed if key in payload]
-                if len(selected) != 1:
-                    raise ValueError("Change exactly one design direction or fine-tuning setting at a time.")
-                key = selected[0]
-                value = payload[key]
-                if not isinstance(value, str):
-                    raise ValueError(f"Design setting {key} must be a string enum value.")
-                if key == "direction":
-                    direction = DESIGN_DIRECTION_BY_ID.get(value)
-                    if direction is None:
-                        raise ValueError(
-                            "Design direction must be one of: "
-                            + ", ".join(DESIGN_DIRECTION_BY_ID)
-                            + "."
-                        )
-                    updates = {
-                        "palette": direction.palette,
-                        "typography": direction.typography,
-                        "shape": direction.shape,
-                    }
-                elif key == "palette":
-                    if value not in PALETTES:
-                        raise ValueError("Palette must be one of: " + ", ".join(PALETTES) + ".")
-                    updates = {"palette": value}
-                elif key == "typography":
-                    if value not in TYPE_PROFILES:
-                        raise ValueError("Typography must be one of: " + ", ".join(TYPE_PROFILES) + ".")
-                    updates = {"typography": value}
-                else:
-                    if value not in SHAPE_PROFILES:
-                        raise ValueError("Shape must be one of: " + ", ".join(SHAPE_PROFILES) + ".")
-                    updates = {"shape": value}
-                if all(self.data.get(name) == setting for name, setting in updates.items()):
+                candidate, _, updates = apply_design_updates(
+                    self.data, payload, allow_multiple_settings=False,
+                )
+                if candidate == self.data:
                     return self.state()
-                self.history.append(copy.deepcopy(self.data))
-                if len(self.history) > 100:
-                    self.history.pop(0)
-                self.future.clear()
-                self.data.update(updates)
-                if "palette" in updates:
-                    self.data.pop("palette_source", None)
+                self._push_history()
+                self.data = candidate
                 self.last_edit_path = ""
                 self.last_edit_at = 0.0
                 try:
                     validate_outline(self.data, TEMPLATES)
                 except SystemExit as error:
                     raise ValueError(str(error)) from error
+                self._advance_revision()
                 self._write_draft()
                 return self.state()
             except (ValueError, KeyError, OSError):
@@ -449,6 +640,8 @@ class EditorSession:
                     self.future.append(copy.deepcopy(self.data))
                     self.data = self.history.pop()
                     self.last_edit_path = ""
+                    self.last_edit_at = 0.0
+                    self._advance_revision()
                     self._write_draft()
                 return self.state()
             except (ValueError, OSError):
@@ -464,6 +657,8 @@ class EditorSession:
                     self.history.append(copy.deepcopy(self.data))
                     self.data = self.future.pop()
                     self.last_edit_path = ""
+                    self.last_edit_at = 0.0
+                    self._advance_revision()
                     self._write_draft()
                 return self.state()
             except (ValueError, OSError):
@@ -476,18 +671,110 @@ class EditorSession:
             snapshot = self._memory_snapshot()
             paths = (self.draft_path, preview_state_path(self.outline), project_state_path(self.project))
             backups = {path: _backup(path) for path in paths}
+            moved: list[tuple[Path, Path]] = []
             try:
+                moved = self._quarantine_assets(self.staged_assets)
                 self.data = copy.deepcopy(self.base_data)
                 self.history.clear()
                 self.future.clear()
+                self._advance_revision()
+                self.applied_operations.clear()
+                self.staged_assets.clear()
                 self.draft_path.unlink(missing_ok=True)
                 self._clear_active_edit()
+                self._delete_quarantine(moved)
                 return self.state()
-            except (OSError, SystemExit) as error:
+            except (OSError, SystemExit, ValueError) as error:
                 self._restore_memory(snapshot)
                 for path, value in backups.items():
                     _restore(path, value)
+                self._restore_quarantine(moved)
                 raise ValueError(f"Could not discard the text-edit draft: {error}") from error
+
+    def apply_slide_operation(self, action: str, payload: dict) -> dict:
+        with self.lock:
+            self._ensure_editable()
+            snapshot = self._memory_snapshot()
+            try:
+                if action not in {"move", "duplicate", "delete"}:
+                    raise ValueError(f"Unsupported slide operation: {action}.")
+                if not isinstance(payload, dict):
+                    raise ValueError("Slide operation payload must be a JSON object.")
+                allowed = {"action", "slide_id", "direction", "expected_revision", "operation_id"}
+                unknown = sorted(set(payload) - allowed)
+                if unknown:
+                    raise ValueError(f"Unsupported slide operation field(s): {', '.join(unknown)}.")
+                operation_id = payload.get("operation_id")
+                slide_id = payload.get("slide_id")
+                direction = payload.get("direction")
+                if "action" in payload and payload.get("action") != action:
+                    raise ValueError("Slide operation action does not match its endpoint.")
+                if not isinstance(operation_id, str) or not re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", operation_id):
+                    raise ValueError("Slide operation_id must be an 8–128 character stable identifier.")
+                if not isinstance(slide_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]*", slide_id):
+                    raise ValueError("Slide operation requires a valid slide_id.")
+                if action == "move" and direction not in {"up", "down"}:
+                    raise ValueError("Move direction must be 'up' or 'down'.")
+                if action != "move" and direction is not None:
+                    raise ValueError(f"{action.capitalize()} does not accept a direction.")
+                signature = _digest({"action": action, "slide_id": slide_id, "direction": direction})
+                previous = self.applied_operations.get(operation_id)
+                if previous is not None:
+                    if previous != signature:
+                        raise ValueError("The operation_id was already used for a different slide transaction.")
+                    return self.state(notices=["This slide transaction was already applied."])
+                self._assert_revision(payload.get("expected_revision"))
+
+                slides = self.data.get("slides")
+                if not isinstance(slides, list):
+                    raise ValueError("The current deck has no editable slides array.")
+                matches = [index for index, slide in enumerate(slides) if slide.get("id") == slide_id]
+                if len(matches) != 1:
+                    raise ValueError(f"Slide id {slide_id!r} is stale or invalid for the current deck.")
+                index = matches[0]
+                source = slides[index]
+                if source.get("template") in {"cover", "end"}:
+                    raise ValueError("Cover and end boundary slides cannot be moved, duplicated, or deleted.")
+
+                candidate = copy.deepcopy(self.data)
+                candidate_slides = candidate["slides"]
+                notices: list[str] = []
+                if action == "move":
+                    destination = index - 1 if direction == "up" else index + 1
+                    if destination < 0 or destination >= len(candidate_slides):
+                        raise ValueError("The requested move is outside the deck.")
+                    if candidate_slides[destination].get("template") in {"cover", "end"}:
+                        raise ValueError("Content slides cannot move across the cover or end boundary.")
+                    candidate_slides[index], candidate_slides[destination] = (
+                        candidate_slides[destination], candidate_slides[index],
+                    )
+                elif action == "duplicate":
+                    duplicate = copy.deepcopy(source)
+                    duplicate["id"] = _unique_duplicate_id(candidate_slides, slide_id)
+                    candidate_slides.insert(index + 1, duplicate)
+                    notices.append(f"Duplicated slide as {duplicate['id']}.")
+                else:
+                    candidate_slides.pop(index)
+
+                _validate_structural_invariants(candidate)
+                try:
+                    validate_outline(candidate, TEMPLATES)
+                except SystemExit as error:
+                    raise ValueError(str(error)) from error
+                self._push_history()
+                self.data = candidate
+                self.last_edit_path = ""
+                self.last_edit_at = 0.0
+                self._advance_revision()
+                self.applied_operations[operation_id] = signature
+                self.applied_operations = dict(
+                    list(self.applied_operations.items())[-MAX_APPLIED_OPERATIONS:]
+                )
+                self._write_draft()
+                return self.state(notices=notices)
+            except (ValueError, KeyError, IndexError, OSError):
+                self._restore_memory(snapshot)
+                raise
 
     def preview_path(self) -> Path:
         state_path = preview_state_path(self.outline)
@@ -520,14 +807,18 @@ class EditorSession:
                     "The draft is preserved; copy any needed text, then use 还原 before reconciling the outline."
                 )
             if self._is_unchanged():
-                self.draft_path.unlink(missing_ok=True)
-                self._clear_active_edit()
+                if self.staged_assets:
+                    self.discard()
+                else:
+                    self.draft_path.unlink(missing_ok=True)
+                    self._clear_active_edit()
                 self.editing_complete = True
                 self.close()
                 return {"ok": True, "preview_url": "/preview", "changed": False}
             self._assert_base_unchanged()
             try:
                 validate_outline(self.data, TEMPLATES)
+                _validate_structural_invariants(self.data)
                 enforce_outline_quality(self.data)
                 verify_outline_media(self.data, self.project)
             except SystemExit as error:
@@ -545,7 +836,11 @@ class EditorSession:
                 media_plan: _backup(media_plan),
             }
             draft_backup = _backup(self.draft_path)
+            referenced_media = set(editable_outline_media(self.data).values())
+            unreferenced_staged = self.staged_assets - referenced_media
+            moved: list[tuple[Path, Path]] = []
             try:
+                moved = self._quarantine_assets(unreferenced_staged)
                 atomic_write_json(self.outline, self.data)
                 state = read_project_state(self.project)
                 visual_plan = state.get("visual_plan")
@@ -561,15 +856,18 @@ class EditorSession:
                 atomic_write_json(project_state, state)
                 self.draft_path.unlink(missing_ok=True)
                 generate_preview(self.project, preview_path, False, emit=False)
+                self._delete_quarantine(moved)
             except (SystemExit, ValueError, OSError) as error:
                 for path, backup in backups.items():
                     _restore(path, backup)
                 _restore(self.draft_path, draft_backup)
+                self._restore_quarantine(moved)
                 raise ValueError(f"Could not complete text editing: {error}") from error
             self.base_data = copy.deepcopy(self.data)
             self.base_digest = json_digest(self.outline)
             self.history.clear()
             self.future.clear()
+            self.staged_assets.clear()
             self.editing_complete = True
             self.close()
             return {"ok": True, "preview_url": "/preview", "changed": True}
@@ -612,6 +910,37 @@ class EditorHandler(BaseHTTPRequestHandler):
             raise ValueError("Request body must be a JSON object.")
         return value
 
+    def _decoded_upload_header(self, name: str) -> str:
+        raw = self.headers.get(name, "")
+        if not raw or re.search(r"%(?![0-9a-fA-F]{2})", raw):
+            raise ValueError(f"Missing or malformed {name} header.")
+        try:
+            return unquote(raw, encoding="utf-8", errors="strict")
+        except UnicodeDecodeError as error:
+            raise ValueError(f"{name} must be URL-encoded UTF-8.") from error
+
+    def _read_upload(self) -> tuple[str, str, str, bytes]:
+        raw_length = self.headers.get("Content-Length")
+        if raw_length is None:
+            raise ValueError("Upload requires Content-Length.")
+        try:
+            length = int(raw_length)
+        except ValueError as error:
+            raise ValueError("Invalid upload request length.") from error
+        if length <= 0:
+            raise ValueError("Upload payload is empty.")
+        if length > MAX_EDITOR_UPLOAD_BYTES:
+            raise ValueError(f"Upload exceeds the {MAX_EDITOR_UPLOAD_BYTES // (1024 * 1024)} MB limit.")
+        payload = self.rfile.read(length)
+        if len(payload) != length:
+            raise ValueError("Upload payload ended before Content-Length bytes were received.")
+        return (
+            self._decoded_upload_header("X-Oil-Ppt-Media-Path"),
+            self._decoded_upload_header("X-Oil-Ppt-Filename"),
+            self.headers.get("Content-Type", ""),
+            payload,
+        )
+
     def do_GET(self) -> None:  # noqa: N802
         route = urlparse(self.path).path
         if route == "/favicon.ico":
@@ -652,11 +981,19 @@ class EditorHandler(BaseHTTPRequestHandler):
             return
         route = urlparse(self.path).path
         try:
+            if route == "/api/media":
+                path, filename, content_type, media_payload = self._read_upload()
+                result = self.session.replace_media(path, filename, content_type, media_payload)
+                self._json(HTTPStatus.OK, result)
+                return
             payload = self._read_json()
             if route == "/api/state":
                 result = self.session.state()
             elif route == "/api/edit":
-                result = self.session.apply_edit(str(payload.get("path") or ""), payload.get("value"))
+                result = self.session.apply_edit(
+                    str(payload.get("path") or ""), payload.get("value"),
+                    expected_revision=payload.get("expected_revision"),
+                )
             elif route == "/api/settings":
                 result = self.session.apply_settings(payload)
             elif route == "/api/undo":
@@ -665,6 +1002,8 @@ class EditorHandler(BaseHTTPRequestHandler):
                 result = self.session.redo()
             elif route == "/api/discard":
                 result = self.session.discard()
+            elif route in {"/api/slides/move", "/api/slides/duplicate", "/api/slides/delete"}:
+                result = self.session.apply_slide_operation(route.rsplit("/", 1)[-1], payload)
             elif route == "/api/finish":
                 result = self.session.finish(
                     payload.get("issues"),
