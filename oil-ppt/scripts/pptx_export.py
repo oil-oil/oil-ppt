@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Hybrid PPTX export for a confirmed, browser-validated oil-ppt build.
-
-The HTML deck remains canonical.  This module asks Chromium for the exact
-rendered geometry, captures a background with supported structured objects
-suppressed, and restores those objects as native PowerPoint shapes.
-"""
+"""Hybrid PPTX export from canonical final HTML and its rendered DOM."""
 from __future__ import annotations
 
 import base64
@@ -21,28 +16,22 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from cdp_validate import WebSocket, _stop_browser
-from media_assets import inspect_image, outline_media_bindings
-from palette_tokens import named_palette, normalize_palette
-from profile_tokens import TYPE_PROFILES
-
+from cdp_validate import WebSocket, _stop_browser, _wait_for_devtools_port
+from theme import PALETTES, TYPOGRAPHY, validate_theme
 
 SLIDE_WIDTH_PX = 1920
 SLIDE_HEIGHT_PX = 1080
 SLIDE_WIDTH_EMU = 12_192_000
 SLIDE_HEIGHT_EMU = 6_858_000
-COVERAGE_SCHEMA = "oil-ppt.pptx-editability/v1"
+COVERAGE_SCHEMA = "oil-ppt.pptx-editability/v2"
 
 
 def require_python_pptx() -> Any:
-    """Import python-pptx lazily so every non-export command remains stdlib-only."""
+    """Import python-pptx only for export."""
     try:
         import pptx
     except (ImportError, OSError) as error:
-        raise SystemExit(
-            "PPTX export requires the optional 'python-pptx' package. Install it for the "
-            "same Python interpreter with: python -m pip install python-pptx"
-        ) from error
+        raise SystemExit("PPTX export requires python-pptx: python3 -m pip install python-pptx") from error
     return pptx
 
 
@@ -67,22 +56,14 @@ def _browser_session(chrome: str, html_path: Path) -> tuple[subprocess.Popen, te
     command = [
         chrome, "--headless", "--no-sandbox", "--allow-file-access-from-files",
         "--disable-background-networking", "--disable-component-update", "--disable-default-apps",
-        "--disable-features=PaintHolding,RenderDocument", "--disable-sync",
-        "--force-color-profile=srgb", "--force-device-scale-factor=1", "--hide-scrollbars",
-        "--metrics-recording-only", "--no-first-run", "--window-size=1920,1080",
-        f"--user-data-dir={profile}", "--remote-debugging-port=0", html_path.resolve().as_uri(),
+        "--disable-features=PaintHolding,RenderDocument", "--disable-sync", "--force-color-profile=srgb",
+        "--force-device-scale-factor=1", "--hide-scrollbars", "--metrics-recording-only", "--no-first-run",
+        "--window-size=1920,1080", f"--user-data-dir={profile}", "--remote-debugging-port=0", html_path.resolve().as_uri(),
     ]
-    process = subprocess.Popen(
-        command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
-    )
+    process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     try:
-        deadline = time.monotonic() + 15
-        port_file = profile / "DevToolsActivePort"
-        while time.monotonic() < deadline and not port_file.exists():
-            time.sleep(.05)
-        if not port_file.exists():
-            raise RuntimeError("Chrome did not expose a DevTools port for PPTX export.")
-        port = int(port_file.read_text(encoding="utf-8").splitlines()[0])
+        deadline, port_file = time.monotonic() + 15, profile / "DevToolsActivePort"
+        port = _wait_for_devtools_port(port_file, deadline, "Chrome did not expose a DevTools port for PPTX export.")
         pages: list[dict] = []
         while time.monotonic() < deadline and not pages:
             try:
@@ -103,167 +84,113 @@ def _browser_session(chrome: str, html_path: Path) -> tuple[subprocess.Popen, te
         raise
 
 
-def _layout_expression(slide_index: int, native_media_indexes: list[int]) -> str:
-    """Return one self-contained browser expression for layout and suppression."""
+def _layout_expression(slide_index: int) -> str:
+    """Extract visible leaf text/images and suppress only safe native candidates."""
     return f"""(async () => {{
       await document.fonts?.ready;
-      await Promise.all([...document.images].map(image => image.complete
-        ? Promise.resolve() : new Promise(resolve => {{ image.onload = image.onerror = resolve; }})));
+      await Promise.all([...document.images].map(image => image.complete ? Promise.resolve() : new Promise(done => {{ image.onload = image.onerror = done; }})));
       document.documentElement.style.cssText += ';width:1920px!important;height:1080px!important';
       document.body.style.cssText += ';width:1920px!important;height:1080px!important;overflow:hidden!important';
-      const viewport = document.querySelector('.deck-viewport, .slide-preview-viewport');
-      const shell = document.querySelector('.deck-stage-shell, .slide-preview-shell');
-      const stage = document.querySelector('.deck-stage, .slide-preview-stage');
+      const viewport = document.querySelector('.deck-viewport,.slide-preview-viewport');
+      const shell = document.querySelector('.deck-stage-shell,.slide-preview-shell');
+      const stage = document.querySelector('.deck-stage,.slide-preview-stage');
       if (!stage) throw new Error('canonical HTML has no deck stage');
-      document.querySelectorAll('.deck-counter,.progress-bar,.next-preview').forEach(node => {{
-        node.style.display = 'none';
-      }});
+      const overview = document.querySelector('[data-deck-overview]');
+      if (overview && !overview.hidden) document.querySelector('[data-deck-overview-close]')?.click();
+      if (overview && !overview.hidden) throw new Error('overview must be closed before PPTX capture');
+      const exportChrome = [...document.querySelectorAll('.deck-counter,.progress-bar,.next-preview,.deck-overview-toggle,.deck-overview')];
+      exportChrome.forEach(node => node.style.display = 'none');
       if (viewport) viewport.style.cssText += ';position:fixed!important;inset:0!important;width:1920px!important;height:1080px!important';
       if (shell) shell.style.cssText += ';position:relative!important;width:1920px!important;height:1080px!important';
       stage.style.cssText += ';position:absolute!important;left:0!important;top:0!important;width:1920px!important;height:1080px!important;transform:none!important';
-      const slides = [...document.querySelectorAll('.oil-slide')];
-      const slide = slides[{slide_index}];
+      const slides = [...document.querySelectorAll('.oil-slide')], slide = slides[{slide_index}];
       if (!slide) throw new Error('missing slide index {slide_index}');
-      slides.forEach((node, index) => {{
-        node.classList.toggle('active', index === {slide_index});
-        node.style.cssText += index === {slide_index}
-          ? ';display:block!important;visibility:visible!important;opacity:1!important;transition:none!important'
-          : ';display:none!important;visibility:hidden!important;opacity:0!important;transition:none!important';
-      }});
-      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const visible = node => {{
-        if (!node?.getClientRects().length) return false;
-        const style = getComputedStyle(node);
-        return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || 1) > .001;
+      if (stage.querySelectorAll(':scope > .oil-slide').length !== slides.length) throw new Error('all slides must be restored to stage before PPTX capture');
+      slides.forEach((node, index) => {{ node.classList.toggle('active', index === {slide_index}); node.style.cssText += index === {slide_index} ? ';display:block!important;visibility:visible!important;opacity:1!important;transition:none!important' : ';display:none!important;visibility:hidden!important;opacity:0!important;transition:none!important'; }});
+      await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
+      const visible = node => {{ if (!node?.getClientRects().length) return false; const s=getComputedStyle(node); return s.display !== 'none' && s.visibility !== 'hidden' && Number(s.opacity || 1) > .001; }};
+      const boxFor = node => {{ const b=node.getBoundingClientRect(), root=slide.getBoundingClientRect(); return {{x:b.left-root.left,y:b.top-root.top,width:b.width,height:b.height}}; }};
+      const styledAncestor = node => {{
+        for (let parent=node.parentElement; parent && parent !== slide; parent=parent.parentElement) {{
+          const s=getComputedStyle(parent), overflow=[s.overflow,s.overflowX,s.overflowY];
+          const clipped=overflow.some(value => ['hidden','clip'].includes(value))
+            || !['none',''].includes(s.clipPath) || !['none',''].includes(s.maskImage)
+            || parseFloat(s.borderTopLeftRadius || '0') > .01 || parseFloat(s.borderTopRightRadius || '0') > .01
+            || parseFloat(s.borderBottomLeftRadius || '0') > .01 || parseFloat(s.borderBottomRightRadius || '0') > .01;
+          if (clipped || s.transform !== 'none' || s.filter !== 'none' || Number(s.opacity || 1) < .999) return true;
+        }}
+        return false;
       }};
-      const boxFor = node => {{
-        const box = node.getBoundingClientRect();
-        const root = slide.getBoundingClientRect();
-        return {{x:box.left-root.left,y:box.top-root.top,width:box.width,height:box.height}};
-      }};
-      const text = [...slide.querySelectorAll('[data-edit-path]')]
-        .filter(node => visible(node) && !node.querySelector('[data-edit-path]'))
-        .map(node => {{
-          const style = getComputedStyle(node);
-          const value = (node.textContent || '').replace(/\\s+/g, ' ').trim();
-          const color = style.color || '';
-          const alpha = color.startsWith('rgba') ? Number(color.split(',').pop().replace(')','').trim()) : 1;
-          const item = value && alpha > .001 ? {{
-            path:node.dataset.editPath || '', text:value, tag:node.tagName.toLowerCase(),
-            box:boxFor(node), fontFamily:style.fontFamily, fontSize:style.fontSize,
-            fontWeight:style.fontWeight, fontStyle:style.fontStyle, color,
-            textAlign:style.textAlign, lineHeight:style.lineHeight,
-            letterSpacing:style.letterSpacing, whiteSpace:style.whiteSpace,
-          }} : null;
-          if (item) {{
-            const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
-            const nodes = [];
-            while (walker.nextNode()) nodes.push(walker.currentNode);
-            nodes.forEach(textNode => {{
-              const span = document.createElement('span');
-              span.dataset.pptxHiddenText = 'true';
-              span.style.visibility = 'hidden';
-              textNode.parentNode.replaceChild(span, textNode);
-              span.appendChild(textNode);
-            }});
-          }}
-          return item;
-        }}).filter(Boolean).filter(item => item.box.width > .5 && item.box.height > .5);
-      const imageNodes = [...slide.querySelectorAll('img')].filter(visible);
-      const images = imageNodes.map((node, index) => {{
-        const style = getComputedStyle(node);
-        return {{index,box:boxFor(node),objectFit:style.objectFit || 'fill',
-          objectPosition:style.objectPosition || '50% 50%',filter:style.filter || 'none',
-          borderRadius:style.borderRadius || '0px',naturalWidth:node.naturalWidth,
-          naturalHeight:node.naturalHeight}};
+      const textElements = [...slide.querySelectorAll('*')].filter(node => visible(node) && !['script','style','svg','path'].includes(node.tagName.toLowerCase()))
+        .filter(node => (node.textContent || '').replace(/\\s+/g,' ').trim())
+        .filter(node => ![...node.querySelectorAll('*')].some(child => visible(child) && (child.textContent || '').replace(/\\s+/g,' ').trim()));
+      const text = textElements.map((node, index) => {{
+        const s=getComputedStyle(node), value=(node.textContent || '').replace(/\\s+/g,' ').trim(), box=boxFor(node);
+        const generated = pseudo => {{ const content=getComputedStyle(node,pseudo).content; return content && !['none','normal','""',"''"].includes(content); }};
+        const zero = raw => Math.abs(parseFloat(raw || '0')) < .01;
+        const native=box.width > .5 && box.height > .5
+          && s.transform === 'none' && s.filter === 'none' && s.opacity === '1'
+          && s.textShadow === 'none' && s.textDecorationLine === 'none'
+          && s.textTransform === 'none' && s.writingMode === 'horizontal-tb'
+          && s.display !== 'list-item' && !styledAncestor(node)
+          && ['normal','0px'].includes(s.letterSpacing) && zero(s.textIndent)
+          && [s.paddingTop,s.paddingRight,s.paddingBottom,s.paddingLeft].every(zero)
+          && [s.borderTopWidth,s.borderRightWidth,s.borderBottomWidth,s.borderLeftWidth].every(zero)
+          && (!s.backgroundColor || s.backgroundColor === 'rgba(0, 0, 0, 0)')
+          && !generated('::before') && !generated('::after');
+        const item={{index,selector:`${{node.tagName.toLowerCase()}}:nth-leaf(${{index+1}})`,text:value,tag:node.tagName.toLowerCase(),box,fontFamily:s.fontFamily,fontSize:s.fontSize,fontWeight:s.fontWeight,fontStyle:s.fontStyle,color:s.color,textAlign:s.textAlign,lineHeight:s.lineHeight,letterSpacing:s.letterSpacing,whiteSpace:s.whiteSpace,native,reason:native ? '' : 'computed text style is not safely representable as native PowerPoint text'}};
+        if (native) node.style.visibility='hidden'; return item;
+      }}).filter(item => item.box.width > .5 && item.box.height > .5);
+      const images=[...slide.querySelectorAll('img')].filter(visible).map((node,index) => {{
+        const s=getComputedStyle(node), box=boxFor(node), src=node.currentSrc || node.src, portable=/^data:image\\/(png|jpeg|gif|webp);base64,/i.test(src) || /^file:.*\\.(png|jpe?g|gif|webp)(?:[?#]|$)/i.test(src), styled=box.width > .5 && box.height > .5 && s.transform === 'none' && s.filter === 'none' && s.opacity === '1' && s.mixBlendMode === 'normal' && s.boxShadow === 'none' && s.clipPath === 'none' && s.maskImage === 'none' && (s.borderRadius === '0px' || s.borderRadius === '0') && !styledAncestor(node) && ['fill','contain','cover'].includes(s.objectFit || 'fill'), native=portable && styled;
+        const item={{index,selector:`img:nth-of-type(${{index+1}})`,src,box,objectFit:s.objectFit || 'fill',objectPosition:s.objectPosition || '50% 50%',naturalWidth:node.naturalWidth,naturalHeight:node.naturalHeight,native,reason:native ? '' : (!portable ? 'rendered image source cannot be embedded reliably by python-pptx' : 'computed image style is not safely representable as native PowerPoint media')}};
+        if (native) node.style.visibility='hidden'; return item;
       }});
-      const fixedText = [];
-      const walker = document.createTreeWalker(slide, NodeFilter.SHOW_TEXT);
-      while (walker.nextNode()) {{
-        const value = (walker.currentNode.nodeValue || '').replace(/\\s+/g, ' ').trim();
-        const parent = walker.currentNode.parentElement;
-        if (value && parent && visible(parent) && !parent.closest('[data-edit-path]')) fixedText.push(value);
-      }}
-      const nativeIndexes = new Set({json.dumps(native_media_indexes)});
-      images.forEach(item => {{ if (nativeIndexes.has(item.index)) {{
-        const node = imageNodes[item.index];
-        if (node) node.style.visibility = 'hidden';
-      }} }});
-      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      return {{slideId:slide.dataset.slideId || '', title:slide.dataset.title || '', text, images,
-        fixedText:[...new Set(fixedText)], slideBox:boxFor(slide)}};
+      await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
+      return {{slideId:slide.dataset.slideId || '',title:slide.dataset.title || '',text,images,slideBox:boxFor(slide),chromeHidden:exportChrome.every(node => getComputedStyle(node).display === 'none')}};
     }})()"""
 
 
-def collect_render_layers(
-    chrome: str,
-    html_path: Path,
-    slides: list[dict],
-    media_by_slide: list[list[dict]],
-    background_dir: Path,
-) -> list[dict]:
-    """Collect exact browser geometry and one sanitized PNG per slide."""
+def collect_render_layers(chrome: str, html_path: Path, deck: dict, background_dir: Path) -> list[dict]:
+    """Capture one background plus final-DOM layers for each manifest slide."""
+    paths = deck.get("slides") if isinstance(deck, dict) else None
+    if not isinstance(paths, list) or not paths:
+        raise RuntimeError("deck manifest has no slides for PPTX export")
     process, profile_ctx, socket = _browser_session(chrome, html_path)
-    profile = Path(profile_ctx.name)
-    results: list[dict] = []
-    command_id = 1
+    profile, results, command_id = Path(profile_ctx.name), [], 1
     try:
         _cdp_command(socket, command_id, "Page.enable"); command_id += 1
         _cdp_command(socket, command_id, "Runtime.enable"); command_id += 1
-        for index, (slide, media) in enumerate(zip(slides, media_by_slide)):
-            native_indexes = [item["rendered_index"] for item in media if item.get("native")]
-            evaluated = _cdp_command(socket, command_id, "Runtime.evaluate", {
-                "expression": _layout_expression(index, native_indexes),
-                "awaitPromise": True,
-                "returnByValue": True,
-            }); command_id += 1
+        for index, _ in enumerate(paths):
+            evaluated = _cdp_command(socket, command_id, "Runtime.evaluate", {"expression": _layout_expression(index), "awaitPromise": True, "returnByValue": True}); command_id += 1
             remote = evaluated.get("result") or {}
             if remote.get("subtype") == "error" or "exceptionDetails" in evaluated:
                 raise RuntimeError(f"Could not inspect rendered slide {index + 1}: {remote.get('description')}")
             layout = remote.get("value")
-            if not isinstance(layout, dict):
-                raise RuntimeError(f"Chrome returned no layout for slide {index + 1}.")
-            if layout.get("slideId") != slide.get("id"):
-                raise RuntimeError(
-                    f"Rendered slide order mismatch at page {index + 1}: expected {slide.get('id')!r}, "
-                    f"got {layout.get('slideId')!r}."
-                )
-            screenshot = _cdp_command(socket, command_id, "Page.captureScreenshot", {
-                "format": "png", "fromSurface": True,
-                "clip": {"x": 0, "y": 0, "width": SLIDE_WIDTH_PX, "height": SLIDE_HEIGHT_PX, "scale": 1},
-            }); command_id += 1
+            if not isinstance(layout, dict) or not layout.get("slideId"):
+                raise RuntimeError(f"Rendered slide {index + 1} is missing its data-slide-id.")
+            screenshot = _cdp_command(socket, command_id, "Page.captureScreenshot", {"format": "png", "fromSurface": True, "clip": {"x": 0, "y": 0, "width": SLIDE_WIDTH_PX, "height": SLIDE_HEIGHT_PX, "scale": 1}}); command_id += 1
             destination = background_dir / f"slide-{index + 1:03d}.png"
             destination.write_bytes(base64.b64decode(screenshot["data"]))
             layout["background"] = str(destination)
             results.append(layout)
     finally:
-        socket.close()
-        _stop_browser(process, profile)
-        profile_ctx.cleanup()
+        socket.close(); _stop_browser(process, profile); profile_ctx.cleanup()
     return results
 
 
-def _media_plan(outline: dict, project: Path) -> list[list[dict]]:
-    plans: list[list[dict]] = []
-    for slide in outline["slides"]:
-        items: list[dict] = []
-        for rendered_index, (field, value) in enumerate(outline_media_bindings(slide)):
-            path = (project / str(value)).resolve()
-            try:
-                info = inspect_image(path)
-                native = info["mime"] in {"image/png", "image/jpeg", "image/gif", "image/webp"}
-                reason = None if native else f"{info['mime']} cannot be embedded reliably by python-pptx"
-            except ValueError as error:
-                info = None
-                native = False
-                reason = str(error)
-            items.append({
-                "field": field, "source": str(value), "path": str(path),
-                "rendered_index": rendered_index, "native": native, "reason": reason,
-                **({"inspection": info} if info else {}),
-            })
-        plans.append(items)
-    return plans
+def classify_rendered_slide(layout: dict) -> dict:
+    """Pure coverage classification for a final rendered slide."""
+    native_text = [item for item in layout.get("text") or [] if item.get("native")]
+    native_images = [item for item in layout.get("images") or [] if item.get("native")]
+    unsupported = [
+        {"kind": "rendered-text", "selector": item.get("selector"), "text": item.get("text", "")[:120], "reason": item.get("reason") or "not native", "preserved_in": "background"}
+        for item in layout.get("text") or [] if not item.get("native")
+    ] + [
+        {"kind": "rendered-image", "selector": item.get("selector"), "source": item.get("src", ""), "reason": item.get("reason") or "not native", "preserved_in": "background"}
+        for item in layout.get("images") or [] if not item.get("native")
+    ]
+    return {"native_text": native_text, "native_images": native_images, "unsupported": unsupported}
 
 
 def _px_to_emu(value: float) -> int:
@@ -271,402 +198,140 @@ def _px_to_emu(value: float) -> int:
 
 
 def _rgb(value: str) -> tuple[int, int, int] | None:
-    numbers = re.findall(r"[\d.]+", value or "")
-    if len(numbers) < 3:
-        return None
-    return tuple(max(0, min(255, round(float(item)))) for item in numbers[:3])  # type: ignore[return-value]
+    values = re.findall(r"[\d.]+", value or "")
+    return tuple(max(0, min(255, round(float(item)))) for item in values[:3]) if len(values) >= 3 else None  # type: ignore[return-value]
 
 
 def _font_name(value: str) -> str:
-    first = (value or "Arial").split(",", 1)[0].strip().strip("\"'")
-    return first or "Arial"
-
-
-def _text_role(path: str) -> str:
-    leaf = path.rsplit("/", 1)[-1]
-    if leaf == "title":
-        return "title"
-    if leaf in {"body", "content", "statement_body", "render_body"}:
-        return "body"
-    if leaf in {"label", "kicker", "meta", "source", "caption", "page_note", "note"}:
-        return "note-or-label"
-    return "structured-copy"
+    return (value or "Arial").split(",", 1)[0].strip().strip("\"'") or "Arial"
 
 
 def _position_fraction(token: str) -> float:
     token = token.strip().lower()
-    if token in {"left", "top"}:
-        return 0.0
-    if token in {"right", "bottom"}:
-        return 1.0
-    if token == "center":
-        return .5
+    if token in {"left", "top"}: return 0.0
+    if token in {"right", "bottom"}: return 1.0
     if token.endswith("%"):
-        try:
-            return max(0.0, min(1.0, float(token[:-1]) / 100))
-        except ValueError:
-            pass
+        try: return max(0, min(1, float(token[:-1]) / 100))
+        except ValueError: pass
     return .5
 
 
 def _object_position(value: str) -> tuple[float, float]:
-    tokens = value.split()
-    if len(tokens) == 1:
-        tokens *= 2
-    return _position_fraction(tokens[0]), _position_fraction(tokens[1])
-
-
-def _filtered_media(path: Path, css_filter: str, directory: Path, ordinal: int) -> tuple[Path, str | None]:
-    if not css_filter or css_filter == "none":
-        return path, None
-    try:
-        from PIL import Image, ImageEnhance, ImageOps
-        image = Image.open(path).convert("RGBA")
-        if "grayscale(1)" in css_filter:
-            alpha = image.getchannel("A")
-            image = ImageOps.grayscale(image.convert("RGB")).convert("RGBA")
-            image.putalpha(alpha)
-        saturation = re.search(r"saturate\(([\d.]+)\)", css_filter)
-        contrast = re.search(r"contrast\(([\d.]+)\)", css_filter)
-        if saturation:
-            image = ImageEnhance.Color(image).enhance(float(saturation.group(1)))
-        if contrast:
-            image = ImageEnhance.Contrast(image).enhance(float(contrast.group(1)))
-        destination = directory / f"filtered-{ordinal:03d}.png"
-        image.save(destination, format="PNG")
-        return destination, None
-    except Exception as error:
-        return path, f"CSS media filter could not be reproduced exactly: {error}"
-
-
-def _add_picture(slide: Any, image_path: Path, rendered: dict, pptx: Any, temp_dir: Path, ordinal: int) -> str | None:
-    box = rendered["box"]
-    left, top = _px_to_emu(box["x"]), _px_to_emu(box["y"])
-    width, height = _px_to_emu(box["width"]), _px_to_emu(box["height"])
-    filtered, warning = _filtered_media(image_path, rendered.get("filter", "none"), temp_dir, ordinal)
-    source_width = max(1, int(rendered.get("naturalWidth") or 1))
-    source_height = max(1, int(rendered.get("naturalHeight") or 1))
-    fit = rendered.get("objectFit") or "fill"
-    x_fraction, y_fraction = _object_position(rendered.get("objectPosition") or "50% 50%")
-    if fit == "contain":
-        scale = min(width / source_width, height / source_height)
-        picture_width, picture_height = round(source_width * scale), round(source_height * scale)
-        left += round((width - picture_width) * x_fraction)
-        top += round((height - picture_height) * y_fraction)
-        picture = slide.shapes.add_picture(str(filtered), left, top, picture_width, picture_height)
-    else:
-        picture = slide.shapes.add_picture(str(filtered), left, top, width, height)
-        if fit == "cover":
-            source_ratio, box_ratio = source_width / source_height, width / height
-            if source_ratio > box_ratio:
-                visible = box_ratio / source_ratio
-                picture.crop_left = (1 - visible) * x_fraction
-                picture.crop_right = (1 - visible) * (1 - x_fraction)
-            elif source_ratio < box_ratio:
-                visible = source_ratio / box_ratio
-                picture.crop_top = (1 - visible) * y_fraction
-                picture.crop_bottom = (1 - visible) * (1 - y_fraction)
-    if float(str(rendered.get("borderRadius") or "0").removesuffix("px") or 0) > 0:
-        geometry = picture._element.spPr.prstGeom
-        geometry.set("prst", "roundRect")
-    return warning
+    parts = value.split() or ["50%"]
+    return _position_fraction(parts[0]), _position_fraction(parts[1] if len(parts) > 1 else parts[0])
 
 
 def _set_east_asian_font(run: Any, typeface: str) -> None:
     from lxml import etree
     from pptx.oxml.ns import qn
-    r_pr = run._r.get_or_add_rPr()
-    east_asia = r_pr.find(qn("a:ea"))
-    if east_asia is None:
-        east_asia = etree.SubElement(r_pr, qn("a:ea"))
+    properties = run._r.get_or_add_rPr(); east_asia = properties.find(qn("a:ea"))
+    if east_asia is None: east_asia = etree.SubElement(properties, qn("a:ea"))
     east_asia.set("typeface", typeface)
 
 
-def _add_text(slide: Any, item: dict, pptx: Any) -> None:
+def _add_text(slide: Any, item: dict) -> None:
     from pptx.dml.color import RGBColor
     from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE, PP_ALIGN
     from pptx.util import Pt
     box = item["box"]
-    shape = slide.shapes.add_textbox(
-        _px_to_emu(box["x"]), _px_to_emu(box["y"]),
-        max(1, _px_to_emu(box["width"])), max(1, _px_to_emu(box["height"])),
-    )
-    frame = shape.text_frame
-    frame.clear()
-    frame.margin_left = frame.margin_right = frame.margin_top = frame.margin_bottom = 0
-    frame.word_wrap = item.get("whiteSpace") not in {"nowrap", "pre"}
-    frame.auto_size = MSO_AUTO_SIZE.NONE
-    frame.vertical_anchor = MSO_ANCHOR.TOP
-    paragraph = frame.paragraphs[0]
-    paragraph.text = item["text"]
-    paragraph.space_before = paragraph.space_after = Pt(0)
-    paragraph.alignment = {
-        "center": PP_ALIGN.CENTER, "right": PP_ALIGN.RIGHT, "end": PP_ALIGN.RIGHT,
-        "justify": PP_ALIGN.JUSTIFY,
-    }.get(item.get("textAlign"), PP_ALIGN.LEFT)
-    run = paragraph.runs[0]
-    font_name = _font_name(item.get("fontFamily", ""))
-    run.font.name = font_name
-    _set_east_asian_font(run, font_name)
-    font_px = float(str(item.get("fontSize") or "16").removesuffix("px"))
-    run.font.size = Pt(font_px * .75)
-    weight = str(item.get("fontWeight") or "400")
-    run.font.bold = weight == "bold" or (weight.isdigit() and int(weight) >= 600)
-    run.font.italic = item.get("fontStyle") in {"italic", "oblique"}
-    color = _rgb(item.get("color", ""))
-    if color:
-        run.font.color.rgb = RGBColor(*color)
-    line_height = str(item.get("lineHeight") or "normal")
-    if line_height.endswith("px"):
-        paragraph.line_spacing = Pt(float(line_height[:-2]) * .75)
+    shape = slide.shapes.add_textbox(_px_to_emu(box["x"]), _px_to_emu(box["y"]), max(1, _px_to_emu(box["width"])), max(1, _px_to_emu(box["height"])))
+    frame = shape.text_frame; frame.clear(); frame.margin_left = frame.margin_right = frame.margin_top = frame.margin_bottom = 0; frame.word_wrap = item.get("whiteSpace") not in {"nowrap", "pre"}; frame.auto_size = MSO_AUTO_SIZE.NONE; frame.vertical_anchor = MSO_ANCHOR.TOP
+    paragraph = frame.paragraphs[0]; paragraph.text = item["text"]; paragraph.space_before = paragraph.space_after = Pt(0)
+    paragraph.alignment = {"center": PP_ALIGN.CENTER, "right": PP_ALIGN.RIGHT, "end": PP_ALIGN.RIGHT, "justify": PP_ALIGN.JUSTIFY}.get(item.get("textAlign"), PP_ALIGN.LEFT)
+    run = paragraph.runs[0]; name = _font_name(item.get("fontFamily", "")); run.font.name = name; _set_east_asian_font(run, name)
+    run.font.size = Pt(float(str(item.get("fontSize") or "16").removesuffix("px")) * .75)
+    weight = str(item.get("fontWeight") or "400"); run.font.bold = weight == "bold" or (weight.isdigit() and int(weight) >= 600); run.font.italic = item.get("fontStyle") in {"italic", "oblique"}
+    if color := _rgb(item.get("color", "")): run.font.color.rgb = RGBColor(*color)
+    if (line_height := str(item.get("lineHeight") or "")).endswith("px"): paragraph.line_spacing = Pt(float(line_height[:-2]) * .75)
+
+
+def _source_to_file(source: str, project: Path, directory: Path, ordinal: int) -> tuple[Path, str | None]:
+    """Resolve final-DOM data/local image sources for python-pptx."""
+    if source.startswith("data:"):
+        header, separator, payload = source.partition(",")
+        if not separator or ";base64" not in header.lower(): return Path(), "image data URL is not base64 encoded"
+        mime = header[5:].split(";", 1)[0].lower(); suffix = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}.get(mime)
+        if not suffix: return Path(), f"{mime or 'unknown'} cannot be embedded reliably by python-pptx"
+        target = directory / f"rendered-{ordinal:03d}{suffix}"
+        try: target.write_bytes(base64.b64decode(payload, validate=True))
+        except ValueError: return Path(), "image data URL is corrupt"
+        return target, None
+    if source.startswith("file:"):
+        from urllib.parse import unquote, urlparse
+        path = Path(unquote(urlparse(source).path)).resolve()
+        if not path.is_relative_to(project) or not path.is_file(): return Path(), "rendered image is outside the project or missing"
+        if path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".gif", ".webp"}: return Path(), f"{path.suffix or 'unknown'} cannot be embedded reliably by python-pptx"
+        return path, None
+    return Path(), "rendered image is not a local or embedded source"
+
+
+def _add_picture(slide: Any, image_path: Path, item: dict) -> None:
+    box = item["box"]; left, top, width, height = _px_to_emu(box["x"]), _px_to_emu(box["y"]), _px_to_emu(box["width"]), _px_to_emu(box["height"])
+    source_width, source_height = max(1, int(item.get("naturalWidth") or 1)), max(1, int(item.get("naturalHeight") or 1))
+    fit, x_fraction, y_fraction = item.get("objectFit") or "fill", *_object_position(item.get("objectPosition") or "50% 50%")
+    if fit == "contain":
+        scale = min(width / source_width, height / source_height); picture_width, picture_height = round(source_width * scale), round(source_height * scale)
+        slide.shapes.add_picture(str(image_path), left + round((width - picture_width) * x_fraction), top + round((height - picture_height) * y_fraction), picture_width, picture_height)
+    else:
+        picture = slide.shapes.add_picture(str(image_path), left, top, width, height)
+        if fit == "cover":
+            source_ratio, box_ratio = source_width / source_height, width / height
+            if source_ratio > box_ratio:
+                shown = box_ratio / source_ratio; picture.crop_left = (1 - shown) * x_fraction; picture.crop_right = (1 - shown) * (1 - x_fraction)
+            elif source_ratio < box_ratio:
+                shown = source_ratio / box_ratio; picture.crop_top = (1 - shown) * y_fraction; picture.crop_bottom = (1 - shown) * (1 - y_fraction)
 
 
 def _validate_pptx(path: Path, expected_slides: int, pptx: Any) -> None:
     reopened = pptx.Presentation(str(path))
-    if len(reopened.slides) != expected_slides:
-        raise RuntimeError(f"PPTX verification found {len(reopened.slides)} slides, expected {expected_slides}.")
-    if reopened.slide_width != SLIDE_WIDTH_EMU or reopened.slide_height != SLIDE_HEIGHT_EMU:
-        raise RuntimeError("PPTX verification found a non-16:9 slide size.")
-    import zipfile
-    with zipfile.ZipFile(path) as archive:
-        for name in archive.namelist():
-            if not name.endswith(".rels"):
-                continue
-            if b'TargetMode="External"' in archive.read(name):
-                raise RuntimeError(f"PPTX contains an external relationship in {name}.")
+    if len(reopened.slides) != expected_slides or reopened.slide_width != SLIDE_WIDTH_EMU or reopened.slide_height != SLIDE_HEIGHT_EMU: raise RuntimeError("PPTX verification found an invalid slide set or size.")
 
 
-def _apply_ooxml_theme(path: Path, palette: dict[str, str], typeface: str) -> None:
-    """Bind PowerPoint's editable-object defaults to the confirmed oil-ppt profile."""
-    import xml.etree.ElementTree as ET
-    import zipfile
-
-    namespace = "http://schemas.openxmlformats.org/drawingml/2006/main"
-    ET.register_namespace("a", namespace)
-    colors = {
-        "dk1": palette["ink"], "lt1": palette["canvas"],
-        "dk2": palette["ink_2"], "lt2": palette["surface"],
-        "accent1": palette["accent"], "accent2": palette["accent_alt"],
-        "accent3": palette["accent_warm"], "accent4": palette["accent_fill"],
-        "accent5": palette["accent_soft"], "accent6": palette["border"],
-    }
-    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".theme", dir=path.parent)
-    os.close(descriptor)
-    temporary = Path(temporary_name)
+def _install_pair_atomically(pptx_temp: Path, output: Path, report_temp: Path, report: Path) -> None:
+    backups: list[tuple[Path, Path]] = []; installed: list[Path] = []
     try:
-        with zipfile.ZipFile(path, "r") as source, zipfile.ZipFile(temporary, "w") as target:
-            for info in source.infolist():
-                content = source.read(info.filename)
-                if info.filename == "ppt/theme/theme1.xml":
-                    root = ET.fromstring(content)
-                    scheme = root.find(f".//{{{namespace}}}clrScheme")
-                    if scheme is None:
-                        raise RuntimeError("PPTX theme has no color scheme.")
-                    for child in list(scheme):
-                        name = child.tag.rsplit("}", 1)[-1]
-                        if name not in colors:
-                            continue
-                        for existing in list(child):
-                            child.remove(existing)
-                        ET.SubElement(child, f"{{{namespace}}}srgbClr", {"val": colors[name].lstrip("#").upper()})
-                    for font in root.findall(f".//{{{namespace}}}majorFont/{{{namespace}}}latin") + root.findall(
-                        f".//{{{namespace}}}minorFont/{{{namespace}}}latin"
-                    ):
-                        font.set("typeface", typeface)
-                    for font in root.findall(f".//{{{namespace}}}majorFont/{{{namespace}}}ea") + root.findall(
-                        f".//{{{namespace}}}minorFont/{{{namespace}}}ea"
-                    ):
-                        font.set("typeface", typeface)
-                    content = ET.tostring(root, encoding="utf-8", xml_declaration=True)
-                target.writestr(info, content)
-        os.replace(temporary, path)
-    finally:
-        temporary.unlink(missing_ok=True)
-
-
-def _install_pair_atomically(pptx_temp: Path, pptx_output: Path, report_temp: Path, report_output: Path) -> None:
-    backups: list[tuple[Path, Path]] = []
-    installed: list[Path] = []
-    try:
-        for destination in (pptx_output, report_output):
+        for destination in (output, report):
             if destination.exists():
-                descriptor, backup_name = tempfile.mkstemp(
-                    prefix=f".{destination.name}.", suffix=".bak", dir=destination.parent,
-                )
-                os.close(descriptor)
-                Path(backup_name).unlink()
-                backup = Path(backup_name)
-                os.replace(destination, backup)
-                backups.append((destination, backup))
-        for temporary, destination in ((pptx_temp, pptx_output), (report_temp, report_output)):
-            os.replace(temporary, destination)
-            installed.append(destination)
+                fd, name = tempfile.mkstemp(prefix=f".{destination.name}.", suffix=".bak", dir=destination.parent); os.close(fd); backup = Path(name); backup.unlink(); os.replace(destination, backup); backups.append((destination, backup))
+        for temporary, destination in ((pptx_temp, output), (report_temp, report)): os.replace(temporary, destination); installed.append(destination)
     except Exception:
-        for path in installed:
-            path.unlink(missing_ok=True)
-        for destination, backup in reversed(backups):
-            os.replace(backup, destination)
+        for item in installed: item.unlink(missing_ok=True)
+        for destination, backup in reversed(backups): os.replace(backup, destination)
         raise
     finally:
-        for _, backup in backups:
-            backup.unlink(missing_ok=True)
+        for _, backup in backups: backup.unlink(missing_ok=True)
 
 
-def export_hybrid_pptx(
-    *,
-    project: Path,
-    outline: dict,
-    html_path: Path,
-    chrome: str,
-    output: Path,
-    report_output: Path,
-    capture: Callable[[str, Path, list[dict], list[list[dict]], Path], list[dict]] = collect_render_layers,
-) -> dict:
-    """Build and atomically install a hybrid PPTX plus coverage report."""
-    pptx = require_python_pptx()
-    project, output, report_output = project.resolve(), output.resolve(), report_output.resolve()
-    if output.suffix.lower() != ".pptx":
-        raise SystemExit("PPTX output must use the .pptx extension.")
-    if report_output.suffix.lower() != ".json":
-        raise SystemExit("PPTX coverage report must use the .json extension.")
-    if output == report_output:
-        raise SystemExit("PPTX output and coverage report must be different files.")
-    if not output.parent.is_dir() or not report_output.parent.is_dir():
-        raise SystemExit("PPTX output and report parent directories must already exist.")
-    media_by_slide = _media_plan(outline, project)
-    temporary_root = Path(tempfile.mkdtemp(prefix=".oil-ppt-pptx-", dir=project))
-    pptx_descriptor, pptx_name = tempfile.mkstemp(prefix=f".{output.name}.", suffix=".tmp", dir=output.parent)
-    os.close(pptx_descriptor)
-    report_descriptor, report_name = tempfile.mkstemp(prefix=f".{report_output.name}.", suffix=".tmp", dir=report_output.parent)
-    os.close(report_descriptor)
-    pptx_temp, report_temp = Path(pptx_name), Path(report_name)
+def export_hybrid_pptx(*, project: Path, deck: dict, html_path: Path, chrome: str, output: Path, report_output: Path, capture: Callable[[str, Path, dict, Path], list[dict]] = collect_render_layers) -> dict:
+    """Build a hybrid PPTX using only the deck manifest and rendered final HTML."""
+    pptx = require_python_pptx(); project, html_path, output, report_output = project.resolve(), html_path.resolve(), output.resolve(), report_output.resolve()
+    if not html_path.is_file(): raise SystemExit(f"Canonical HTML is missing: {html_path}")
+    if output.suffix.lower() != ".pptx" or report_output.suffix.lower() != ".json" or output == report_output: raise SystemExit("PPTX output must be .pptx and coverage output must be a distinct .json file.")
+    if not output.parent.is_dir() or not report_output.parent.is_dir(): raise SystemExit("PPTX output parent directories must already exist.")
+    paths = deck.get("slides") if isinstance(deck, dict) else None
+    if not isinstance(paths, list) or not paths: raise SystemExit("PPTX export requires a deck manifest with slide HTML paths.")
+    work = Path(tempfile.mkdtemp(prefix=".oil-ppt-pptx-", dir=project)); fd, name = tempfile.mkstemp(prefix=f".{output.name}.", suffix=".tmp", dir=output.parent); os.close(fd); pptx_temp = Path(name); fd, name = tempfile.mkstemp(prefix=f".{report_output.name}.", suffix=".tmp", dir=report_output.parent); os.close(fd); report_temp = Path(name)
     try:
-        backgrounds = temporary_root / "backgrounds"
-        backgrounds.mkdir()
-        layouts = capture(chrome, html_path, outline["slides"], media_by_slide, backgrounds)
-        if len(layouts) != len(outline["slides"]):
-            raise RuntimeError("Browser capture returned an incomplete slide set.")
-        presentation = pptx.Presentation()
-        presentation.slide_width = SLIDE_WIDTH_EMU
-        presentation.slide_height = SLIDE_HEIGHT_EMU
-        presentation.core_properties.title = str(outline.get("title") or "oil-ppt")
-        presentation.core_properties.subject = "Hybrid editable export from canonical oil-ppt HTML"
-        fixed_time = datetime(2000, 1, 1, tzinfo=timezone.utc)
-        presentation.core_properties.created = fixed_time
-        presentation.core_properties.modified = fixed_time
-        while presentation.slides:
-            slide_id = presentation.slides._sldIdLst[0]
-            presentation.part.drop_rel(slide_id.rId)
-            del presentation.slides._sldIdLst[0]
-        per_slide: list[dict] = []
-        total_text = total_media = total_unsupported = total_rasterized = 0
-        for index, (outline_slide, media_plan, layout) in enumerate(
-            zip(outline["slides"], media_by_slide, layouts), start=1,
-        ):
-            slide = presentation.slides.add_slide(presentation.slide_layouts[6])
-            slide.shapes.add_picture(
-                layout["background"], 0, 0, width=SLIDE_WIDTH_EMU, height=SLIDE_HEIGHT_EMU,
-            )
-            text_items = layout.get("text") or []
-            for item in text_items:
-                _add_text(slide, item, pptx)
-            unsupported: list[dict] = []
+        backgrounds = work / "backgrounds"; backgrounds.mkdir(); layouts = capture(chrome, html_path, deck, backgrounds)
+        if len(layouts) != len(paths): raise RuntimeError("Browser capture returned an incomplete slide set.")
+        presentation = pptx.Presentation(); presentation.slide_width = SLIDE_WIDTH_EMU; presentation.slide_height = SLIDE_HEIGHT_EMU; presentation.core_properties.title = str(deck.get("title") or "oil-ppt"); presentation.core_properties.created = presentation.core_properties.modified = datetime(2000, 1, 1, tzinfo=timezone.utc)
+        while presentation.slides: presentation.part.drop_rel(presentation.slides._sldIdLst[0].rId); del presentation.slides._sldIdLst[0]
+        per_slide: list[dict] = []; total_text = total_media = total_unsupported = 0
+        for page, layout in enumerate(layouts, start=1):
+            slide = presentation.slides.add_slide(presentation.slide_layouts[6]); slide.shapes.add_picture(layout["background"], 0, 0, width=SLIDE_WIDTH_EMU, height=SLIDE_HEIGHT_EMU)
+            classified = classify_rendered_slide(layout); unsupported = list(classified["unsupported"])
+            for item in classified["native_text"]: _add_text(slide, item)
             native_media = 0
-            rendered_images = {int(item.get("index", -1)): item for item in layout.get("images") or []}
-            for media_ordinal, planned in enumerate(media_plan, start=1):
-                rendered = rendered_images.get(planned["rendered_index"])
-                if not planned.get("native"):
-                    unsupported.append({
-                        "kind": "project-media", "field": planned["field"], "source": planned["source"],
-                        "reason": planned.get("reason") or "unsupported media format",
-                        "preserved_in": "background",
-                    })
-                    continue
-                if rendered is None:
-                    unsupported.append({
-                        "kind": "project-media", "field": planned["field"], "source": planned["source"],
-                        "reason": "structured media was not found in the rendered slide",
-                        "preserved_in": "background",
-                    })
-                    continue
-                warning = _add_picture(
-                    slide, Path(planned["path"]), rendered, pptx, temporary_root, media_ordinal,
-                )
-                native_media += 1
-                if warning:
-                    unsupported.append({
-                        "kind": "media-effect", "field": planned["field"], "source": planned["source"],
-                        "reason": warning, "preserved_in": "native-media-with-approximation",
-                    })
-            fixed_text = layout.get("fixedText") or []
-            if fixed_text:
-                unsupported.append({
-                    "kind": "unstructured-rendered-text", "count": len(fixed_text),
-                    "examples": fixed_text[:8], "reason": "template-owned labels have no structured outline binding",
-                    "preserved_in": "background",
-                })
-            rasterized_regions = [{
-                "kind": "deterministic-background", "source": str(html_path),
-                "sha256": _sha256(Path(layout["background"])),
-                "excluded_native_text": len(text_items), "excluded_native_media": native_media,
-                "contains": "CSS geometry, decorations, icons, and explicitly unsupported content",
-            }]
-            text_roles: dict[str, int] = {}
-            for item in text_items:
-                role = _text_role(str(item.get("path") or ""))
-                text_roles[role] = text_roles.get(role, 0) + 1
-            per_slide.append({
-                "page": index, "slide_id": outline_slide["id"], "title": outline_slide["title"],
-                "native_text_count": len(text_items), "native_text_by_role": text_roles,
-                "native_media_count": native_media, "structured_media_count": len(media_plan),
-                "unsupported_structure_count": sum(int(item.get("count", 1)) for item in unsupported),
-                "rasterized_regions": rasterized_regions, "unsupported_structures": unsupported,
-            })
-            total_text += len(text_items)
-            total_media += native_media
-            total_unsupported += sum(int(item.get("count", 1)) for item in unsupported)
-            total_rasterized += len(rasterized_regions)
-        presentation.save(str(pptx_temp))
-        raw_palette = outline.get("palette") or "oil-yellow"
-        resolved_palette = named_palette(raw_palette) if isinstance(raw_palette, str) else normalize_palette(raw_palette)
-        profile_name = str(outline.get("typography") or "clean")
-        if profile_name not in TYPE_PROFILES:
-            raise RuntimeError(f"Unknown typography profile during PPTX export: {profile_name}")
-        theme_typeface = _font_name(TYPE_PROFILES[profile_name]["zh"])
-        _apply_ooxml_theme(pptx_temp, resolved_palette, theme_typeface)
-        with pptx_temp.open("rb") as stream:
-            os.fsync(stream.fileno())
-        _validate_pptx(pptx_temp, len(outline["slides"]), pptx)
-        native_total = total_text + total_media
-        eligible_total = native_total + total_unsupported
-        report = {
-            "schema_version": COVERAGE_SCHEMA, "ok": True,
-            "project": str(project), "canonical_html": str(html_path),
-            "pptx": str(output), "pptx_sha256": _sha256(pptx_temp),
-            "slide_size": {"width_emu": SLIDE_WIDTH_EMU, "height_emu": SLIDE_HEIGHT_EMU, "aspect_ratio": "16:9"},
-            "theme": {"palette": resolved_palette, "typography": profile_name, "typeface": theme_typeface},
-            "summary": {
-                "slide_count": len(per_slide), "native_text_count": total_text,
-                "native_media_count": total_media, "native_object_count": native_total,
-                "rasterized_region_count": total_rasterized,
-                "unsupported_structure_count": total_unsupported,
-                "coverage_denominator": eligible_total,
-                "editable_coverage_percent": round(100 * native_total / eligible_total, 2) if eligible_total else 100.0,
-            },
-            "methodology": (
-                "Coverage counts native structured text/media objects against those objects plus explicitly "
-                "unsupported structures. CSS geometry and decoration are preserved in one sanitized raster background per slide."
-            ),
-            "slides": per_slide,
-        }
-        with report_temp.open("w", encoding="utf-8") as stream:
-            json.dump(report, stream, ensure_ascii=False, indent=2)
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        _install_pair_atomically(pptx_temp, output, report_temp, report_output)
-        return report
+            for ordinal, item in enumerate(classified["native_images"], start=1):
+                image_path, reason = _source_to_file(str(item.get("src") or ""), project, work, page * 1000 + ordinal)
+                if reason: unsupported.append({"kind": "rendered-image", "selector": item.get("selector"), "source": item.get("src", ""), "reason": reason, "preserved_in": "background"}); continue
+                _add_picture(slide, image_path, item); native_media += 1
+            unsupported_count = len(unsupported); per_slide.append({"page": page, "slide_id": layout.get("slideId"), "title": layout.get("title"), "native_text_count": len(classified["native_text"]), "native_media_count": native_media, "rasterized_regions": [{"kind": "deterministic-background", "source": str(html_path), "sha256": _sha256(Path(layout["background"])), "contains": "CSS geometry, decoration, and non-native rendered content"}], "unsupported_structure_count": unsupported_count, "unsupported_structures": unsupported})
+            total_text += len(classified["native_text"]); total_media += native_media; total_unsupported += unsupported_count
+        presentation.save(str(pptx_temp)); _validate_pptx(pptx_temp, len(paths), pptx)
+        theme = validate_theme(deck.get("theme")); palette = {"name": theme["palette"], **PALETTES[theme["palette"]]}; profile = theme["typography"]; typeface = _font_name(TYPOGRAPHY[profile]["font-zh"])
+        native_total, denominator = total_text + total_media, total_text + total_media + total_unsupported
+        report = {"schema_version": COVERAGE_SCHEMA, "ok": True, "project": str(project), "canonical_html": str(html_path), "pptx": str(output), "pptx_sha256": _sha256(pptx_temp), "slide_size": {"width_emu": SLIDE_WIDTH_EMU, "height_emu": SLIDE_HEIGHT_EMU, "aspect_ratio": "16:9"}, "theme": {"palette": palette, "typography": profile, "typeface": typeface}, "summary": {"slide_count": len(per_slide), "native_text_count": total_text, "native_media_count": total_media, "native_object_count": native_total, "rasterized_region_count": len(per_slide), "unsupported_structure_count": total_unsupported, "coverage_denominator": denominator, "editable_coverage_percent": round(100 * native_total / denominator, 2) if denominator else 100.0}, "methodology": "Coverage counts only final-DOM text and images restored as safe native objects. Every other rendered result remains in a deterministic slide background.", "slides": per_slide}
+        report_temp.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"); _install_pair_atomically(pptx_temp, output, report_temp, report_output); return report
     finally:
-        pptx_temp.unlink(missing_ok=True)
-        report_temp.unlink(missing_ok=True)
-        shutil.rmtree(temporary_root, ignore_errors=True)
+        pptx_temp.unlink(missing_ok=True); report_temp.unlink(missing_ok=True); shutil.rmtree(work, ignore_errors=True)

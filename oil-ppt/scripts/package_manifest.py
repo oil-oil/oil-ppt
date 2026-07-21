@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_MANIFEST_NAME = "manifest.json"
 MANIFEST_SCHEMA = "oil-ppt.package/v1"
 SCHEMA_VERSION = MANIFEST_SCHEMA
-PACKAGE_VERSION = "0.3.0"
+PACKAGE_VERSION = "1.0.0"
 HASH_CHUNK_SIZE = 1024 * 1024
 
 

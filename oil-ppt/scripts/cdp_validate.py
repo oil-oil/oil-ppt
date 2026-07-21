@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stdlib-only Chrome DevTools client for oil-ppt DOM validation."""
+"""Stdlib-only Chrome DevTools client for generic slide DOM validation."""
 from __future__ import annotations
 
 import base64
@@ -17,10 +17,7 @@ import urllib.request
 from pathlib import Path
 
 
-VISUAL_FINDING_CATEGORIES = frozenset({
-    "content-bounds", "surface-clipping", "decoration", "relationship-edge", "ring-geometry",
-    "surface-paint", "line-density",
-})
+VISUAL_FINDING_CATEGORIES = frozenset({"content-bounds", "readability", "contrast", "page-scroll"})
 
 
 def _recv_exact(sock: socket.socket, size: int) -> bytes:
@@ -37,7 +34,9 @@ def _recv_exact(sock: socket.socket, size: int) -> bytes:
 class WebSocket:
     def __init__(self, url: str):
         parsed = urllib.parse.urlparse(url)
-        self.sock = socket.create_connection((parsed.hostname or "127.0.0.1", parsed.port or 80), timeout=5)
+        self.sock = socket.create_connection(
+            (parsed.hostname or "127.0.0.1", parsed.port or 80), timeout=5
+        )
         key = base64.b64encode(secrets.token_bytes(16)).decode("ascii")
         path = parsed.path + (f"?{parsed.query}" if parsed.query else "")
         request = (
@@ -57,7 +56,6 @@ class WebSocket:
             self.sock.close()
         except OSError:
             pass
-
     def send_json(self, value: dict) -> None:
         payload = json.dumps(value, separators=(",", ":")).encode("utf-8")
         mask = secrets.token_bytes(4)
@@ -71,7 +69,7 @@ class WebSocket:
             header.extend([0x80 | 127])
             header.extend(struct.pack("!Q", len(payload)))
         header.extend(mask)
-        masked = bytes(byte ^ mask[i % 4] for i, byte in enumerate(payload))
+        masked = bytes(byte ^ mask[index % 4] for index, byte in enumerate(payload))
         self.sock.sendall(header + masked)
 
     def recv_json(self) -> dict:
@@ -89,7 +87,7 @@ class WebSocket:
             mask = _recv_exact(self.sock, 4) if second & 0x80 else b""
             payload = _recv_exact(self.sock, length)
             if mask:
-                payload = bytes(byte ^ mask[i % 4] for i, byte in enumerate(payload))
+                payload = bytes(byte ^ mask[index % 4] for index, byte in enumerate(payload))
             if opcode == 0x8:
                 raise RuntimeError("Chrome DevTools websocket closed before validation completed.")
             if opcode in {0x1, 0x2}:
@@ -101,6 +99,20 @@ class WebSocket:
                 continue
             if finished:
                 return json.loads(b"".join(chunks).decode("utf-8"))
+
+
+def _wait_for_devtools_port(port_file: Path, deadline: float, message: str = "Chrome did not expose a DevTools port.") -> int:
+    """Wait through Chrome's transient empty/partial port-file creation."""
+    while time.monotonic() < deadline:
+        try:
+            lines = port_file.read_text(encoding="utf-8").splitlines()
+            port = int(lines[0].strip()) if lines and lines[0].strip() else 0
+            if 0 < port < 65536:
+                return port
+        except (OSError, UnicodeError, ValueError):
+            pass
+        time.sleep(0.05)
+    raise RuntimeError(message)
 
 
 def _which(name: str) -> str | None:
@@ -118,9 +130,17 @@ def _stop_browser(process: subprocess.Popen, profile: Path) -> None:
         except ProcessLookupError:
             pass
         if pkill := _which("pkill"):
-            subprocess.run([pkill, "-TERM", "-f", f"--user-data-dir={profile}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(
+                [pkill, "-TERM", "-f", f"--user-data-dir={profile}"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
     elif process.poll() is None:
-        subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
     try:
         process.wait(timeout=3)
     except subprocess.TimeoutExpired:
@@ -133,544 +153,365 @@ def validate_file(
     timeout: float = 15,
     viewport: tuple[int, int] | None = None,
 ) -> dict:
+    """Render an HTML deck and return generic geometry and media findings.
+
+    The validator understands only the public slide contract, so custom page DOM
+    remains a first-class authoring option.
+    """
     profile_ctx = tempfile.TemporaryDirectory(prefix="oil-ppt-cdp-")
     profile = Path(profile_ctx.name)
     command = [
-        chrome, "--headless", "--no-sandbox", "--allow-file-access-from-files",
-        "--disable-background-networking", "--disable-background-timer-throttling", "--disable-backgrounding-occluded-windows",
-        "--disable-component-update", "--disable-default-apps", "--disable-renderer-backgrounding", "--disable-sync",
-        "--disable-features=PaintHolding,RenderDocument", "--enable-features=CDPScreenshotNewSurface",
-        "--enable-unsafe-swiftshader", "--force-color-profile=srgb", "--hide-scrollbars",
-        "--metrics-recording-only", "--no-first-run", f"--user-data-dir={profile}", "--remote-debugging-port=0",
+        chrome,
+        "--headless",
+        "--no-sandbox",
+        "--allow-file-access-from-files",
+        "--disable-background-networking",
+        "--disable-background-timer-throttling",
+        "--disable-backgrounding-occluded-windows",
+        "--disable-component-update",
+        "--disable-default-apps",
+        "--disable-renderer-backgrounding",
+        "--disable-sync",
+        "--disable-features=PaintHolding,RenderDocument",
+        "--enable-features=CDPScreenshotNewSurface",
+        "--enable-unsafe-swiftshader",
+        "--force-color-profile=srgb",
+        "--hide-scrollbars",
+        "--metrics-recording-only",
+        "--no-first-run",
+        f"--user-data-dir={profile}",
+        "--remote-debugging-port=0",
         *([f"--window-size={viewport[0]},{viewport[1]}"] if viewport else []),
         html_file.resolve().as_uri(),
     ]
-    process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
     websocket: WebSocket | None = None
     try:
         deadline = time.monotonic() + timeout
         port_file = profile / "DevToolsActivePort"
-        while time.monotonic() < deadline and not port_file.exists():
-            time.sleep(.05)
-        if not port_file.exists():
-            raise RuntimeError("Chrome did not expose a DevTools port.")
-        port = int(port_file.read_text(encoding="utf-8").splitlines()[0])
+        port = _wait_for_devtools_port(port_file, deadline)
         pages: list[dict] = []
         while time.monotonic() < deadline and not pages:
             try:
-                with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=2) as response:
+                with urllib.request.urlopen(
+                    f"http://127.0.0.1:{port}/json/list", timeout=2
+                ) as response:
                     pages = [item for item in json.load(response) if item.get("type") == "page"]
             except OSError:
-                time.sleep(.05)
+                time.sleep(0.05)
         if not pages:
             raise RuntimeError("Chrome opened no inspectable page.")
         target_uri = html_file.resolve().as_uri()
-        page = next((item for item in pages if item.get("url", "").startswith(target_uri)), pages[0])
+        page = next(
+            (item for item in pages if item.get("url", "").startswith(target_uri)), pages[0]
+        )
         websocket = WebSocket(page["webSocketDebuggerUrl"])
         websocket.sock.settimeout(timeout)
-        expression = """(() => {
+        expression = r"""(() => {
           const documents = [document, ...[...document.querySelectorAll('iframe')]
             .map(frame => { try { return frame.contentDocument; } catch (_) { return null; } })
             .filter(Boolean)];
-          const slideDocuments = documents.filter(doc => doc.querySelector('.oil-slide'));
           const all = selector => documents.flatMap(doc => [...doc.querySelectorAll(selector)]);
-          const styleOf = (node, pseudo=null) => node.ownerDocument.defaultView.getComputedStyle(node, pseudo);
-          const slidesNodes = all('.oil-slide');
-          const slides = slidesNodes.length;
-          const stage = all('.deck-stage, .slide-preview-stage')[0] || null;
-          const images = documents.flatMap(doc => [...doc.images]);
-          const imagesReady = images.every(image => image.complete);
-          const brokenImages = images.filter(image => image.complete && (!image.naturalWidth || !image.naturalHeight));
-          const invalidBleeds = all('[data-bleed]').flatMap(bleed => {
-            const slide = bleed.closest('.oil-slide');
-            if (!slide) return [{slide:'unknown', reason:'missing-slide'}];
-            const style = styleOf(bleed);
-            const side = bleed.dataset.side || 'right';
-            const bleedRect = bleed.getBoundingClientRect();
-            const slideRect = slide.getBoundingClientRect();
-            const touchesEdge = side === 'full'
-              ? Math.abs(bleedRect.left - slideRect.left) <= 2
-                && Math.abs(bleedRect.right - slideRect.right) <= 2
-                && Math.abs(bleedRect.top - slideRect.top) <= 2
-                && Math.abs(bleedRect.bottom - slideRect.bottom) <= 2
-              : side === 'left'
-                ? Math.abs(bleedRect.left - slideRect.left) <= 2
-                : Math.abs(bleedRect.right - slideRect.right) <= 2;
-            return style.position === 'absolute' && touchesEdge
-              ? []
-              : [{slide:slide.dataset.slideId || 'unknown', reason:`position=${style.position},side=${side},touches=${touchesEdge}`}];
-          });
-          const invalidLayouts = all('.slide-safe [data-layout]').flatMap(layout => {
-            if (!layout.getClientRects().length || styleOf(layout).display === 'none') return [];
-            const safe = layout.closest('.slide-safe');
-            const slide = layout.closest('.oil-slide');
-            if (!safe || !slide) return [{slide:'unknown', reason:'layout-missing-safe-area'}];
-            const box = layout.getBoundingClientRect();
-            const bounds = safe.getBoundingClientRect();
-            const inside = box.left >= bounds.left - 3 && box.right <= bounds.right + 3
-              && box.top >= bounds.top - 3 && box.bottom <= bounds.bottom + 3;
-            if (!inside) return [{slide:slide.dataset.slideId || 'unknown', reason:'layout-outside-safe-area'}];
-            const outsideChild = [...layout.children].find(child => {
-              if (!child.getClientRects().length) return false;
-              const childStyle = styleOf(child);
-              if (childStyle.display === 'none' || childStyle.visibility === 'hidden'
-                || childStyle.position === 'absolute' || childStyle.position === 'fixed') return false;
-              const childBox = child.getBoundingClientRect();
-              return childBox.left < box.left - 3 || childBox.right > box.right + 3
-                || childBox.top < box.top - 3 || childBox.bottom > box.bottom + 3;
-            });
-            return outsideChild ? [{
-              slide:slide.dataset.slideId || 'unknown',
-              reason:'layout-child-outside-container',
-              child:outsideChild.className || outsideChild.tagName.toLowerCase()
-            }] : [];
-          });
-          const textCandidates = all('[data-fit], [data-sentence], [data-slot], [data-copy-title], [data-copy-body]');
-          const invalidText = textCandidates.flatMap(text => {
-            if (!text.getClientRects().length || styleOf(text).display === 'none') return [];
-            if (text.hasAttribute('data-overflow-ok') || !(text.textContent || '').replace(/\\s+/g, ' ').trim()) return [];
-            const slide = text.closest('.oil-slide');
-            const overflow = text.scrollWidth > text.clientWidth + 1 || text.scrollHeight > text.clientHeight + 1;
-            return overflow ? [{
-              slide:slide?.dataset.slideId || 'unknown', reason:'text-overflow',
-              node:text.tagName.toLowerCase(), className:text.className || '',
-              path:text.dataset.editPath || '',
-              text:(text.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 120),
-              client:`${text.clientWidth}x${text.clientHeight}`, scroll:`${text.scrollWidth}x${text.scrollHeight}`,
-              overflowWidth:Math.max(0, text.scrollWidth - text.clientWidth),
-              overflowHeight:Math.max(0, text.scrollHeight - text.clientHeight),
-              fontSize:styleOf(text).fontSize, minSize:text.dataset.minSize || '', maxHeight:styleOf(text).maxHeight,
-            }] : [];
-          });
-          const invalidCopyFlows = all('[data-copy-flow]').flatMap(flow => {
-            const title = [...flow.children].find(node => node.matches?.('[data-copy-title]'));
-            const body = [...flow.children].find(node => node.matches?.('[data-copy-body]'));
-            if (!title || !body || body.previousElementSibling !== title) return [];
-            if (!title.textContent.trim() || !body.textContent.trim()) return [];
-            if (!title.getClientRects().length || !body.getClientRects().length) return [];
-            const gap = body.getBoundingClientRect().top - title.getBoundingClientRect().bottom;
-            if (gap <= 72) return [];
-            return [{
-              slide:flow.closest('.oil-slide')?.dataset.slideId || 'unknown',
-              reason:'copy-gap', gap:Math.round(gap)
-            }];
-          });
-          const invalidBounds = all('.slide-safe [data-bound]').flatMap(node => {
-            if (!node.getClientRects().length) return [];
-            const style = styleOf(node);
-            if (style.display === 'none' || style.visibility === 'hidden') return [];
-            const parent = node.parentElement?.closest('[data-bound], .slide-safe');
-            const slide = node.closest('.oil-slide');
-            if (!parent || !slide) return [{slide:slide?.dataset.slideId || 'unknown', reason:'bound-missing-parent'}];
-            const box = node.getBoundingClientRect();
-            const bounds = parent.getBoundingClientRect();
-            const inside = box.left >= bounds.left - 3 && box.right <= bounds.right + 3
-              && box.top >= bounds.top - 3 && box.bottom <= bounds.bottom + 3;
-            return inside ? [] : [{
-              slide:slide.dataset.slideId || 'unknown',
-              reason:'bound-outside-parent',
-              node:node.className || node.tagName.toLowerCase()
-            }];
-          });
-          const invalidOptionalRegions = all('[data-optional-region]').flatMap(region => {
-            if (!region.getClientRects().length) return [];
-            const style = styleOf(region);
-            if (region.hidden || region.getAttribute('aria-hidden') === 'true' || style.display === 'none') return [];
-            const hasText = (region.textContent || '').trim().length > 0;
-            const hasVisual = [...region.querySelectorAll('img,svg,canvas,video')].some(node => {
-              if (!node.getClientRects().length) return false;
-              if (node.tagName === 'IMG') return node.complete && node.naturalWidth > 0 && node.naturalHeight > 0;
-              const box = node.getBoundingClientRect();
-              return box.width > 1 && box.height > 1;
-            });
-            if (hasText || hasVisual) return [];
-            const slide = region.closest('.oil-slide');
-            return [{
-              slide:slide?.dataset.slideId || 'unknown',
-              reason:'empty-optional-region',
-              region:region.dataset.optionalRegion || region.className || region.tagName.toLowerCase()
-            }];
-          });
+          const styleOf = node => node.ownerDocument.defaultView.getComputedStyle(node);
           const visible = node => {
-            if (!node?.getClientRects().length) return false;
             const style = styleOf(node);
-            return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || 1) > .001;
+            return node.getClientRects().length > 0 && style.display !== 'none'
+              && style.visibility !== 'hidden' && Number(style.opacity || 1) > 0;
           };
-          const insideRect = (box, bounds, tolerance=3) => box.left >= bounds.left - tolerance
+          const slideId = node => node.closest('.oil-slide')?.dataset.slideId || 'unknown';
+          const describe = node => {
+            if (node.id) return `#${node.id}`;
+            const classes = [...node.classList].slice(0, 3).join('.');
+            return `${node.tagName.toLowerCase()}${classes ? '.' + classes : ''}`;
+          };
+          const inside = (box, bounds, tolerance=3) => box.left >= bounds.left - tolerance
             && box.right <= bounds.right + tolerance && box.top >= bounds.top - tolerance
             && box.bottom <= bounds.bottom + tolerance;
-          const rectIntersection = (box, bounds) => {
-            if (!box || !bounds) return null;
-            const left = Math.max(box.left, bounds.left), right = Math.min(box.right, bounds.right);
-            const top = Math.max(box.top, bounds.top), bottom = Math.min(box.bottom, bounds.bottom);
-            if (right <= left || bottom <= top) return null;
-            return {left, right, top, bottom, width:right - left, height:bottom - top};
-          };
-          const polygonArea = points => Math.abs(points.reduce((sum, point, index) => {
-            const next = points[(index + 1) % points.length];
-            return sum + point.x * next.y - point.y * next.x;
-          }, 0)) / 2;
-          const clipPolygon = (points, axis, boundary, keepGreater) => {
-            const output = [];
-            points.forEach((point, index) => {
-              const next = points[(index + 1) % points.length];
-              const pointInside = keepGreater ? point[axis] >= boundary : point[axis] <= boundary;
-              const nextInside = keepGreater ? next[axis] >= boundary : next[axis] <= boundary;
-              if (pointInside) output.push(point);
-              if (pointInside !== nextInside) {
-                const ratio = (boundary - point[axis]) / (next[axis] - point[axis]);
-                output.push({
-                  x:point.x + ratio * (next.x - point.x),
-                  y:point.y + ratio * (next.y - point.y),
-                });
-              }
-            });
-            return output;
-          };
-          const polygonRectOverlapRatio = (points, bounds) => {
-            const area = polygonArea(points);
-            if (!area) return 0;
-            let clipped = points;
-            for (const [axis, boundary, keepGreater] of [
-              ['x', bounds.left, true], ['x', bounds.right, false],
-              ['y', bounds.top, true], ['y', bounds.bottom, false],
-            ]) {
-              clipped = clipPolygon(clipped, axis, boundary, keepGreater);
-              if (!clipped.length) return 0;
-            }
-            return polygonArea(clipped) / area;
-          };
-          const invalidContentBounds = all('.slide-safe [data-fit], .slide-safe [data-sentence], .slide-safe [data-slot], .slide-safe [data-copy-title], .slide-safe [data-copy-body], .slide-safe img, .slide-safe video, .slide-safe canvas, .slide-safe svg, .slide-safe svg text').flatMap(node => {
-            if (!visible(node) || node.closest('[data-bleed]')) return [];
-            const owner = node.parentElement?.closest('[data-bound], [data-layout], .oil-surface, .oil-media, .oil-browser');
-            if (!owner || owner === node || !visible(owner)) return [];
+          const slides = all('.oil-slide');
+          // Aggregated decks normally hide every slide except the active one.
+          // Browser QA must still measure the whole deck, so expose every slide
+          // inside this disposable validation process only.
+          slides.forEach(slide => {
+            slide.style.setProperty('visibility', 'visible', 'important');
+            slide.style.setProperty('opacity', '1', 'important');
+            slide.style.setProperty('pointer-events', 'auto', 'important');
+            slide.setAttribute('aria-hidden', 'false');
+          });
+          const stages = all('.deck-stage, .slide-preview-stage');
+          const images = documents.flatMap(doc => [...doc.images]);
+          const brokenImages = images.filter(image => image.complete
+            && (!image.naturalWidth || !image.naturalHeight));
+          const missingSafeArea = slides.filter(slide => !slide.querySelector(':scope > .slide-safe'))
+            .map(slide => ({slide: slide.dataset.slideId || 'unknown', reason: 'missing-slide-safe'}));
+
+          const invalidLayouts = all('[data-layout]').flatMap(layout => {
+            if (!visible(layout)) return [];
+            const safe = layout.closest('.slide-safe');
+            const slide = layout.closest('.oil-slide');
+            if (!safe || !slide) return [{slide: slideId(layout), node: describe(layout), reason: 'layout-missing-safe-area'}];
+            return inside(layout.getBoundingClientRect(), safe.getBoundingClientRect()) ? []
+              : [{slide: slideId(layout), node: describe(layout), reason: 'layout-outside-safe-area'}];
+          });
+
+          const invalidBleeds = all('[data-bleed]').flatMap(node => {
+            if (!visible(node)) return [];
+            const slide = node.closest('.oil-slide');
+            if (!slide) return [{slide: 'unknown', node: describe(node), reason: 'bleed-missing-slide'}];
             const box = node.getBoundingClientRect();
-            const bounds = owner.getBoundingClientRect();
-            if (insideRect(box, bounds)) return [];
-            return [{
-              slide:node.closest('.oil-slide')?.dataset.slideId || 'unknown',
-              reason:'content-outside-semantic-container',
-              node:node.className?.baseVal || node.className || node.tagName.toLowerCase(),
-              owner:owner.className || owner.tagName.toLowerCase()
-            }];
+            const bounds = slide.getBoundingClientRect();
+            const side = node.dataset.bleed || node.dataset.side || 'full';
+            const touches = side === 'left' ? Math.abs(box.left - bounds.left) <= 3
+              : side === 'right' ? Math.abs(box.right - bounds.right) <= 3
+              : side === 'top' ? Math.abs(box.top - bounds.top) <= 3
+              : side === 'bottom' ? Math.abs(box.bottom - bounds.bottom) <= 3
+              : Math.abs(box.left - bounds.left) <= 3 && Math.abs(box.right - bounds.right) <= 3
+                && Math.abs(box.top - bounds.top) <= 3 && Math.abs(box.bottom - bounds.bottom) <= 3;
+            return touches ? [] : [{slide: slideId(node), node: describe(node), reason: `bleed-does-not-touch-${side}`}];
           });
-          const clipOwners = '.oil-media, .oil-browser, [data-clip="media"], [data-clip="browser"], [data-clip="shape"]';
-          const invalidSurfaceClips = all('.oil-surface').flatMap(surface => {
-            if (!visible(surface)) return [];
-            const style = styleOf(surface);
-            const clips = ['hidden', 'clip'].includes(style.overflowX) || ['hidden', 'clip'].includes(style.overflowY);
-            if (!clips || surface.matches(clipOwners)) return [];
-            return [{
-              slide:surface.closest('.oil-slide')?.dataset.slideId || 'unknown',
-              reason:'surface-clips-content',
-              node:surface.className || surface.tagName.toLowerCase(),
-              overflow:`${style.overflowX}/${style.overflowY}`
-            }];
-          });
-          const px = value => {
-            const parsed = Number.parseFloat(value);
-            return Number.isFinite(parsed) ? parsed : null;
+
+          const ignoredTextTags = new Set(['script', 'style', 'svg', 'path', 'defs', 'title']);
+          const ownText = node => [...node.childNodes]
+            .filter(child => child.nodeType === Node.TEXT_NODE)
+            .map(child => child.nodeValue || '')
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+          const parseColor = value => {
+            if (!value || value === 'none' || value === 'transparent') return null;
+            const match = value.match(/^rgba?\(([^)]+)\)$/i);
+            if (!match) return null;
+            const parts = match[1].replace(/\//g, ' ').split(/[\s,]+/).filter(Boolean).map(Number);
+            if (parts.length < 3 || parts.slice(0, 3).some(part => !Number.isFinite(part))) return null;
+            const alpha = parts.length > 3 && Number.isFinite(parts[3]) ? parts[3] : 1;
+            return {r: parts[0], g: parts[1], b: parts[2], a: Math.max(0, Math.min(1, alpha))};
           };
-          const pseudoRect = (owner, style) => {
-            const bounds = owner.getBoundingClientRect();
-            const scaleX = owner.offsetWidth ? bounds.width / owner.offsetWidth : 1;
-            const scaleY = owner.offsetHeight ? bounds.height / owner.offsetHeight : 1;
-            const rawWidth = px(style.width), rawHeight = px(style.height);
-            const width = rawWidth === null ? null : rawWidth * scaleX;
-            const height = rawHeight === null ? null : rawHeight * scaleY;
-            if (width === null || height === null) return null;
-            const left = px(style.left), right = px(style.right), top = px(style.top), bottom = px(style.bottom);
-            const x = left !== null ? bounds.left + left * scaleX : right !== null ? bounds.right - right * scaleX - width : null;
-            const y = top !== null ? bounds.top + top * scaleY : bottom !== null ? bounds.bottom - bottom * scaleY - height : null;
-            return x === null || y === null ? null : {left:x, top:y, right:x + width, bottom:y + height, width, height};
-          };
-          const transformedRect = (box, style, scaleX, scaleY) => {
-            if (!box || !style.transform || style.transform === 'none') return box;
-            let matrix;
-            try { matrix = new DOMMatrixReadOnly(style.transform); }
-            catch (_) { return box; }
-            const origin = String(style.transformOrigin || '0 0').split(/\\s+/).map(px);
-            const ox = box.left + (origin[0] ?? 0) * scaleX;
-            const oy = box.top + (origin[1] ?? 0) * scaleY;
-            const points = [
-              [box.left, box.top], [box.right, box.top],
-              [box.right, box.bottom], [box.left, box.bottom],
-            ].map(([x, y]) => ({
-              x: ox + matrix.a * (x - ox) + matrix.c * (y - oy) + matrix.e * scaleX,
-              y: oy + matrix.b * (x - ox) + matrix.d * (y - oy) + matrix.f * scaleY,
-            }));
-            const xs = points.map(point => point.x), ys = points.map(point => point.y);
-            const left = Math.min(...xs), right = Math.max(...xs), top = Math.min(...ys), bottom = Math.max(...ys);
-            return {left, right, top, bottom, width:right - left, height:bottom - top};
-          };
-          const pseudoVisible = style => style.content !== 'none' && style.display !== 'none'
-            && style.visibility !== 'hidden' && Number(style.opacity || 1) > .001;
-          const insetClipRect = (box, clipPath) => {
-            const match = clipPath.match(/^inset\\(([^)]*)\\)/);
-            if (!box || !match) return box;
-            const values = [...match[1].split(/\\bround\\b/)[0].matchAll(/(-?[\\d.]+)(%)/g)]
-              .map(item => Number(item[1]) / 100);
-            if (!values.length) return box;
-            const [top, right, bottom, left] = values.length === 1
-              ? [values[0], values[0], values[0], values[0]]
-              : values.length === 2 ? [values[0], values[1], values[0], values[1]]
-              : values.length === 3 ? [values[0], values[1], values[2], values[1]] : values;
+          const composite = (top, bottom) => {
+            const alpha = top.a + bottom.a * (1 - top.a);
+            if (alpha <= 0) return {r: 0, g: 0, b: 0, a: 0};
             return {
-              left:box.left + box.width * left, right:box.right - box.width * right,
-              top:box.top + box.height * top, bottom:box.bottom - box.height * bottom,
+              r: (top.r * top.a + bottom.r * bottom.a * (1 - top.a)) / alpha,
+              g: (top.g * top.a + bottom.g * bottom.a * (1 - top.a)) / alpha,
+              b: (top.b * top.a + bottom.b * bottom.a * (1 - top.a)) / alpha,
+              a: alpha,
             };
           };
-          const invalidDecorations = all('.oil-surface[data-decor]').flatMap(surface => {
-            if (!visible(surface) || surface.dataset.decor === 'none' || surface.dataset.decor === '') return [];
-            const style = styleOf(surface);
-            if (style.getPropertyValue('--decor-opacity').trim() === '0') return [];
-            const pseudo = styleOf(surface, '::after');
-            if (!pseudoVisible(pseudo)) return [];
-            const position = surface.dataset.decorPos || 'top-right';
-            const [vertical, horizontal] = position.split('-');
-            const box = pseudoRect(surface, pseudo);
-            const bounds = surface.getBoundingClientRect();
-            const scaleX = surface.offsetWidth ? bounds.width / surface.offsetWidth : 1;
-            const scaleY = surface.offsetHeight ? bounds.height / surface.offsetHeight : 1;
-            const paintedBox = transformedRect(box, pseudo, scaleX, scaleY);
-            const horizontalInset = px(style.getPropertyValue(`--decor-${horizontal}`));
-            const verticalInset = px(style.getPropertyValue(`--decor-${vertical}`));
-            const expectedLeft = box && horizontalInset !== null
-              ? (horizontal === 'left' ? bounds.left + horizontalInset * scaleX : bounds.right - horizontalInset * scaleX - box.width) : null;
-            const expectedTop = box && verticalInset !== null
-              ? (vertical === 'top' ? bounds.top + verticalInset * scaleY : bounds.bottom - verticalInset * scaleY - box.height) : null;
-            const wrongAnchor = !box || expectedLeft === null || expectedTop === null
-              || Math.abs(box.left - expectedLeft) > 3 || Math.abs(box.top - expectedTop) > 3;
-            const slide = surface.closest('.oil-slide');
-            const outsideSlide = paintedBox && slide && pseudo.clipPath === 'none'
-              && !insideRect(paintedBox, slide.getBoundingClientRect(), 3);
-            return [
-              ...(wrongAnchor ? [{
-                slide:slide?.dataset.slideId || 'unknown', reason:'decoration-anchor-mismatch',
-                decoration:surface.dataset.motif || surface.dataset.decor || 'unknown', expected:position
-              }] : []),
-              ...(outsideSlide ? [{
-                slide:slide?.dataset.slideId || 'unknown', reason:'decoration-outside-slide',
-                decoration:surface.dataset.motif || surface.dataset.decor || 'unknown'
-              }] : [])
-            ];
-          });
-          const invalidMotifBounds = all('.oil-surface[data-motif]').flatMap(surface => {
-            if (!visible(surface)) return [];
-            const pseudo = styleOf(surface, '::after');
-            if (!pseudoVisible(pseudo)) return [];
-            const bounds = surface.getBoundingClientRect();
-            const scaleX = surface.offsetWidth ? bounds.width / surface.offsetWidth : 1;
-            const scaleY = surface.offsetHeight ? bounds.height / surface.offsetHeight : 1;
-            const box = insetClipRect(transformedRect(pseudoRect(surface, pseudo), pseudo, scaleX, scaleY), pseudo.clipPath);
-            const slide = surface.closest('.oil-slide');
-            return box && slide && !insideRect(box, slide.getBoundingClientRect(), 3) ? [{
-              slide:slide.dataset.slideId || 'unknown', reason:'decoration-outside-slide',
-              decoration:surface.dataset.motif || 'unknown'
-            }] : [];
-          });
-          const invalidRelationshipEdges = all('[data-cycle-arrow], [data-relationship-arrow]').flatMap(arrow => {
-            if (!visible(arrow)) return [];
-            const relationship = arrow.closest('.cycle, [data-relationship-visual]');
-            const matrix = arrow.getScreenCTM?.();
-            const points = matrix && arrow.points ? Array.from(
-              {length:arrow.points.numberOfItems}, (_, index) => {
-                const point = arrow.points.getItem(index);
-                return new DOMPoint(point.x, point.y).matrixTransform(matrix);
-              }
-            ) : [];
-            let overlapRatio = 0;
-            const blocker = points.length >= 3 && relationship
-              && [...relationship.querySelectorAll('[data-visual-node]')].find(node => {
-              if (!visible(node)) return false;
-              overlapRatio = polygonRectOverlapRatio(points, node.getBoundingClientRect());
-              return overlapRatio >= .95;
-            });
-            return blocker ? [{
-              slide:arrow.closest('.oil-slide')?.dataset.slideId || 'unknown',
-              reason:'relationship-arrow-occluded',
-              edge:arrow.dataset.cycleArrow || arrow.dataset.relationshipArrow || 'unknown',
-              blocker:blocker.className || blocker.tagName.toLowerCase(),
-              overlapRatio:Number(overlapRatio.toFixed(3))
-            }] : [];
-          });
-          const invalidRingGeometry = all('[data-motif="ring"]').flatMap(motif => {
-            if (!visible(motif)) return [];
-            const slide = motif.closest('.oil-slide');
-            const node = motif.className || motif.tagName.toLowerCase();
-            const windows = [...motif.children].filter(child => child.classList?.contains('oil-shape-window'));
-            if (windows.length !== 1) return [{
-              slide:slide?.dataset.slideId || 'unknown', reason:'ring-window-missing', node
-            }];
-            const shapeWindow = windows[0];
-            const windowStyle = styleOf(shapeWindow);
-            const clipsShape = ['hidden', 'clip'].includes(windowStyle.overflowX)
-              && ['hidden', 'clip'].includes(windowStyle.overflowY);
-            if (!clipsShape) return [{
-              slide:slide?.dataset.slideId || 'unknown', reason:'ring-window-not-clipping', node
-            }];
-            const pseudo = styleOf(shapeWindow, '::after');
-            const box = pseudoVisible(pseudo) ? pseudoRect(shapeWindow, pseudo) : null;
-            const borders = [pseudo.borderTopWidth, pseudo.borderRightWidth, pseudo.borderBottomWidth, pseudo.borderLeftWidth].map(px);
-            const uniformBorder = borders.every(value => value !== null && value >= 3)
-              && Math.max(...borders) - Math.min(...borders) <= 1;
-            const radiusValue = pseudo.borderTopLeftRadius;
-            const radius = box && radiusValue.endsWith('%')
-              ? Math.min(box.width, box.height) * Number.parseFloat(radiusValue) / 100
-              : px(radiusValue);
-            const clipped = pseudo.clipPath && pseudo.clipPath !== 'none';
-            const borderCircle = box && uniformBorder
-              && radius !== null && radius >= Math.min(box.width, box.height) * .45;
-            const inner = px(pseudo.getPropertyValue('--oil-ring-inner'));
-            const outer = px(pseudo.getPropertyValue('--oil-ring-outer'));
-            const radialCircle = box && pseudo.backgroundImage.includes('radial-gradient')
-              && inner !== null && outer !== null && outer - inner >= 6;
-            if (clipped) return [{
-              slide:slide?.dataset.slideId || 'unknown', reason:'ring-is-clipped', node
-            }];
-            if (!(borderCircle || radialCircle)) return [{
-              slide:slide?.dataset.slideId || 'unknown', reason:'ring-is-not-circular', node
-            }];
-            const bounds = shapeWindow.getBoundingClientRect();
-            const scaleX = shapeWindow.offsetWidth ? bounds.width / shapeWindow.offsetWidth : 1;
-            const scaleY = shapeWindow.offsetHeight ? bounds.height / shapeWindow.offsetHeight : 1;
-            const paintedBox = transformedRect(box, pseudo, scaleX, scaleY);
-            let matrix = new DOMMatrixReadOnly();
-            try {
-              if (pseudo.transform && pseudo.transform !== 'none') matrix = new DOMMatrixReadOnly(pseudo.transform);
-            } catch (_) {
-              matrix = null;
-            }
-            const sourceCircular = box && Math.abs(box.width - box.height)
-              <= Math.max(2, Math.max(box.width, box.height) * .04);
-            const basisX = matrix ? Math.hypot(matrix.a * scaleX, matrix.b * scaleX) : 0;
-            const basisY = matrix ? Math.hypot(matrix.c * scaleY, matrix.d * scaleY) : 0;
-            const basisProduct = basisX * basisY;
-            const basisDot = matrix
-              ? matrix.a * matrix.c * scaleX * scaleY + matrix.b * matrix.d * scaleX * scaleY : Infinity;
-            const isotropicTransform = basisX > 0 && basisY > 0
-              && Math.abs(basisX - basisY) <= Math.max(.01, Math.max(basisX, basisY) * .04)
-              && Math.abs(basisDot) <= Math.max(.0001, basisProduct * .04);
-            const circular = paintedBox && sourceCircular && isotropicTransform;
-            if (!circular) return [{
-              slide:slide?.dataset.slideId || 'unknown', reason:'ring-is-not-circular', node
-            }];
-            const intersection = rectIntersection(paintedBox, bounds);
-            const visibleRatio = intersection && paintedBox.width > 0 && paintedBox.height > 0
-              ? (intersection.width * intersection.height) / (paintedBox.width * paintedBox.height) : 0;
-            const materiallyVisible = intersection
-              && intersection.width >= Math.max(8, paintedBox.width * .04)
-              && intersection.height >= Math.max(8, paintedBox.height * .04)
-              && visibleRatio >= .02;
-            if (!materiallyVisible) return [{
-              slide:slide?.dataset.slideId || 'unknown', reason:'ring-is-not-visible', node
-            }];
-            return paintedBox && insideRect(paintedBox, bounds, 1) ? [{
-              slide:slide?.dataset.slideId || 'unknown', reason:'ring-is-fully-exposed', node
-            }] : [];
-          });
-          const gradientCount = value => (value.match(/(?:repeating-)?(?:linear|radial|conic)-gradient\\(/g) || []).length;
-          const invalidPaint = all('.oil-surface:not(.oil-media)').flatMap(surface => {
-            if (!visible(surface)) return [];
-            const layers = [styleOf(surface), styleOf(surface, '::before'), styleOf(surface, '::after')]
-              .map(style => gradientCount(`${style.backgroundImage} ${style.maskImage}`));
-            const excessive = layers.findIndex(count => count > 2);
-            return excessive < 0 ? [] : [{
-              slide:surface.closest('.oil-slide')?.dataset.slideId || 'unknown',
-              reason:'excessive-gradient-layers', layer:['element', 'before', 'after'][excessive], count:layers[excessive]
-            }];
-          });
-          const paintedLine = (style, width, height) => {
-            const short = Math.min(width, height), long = Math.max(width, height);
-            if (!(short > 0 && short <= 2.5 && long >= 48 && long / short >= 12)) return false;
-            const hasBackground = style.backgroundColor !== 'transparent' && style.backgroundColor !== 'rgba(0, 0, 0, 0)';
-            const border = [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth]
-              .map(px).some(value => value !== null && value > 0);
-            return hasBackground || style.backgroundImage !== 'none' || border;
+          const channelLuminance = value => {
+            const normalized = value / 255;
+            return normalized <= .04045 ? normalized / 12.92 : Math.pow((normalized + .055) / 1.055, 2.4);
           };
-          const excessiveHairlines = slidesNodes.flatMap(slide => {
-            const lines = [];
-            for (const node of [slide, ...slide.querySelectorAll('*')]) {
-              if (!visible(node) || node.closest('[data-visual-edge]') || node.matches('.oil-browser, .oil-browser *')) continue;
-              const box = node.getBoundingClientRect();
-              if (paintedLine(styleOf(node), box.width, box.height)) lines.push(node.className || node.tagName.toLowerCase());
-              for (const pseudoName of ['::before', '::after']) {
-                const pseudo = styleOf(node, pseudoName);
-                if (!pseudoVisible(pseudo)) continue;
-                const bounds = node.getBoundingClientRect();
-                const scaleX = node.offsetWidth ? bounds.width / node.offsetWidth : 1;
-                const scaleY = node.offsetHeight ? bounds.height / node.offsetHeight : 1;
-                const pseudoBox = transformedRect(pseudoRect(node, pseudo), pseudo, scaleX, scaleY);
-                if (pseudoBox && paintedLine(pseudo, pseudoBox.width, pseudoBox.height)) {
-                  lines.push(`${node.className || node.tagName.toLowerCase()}${pseudoName}`);
-                }
+          const luminance = color => .2126 * channelLuminance(color.r)
+            + .7152 * channelLuminance(color.g) + .0722 * channelLuminance(color.b);
+          const contrastRatio = (first, second) => {
+            const a = luminance(first);
+            const b = luminance(second);
+            return (Math.max(a, b) + .05) / (Math.min(a, b) + .05);
+          };
+          const cssBackground = node => {
+            const layers = [];
+            let current = node;
+            while (current?.nodeType === 1) {
+              const style = styleOf(current);
+              if (style.backgroundImage && style.backgroundImage !== 'none') return null;
+              const color = parseColor(style.backgroundColor);
+              if (color?.a > 0) {
+                layers.push(color);
+                if (color.a >= .999) break;
               }
+              current = current.parentElement;
             }
-            return lines.length <= 3 ? [] : [{
-              slide:slide.dataset.slideId || 'unknown', reason:'excessive-unowned-hairlines',
-              count:lines.length, nodes:lines.slice(0, 6)
-            }];
+            if (!layers.length || layers[layers.length - 1].a < .999) return null;
+            let result = layers.pop();
+            while (layers.length) result = composite(layers.pop(), result);
+            return result;
+          };
+          const svgBackground = node => {
+            const target = node.tagName.toLowerCase() === 'tspan' ? node.closest('text') : node;
+            const svg = target?.closest('svg');
+            if (!svg) return null;
+            const ordered = [...svg.querySelectorAll('*')];
+            const targetIndex = ordered.indexOf(target);
+            const box = target.getBoundingClientRect();
+            const x = box.left + box.width / 2;
+            const y = box.top + box.height / 2;
+            const backgroundTags = new Set(['rect', 'circle', 'ellipse', 'polygon']);
+            for (let index = targetIndex - 1; index >= 0; index -= 1) {
+              const candidate = ordered[index];
+              if (!backgroundTags.has(candidate.tagName.toLowerCase()) || !visible(candidate)) continue;
+              const candidateBox = candidate.getBoundingClientRect();
+              if (x < candidateBox.left || x > candidateBox.right || y < candidateBox.top || y > candidateBox.bottom) continue;
+              const style = styleOf(candidate);
+              const fill = parseColor(style.fill);
+              if (!fill?.a) continue;
+              fill.a *= Number(style.fillOpacity || 1) * Number(style.opacity || 1);
+              if (fill.a >= .999) return fill;
+              const base = cssBackground(svg);
+              return base ? composite(fill, base) : null;
+            }
+            return cssBackground(svg);
+          };
+          const textColors = node => {
+            const style = styleOf(node);
+            const isSvg = node.namespaceURI === 'http://www.w3.org/2000/svg';
+            const foreground = parseColor(isSvg ? style.fill : style.color);
+            const background = isSvg ? svgBackground(node) : cssBackground(node);
+            if (!foreground || !background) return null;
+            foreground.a *= Number(style.opacity || 1);
+            if (isSvg) foreground.a *= Number(style.fillOpacity || 1);
+            return {
+              foreground: foreground.a >= .999 ? foreground : composite(foreground, background),
+              background,
+            };
+          };
+          const textElements = slides.flatMap(slide => [...slide.querySelectorAll('*')]).filter(node => {
+            if (!visible(node) || ignoredTextTags.has(node.tagName.toLowerCase())) return false;
+            if (node.closest('[aria-hidden="true"], [data-decoration]')) return false;
+            return Boolean(ownText(node));
           });
-          const tokenRoot = slideDocuments[0]?.documentElement || document.documentElement;
-          const rootStyle = tokenRoot ? tokenRoot.ownerDocument.defaultView.getComputedStyle(tokenRoot) : null;
-          const stageRect = stage?.getBoundingClientRect();
-          const documentsReady = documents.every(doc => doc.readyState === 'complete' && (!doc.fonts || doc.fonts.status === 'loaded'));
-          const validated = slideDocuments.length > 0 && slideDocuments.every(doc => doc.documentElement?.dataset.oilValidated === 'ok');
-          const blockingVisualCount = invalidContentBounds.length + invalidSurfaceClips.length
-            + invalidDecorations.length + invalidMotifBounds.length + invalidRelationshipEdges.length
-            + invalidRingGeometry.length;
+          const semanticTextSelector = 'h1,h2,h3,h4,h5,h6,p,li,blockquote,figcaption,td,th,[data-fit]';
+          const overflowTextElements = [...new Set([
+            ...all(semanticTextSelector).filter(node => node.closest('.oil-slide')),
+            ...textElements,
+          ])];
+          const isMicrocopy = node => {
+            const kind = node.getAttribute('data-microcopy');
+            if (!['index', 'meta'].includes(kind)) return false;
+            if (node.closest('h1,h2,h3,h4,h5,h6,p,li,blockquote,figcaption,td,th,pre,code')) return false;
+            const text = ownText(node);
+            if (!text || /[。！？；.!?;]/.test(text)) return false;
+            return kind === 'index' ? text.length <= 12 : text.length <= 32;
+          };
+          const minimumTextSize = node => {
+            if (node.closest('h1')) return 48;
+            if (node.closest('h2')) return 32;
+            if (node.closest('h3,h4,h5,h6')) return 28;
+            if (isMicrocopy(node)) return 18;
+            if (node.closest('pre,code,.oil-code,figcaption,cite,th,small,.oil-label,.tag,.oil-browser-bar,.oil-media-placeholder')) return 20;
+            return 24;
+          };
+          const invalidText = overflowTextElements.flatMap(node => {
+            if (!visible(node) || !node.textContent.trim()) return [];
+            const style = styleOf(node);
+            const overflow = node.scrollWidth > node.clientWidth + 2 || node.scrollHeight > node.clientHeight + 2;
+            const clipped = ['hidden', 'clip'].includes(style.overflow)
+              || ['hidden', 'clip'].includes(style.overflowX)
+              || ['hidden', 'clip'].includes(style.overflowY);
+            return overflow && clipped
+              ? [{
+                  slide: slideId(node), node: describe(node), reason: 'clipped-text',
+                  clientWidth: node.clientWidth, scrollWidth: node.scrollWidth,
+                  clientHeight: node.clientHeight, scrollHeight: node.scrollHeight,
+                  fontSize: style.fontSize
+                }] : [];
+          });
+
+          const contentBounds = slides.flatMap(slide => {
+            const safe = slide.querySelector(':scope > .slide-safe');
+            if (!safe) return [];
+            const bounds = safe.getBoundingClientRect();
+            return [...safe.children].flatMap(node => {
+              if (!visible(node) || node.hasAttribute('data-bleed') || node.hasAttribute('data-decoration')) return [];
+              const style = styleOf(node);
+              if (style.position === 'fixed') return [];
+              return inside(node.getBoundingClientRect(), bounds) ? [] : [{
+                slide: slide.dataset.slideId || 'unknown', node: describe(node), reason: 'safe-area-child-outside-bounds'
+              }];
+            });
+          });
+
+          const readability = textElements.flatMap(node => {
+            const size = parseFloat(styleOf(node).fontSize || '0');
+            const minimum = minimumTextSize(node);
+            return size > 0 && size + .1 < minimum ? [{
+              slide: slideId(node), node: describe(node), reason: 'small-text',
+              fontSize: size, minimumFontSize: minimum, text: ownText(node).slice(0, 120)
+            }] : [];
+          });
+
+          const minimumContrastRatio = 2.5;
+          const contrast = textElements.flatMap(node => {
+            const colors = textColors(node);
+            if (!colors) return [];
+            const ratio = contrastRatio(colors.foreground, colors.background);
+            return ratio + .01 < minimumContrastRatio ? [{
+              slide: slideId(node), node: describe(node), reason: 'low-text-contrast',
+              contrastRatio: Number(ratio.toFixed(2)), minimumContrastRatio,
+              foreground: styleOf(node).fill !== 'none' && node.namespaceURI === 'http://www.w3.org/2000/svg'
+                ? styleOf(node).fill : styleOf(node).color,
+              background: `rgb(${Math.round(colors.background.r)}, ${Math.round(colors.background.g)}, ${Math.round(colors.background.b)})`,
+              text: ownText(node).slice(0, 120)
+            }] : [];
+          });
+
+          const pageScroll = documents.flatMap(doc => {
+            const root = doc.documentElement;
+            const body = doc.body;
+            if (!root || !body) return [];
+            const extraX = Math.max(root.scrollWidth, body.scrollWidth) - root.clientWidth;
+            const extraY = Math.max(root.scrollHeight, body.scrollHeight) - root.clientHeight;
+            return extraX > 3 || extraY > 3 ? [{reason: 'document-scroll', extraX, extraY}] : [];
+          });
+          const documentsReady = documents.every(doc => doc.readyState === 'complete'
+            && (!doc.fonts || doc.fonts.status === 'loaded'));
+          const stageRect = stages[0]?.getBoundingClientRect();
+          const blockingCount = brokenImages.length + missingSafeArea.length + invalidLayouts.length
+            + invalidBleeds.length + invalidText.length + contentBounds.length + readability.length + contrast.length;
           return {
-          ready: documentsReady && imagesReady,
-          status: brokenImages.length || invalidBleeds.length || invalidLayouts.length || invalidText.length
-            || invalidCopyFlows.length || invalidBounds.length || invalidOptionalRegions.length || blockingVisualCount
-            ? 'error' : (validated && slides > 0 && !!stage ? 'ok' : 'pending'),
-          slides,
-          images: images.length,
-          brokenImages: brokenImages.map(image => image.currentSrc || image.getAttribute('src') || ''),
-          invalidBleeds,
-          invalidLayouts,
-          invalidText,
-          invalidCopyFlows,
-          invalidBounds,
-          invalidOptionalRegions,
-          visualFindings: [
-            ...invalidContentBounds.map(item => ({...item, category:'content-bounds'})),
-            ...invalidSurfaceClips.map(item => ({...item, category:'surface-clipping'})),
-            ...invalidDecorations.map(item => ({...item, category:'decoration'})),
-            ...invalidMotifBounds.map(item => ({...item, category:'decoration'})),
-            ...invalidRelationshipEdges.map(item => ({...item, category:'relationship-edge'})),
-            ...invalidRingGeometry.map(item => ({...item, category:'ring-geometry'})),
-            ...invalidPaint.map(item => ({...item, category:'surface-paint'})),
-            ...excessiveHairlines.map(item => ({...item, category:'line-density'}))
-          ],
-          viewport: {width:innerWidth, height:innerHeight},
-          stage: stageRect ? {
-            left:stageRect.left, top:stageRect.top, right:stageRect.right, bottom:stageRect.bottom,
-            width:stageRect.width, height:stageRect.height,
-            scale:Number(stage.dataset.scale || 0)
-          } : null,
-          tokens: {
-            accent: rootStyle?.getPropertyValue('--accent').trim() || '',
-            surfaceRadius: rootStyle?.getPropertyValue('--surface-radius').trim() || '',
-            fontZh: rootStyle?.getPropertyValue('--font-zh').trim() || ''
-          }
-        };})()"""
+            ready: documentsReady && images.every(image => image.complete),
+            status: slides.length && stages.length ? (blockingCount ? 'error' : 'ok') : 'pending',
+            slides: slides.length,
+            images: images.length,
+            brokenImages: brokenImages.map(image => image.currentSrc || image.getAttribute('src') || ''),
+            missingSafeArea,
+            invalidLayouts,
+            invalidBleeds,
+            invalidText,
+            visualFindings: [
+              ...contentBounds.map(item => ({...item, category: 'content-bounds'})),
+              ...readability.map(item => ({...item, category: 'readability'})),
+              ...contrast.map(item => ({...item, category: 'contrast'})),
+              ...pageScroll.map(item => ({...item, category: 'page-scroll'}))
+            ],
+            viewport: {width: innerWidth, height: innerHeight},
+            stage: stageRect ? {
+              left: stageRect.left, top: stageRect.top, right: stageRect.right, bottom: stageRect.bottom,
+              width: stageRect.width, height: stageRect.height,
+              scale: Number(stages[0].dataset.scale || 0)
+            } : null
+          };
+        })()"""
         request_id = 0
         while time.monotonic() < deadline:
             request_id += 1
-            websocket.send_json({"id": request_id, "method": "Runtime.evaluate", "params": {"expression": expression, "returnByValue": True}})
+            websocket.send_json(
+                {
+                    "id": request_id,
+                    "method": "Runtime.evaluate",
+                    "params": {"expression": expression, "returnByValue": True},
+                }
+            )
             while True:
                 message = websocket.recv_json()
                 if message.get("id") == request_id:
                     break
             if "exceptionDetails" in message.get("result", {}):
                 details = message["result"]["exceptionDetails"]
-                description = details.get("exception", {}).get("description") or details.get("text") or "unknown error"
-                raise RuntimeError(f"Page validation JavaScript raised an exception: {description}")
+                description = (
+                    details.get("exception", {}).get("description")
+                    or details.get("text")
+                    or "unknown error"
+                )
+                raise RuntimeError(
+                    f"Page validation JavaScript raised an exception: {description}"
+                )
             report = message["result"]["result"].get("value", {})
             if report.get("ready") and report.get("status") in {"ok", "error"}:
                 return report
-            time.sleep(.1)
+            time.sleep(0.1)
         raise RuntimeError("Page never reached a validated DOM state.")
     finally:
         if websocket:

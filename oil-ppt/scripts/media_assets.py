@@ -4,55 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import io
-import json
 import re
 import struct
 import xml.etree.ElementTree as ET
+from html.parser import HTMLParser
 from pathlib import Path
 
-
-MEDIA_SOURCES = {
-    "user-material": {
-        "best_for": "用户自有文件、真实产品截图、网页、文档和案例证据",
-        "access": "local-or-browser",
-        "rights": "记录自有、获准或内部引用依据；不能自动宣称自由授权",
-        "priority": 1,
-    },
-    "wikimedia-commons": {
-        "best_for": "历史、文化、人物、地点、档案照片和公共图表",
-        "access": "official-api",
-        "documentation": "https://www.mediawiki.org/wiki/API:Imageinfo/en",
-        "rights": "读取 extmetadata；只接受明确许可，保留作者、来源、许可与修改记录",
-        "priority": 2,
-    },
-    "pexels": {
-        "best_for": "当代商业照片与生活方式照片",
-        "access": "api-key",
-        "documentation": "https://www.pexels.com/api/documentation/",
-        "rights": "保留摄影师与 Pexels 来源；遵守 Pexels License，不做素材再分发",
-        "priority": 3,
-    },
-    "openverse": {
-        "best_for": "跨站发现开放授权候选",
-        "access": "discovery-only",
-        "documentation": "https://docs.openverse.org/",
-        "rights": "必须回原始 landing page 二次核验，未核验不得进入正式预览",
-        "priority": 4,
-    },
-    "generated-illustration": {
-        "best_for": "无事实指向的概念隐喻与氛围插画",
-        "access": "environment-image-generator",
-        "rights": "不得替代产品、数据、案例、真人或其他事实证据；图内不生成文字",
-        "priority": 5,
-    },
-    "unsplash-api": {
-        "best_for": "仅在交付方式允许 API hotlink、下载事件与署名时",
-        "access": "not-compatible-with-offline-inline-delivery",
-        "documentation": "https://unsplash.com/documentation",
-        "rights": "默认不接入本地内联交付管线",
-        "priority": 99,
-    },
-}
+from html_urls import css_urls
 
 
 RASTER_MIME = {
@@ -62,18 +20,6 @@ RASTER_MIME = {
     ".gif": "image/gif",
     ".webp": "image/webp",
 }
-
-EDITOR_UPLOAD_MIME = {
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".webp": "image/webp",
-    ".svg": "image/svg+xml",
-}
-MAX_EDITOR_UPLOAD_BYTES = 8 * 1024 * 1024
-MAX_EDITOR_IMAGE_DIMENSION = 16_384
-MAX_EDITOR_IMAGE_PIXELS = 80_000_000
-
 
 def _jpeg_dimensions(data: bytes) -> tuple[int, int]:
     with io.BytesIO(data) as handle:
@@ -202,171 +148,187 @@ def inspect_image(path: Path) -> dict:
     return {"path": str(path), **details}
 
 
-def validate_editor_upload(filename: str, content_type: str, data: bytes) -> dict:
-    """Validate an editor upload without trusting browser-supplied metadata."""
-    if not isinstance(filename, str) or not filename or len(filename) > 255:
-        raise ValueError("Upload filename must contain 1 to 255 characters.")
-    if "\x00" in filename or "/" in filename or "\\" in filename or filename in {".", ".."}:
-        raise ValueError("Upload filename must not contain a path.")
-    if Path(filename).name != filename:
-        raise ValueError("Upload filename must not contain a path.")
-    suffix = Path(filename).suffix.lower()
-    expected_mime = EDITOR_UPLOAD_MIME.get(suffix)
-    if expected_mime is None:
-        raise ValueError("Upload must be a PNG, JPEG, WebP, or SVG image.")
-    if not data:
-        raise ValueError("Upload payload is empty.")
-    if len(data) > MAX_EDITOR_UPLOAD_BYTES:
-        raise ValueError(f"Upload exceeds the {MAX_EDITOR_UPLOAD_BYTES // (1024 * 1024)} MB limit.")
-    normalized_type = str(content_type or "").split(";", 1)[0].strip().lower()
-    if normalized_type != expected_mime:
-        raise ValueError(
-            f"Upload content type {normalized_type or '(missing)'} does not match {suffix}."
-        )
-    if suffix == ".svg":
-        try:
-            svg_text = data.decode("utf-8")
-        except UnicodeDecodeError as error:
-            raise ValueError("SVG must be UTF-8 encoded") from error
-        if re.search(r"<!\s*(?:DOCTYPE|ENTITY)\b|<\?", svg_text, re.I):
-            raise ValueError("SVG declarations and processing instructions are forbidden.")
-        if re.search(r"\son[a-z0-9_-]+\s*=|javascript\s*:", svg_text, re.I):
-            raise ValueError("SVG event handlers and script URLs are forbidden.")
-        if re.search(r"(?:href|src)\s*=\s*[\"'](?!#)[^\"']+", svg_text, re.I):
-            raise ValueError("SVG embedded and external references are forbidden.")
-        if re.search(r"url\(\s*[\"']?(?!#)[^)]+|@import\b", svg_text, re.I):
-            raise ValueError("SVG embedded and external CSS resources are forbidden.")
-    details = inspect_image_bytes(data, suffix)
-    if details["mime"] != expected_mime:
-        raise ValueError("Upload extension and image content do not match.")
-    width, height = int(details["width"]), int(details["height"])
-    if width > MAX_EDITOR_IMAGE_DIMENSION or height > MAX_EDITOR_IMAGE_DIMENSION:
-        raise ValueError(f"Image dimensions must not exceed {MAX_EDITOR_IMAGE_DIMENSION} px per side.")
-    if width * height > MAX_EDITOR_IMAGE_PIXELS:
-        raise ValueError(f"Image dimensions exceed the {MAX_EDITOR_IMAGE_PIXELS:,} pixel limit.")
-    return details
+class _MediaReferenceParser(HTMLParser):
+    """Collect real media attributes while retaining a useful CSS-like locator."""
 
+    _ATTRIBUTES = {
+        "img": ("src", "srcset"),
+        "source": ("src", "srcset"),
+        "image": ("href", "xlink:href"),  # SVG <image>
+        "use": ("href", "xlink:href"),    # external SVG symbols
+    }
 
-def _json_pointer(*parts: object) -> str:
-    return "/" + "/".join(str(part).replace("~", "~0").replace("/", "~1") for part in parts)
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._seen: dict[str, int] = {}
+        self.references: list[dict] = []
+        self.errors: list[dict] = []
+        self.css_sources: list[tuple[str, str]] = []
+        self._style_selector: str | None = None
+        self._style_chunks: list[str] = []
 
+    @staticmethod
+    def _srcset(value: str) -> list[str]:
+        # Width/density descriptors cannot contain unescaped spaces. This is
+        # intentionally conservative: invalid candidates are still reported.
+        return [candidate.strip().split()[0] for candidate in value.split(",") if candidate.strip()]
 
-def _outline_media_binding_parts(slide: dict) -> list[tuple[str, tuple[object, ...], object]]:
-    """Return display labels, relative JSON paths, and values for rendered media."""
-    bindings: list[tuple[str, tuple[object, ...], object]] = []
-    top_key = next((key for key in ("image", "media", "artifact_image") if slide.get(key)), None)
-    if top_key:
-        bindings.append(("image", (top_key,), slide[top_key]))
-    if slide.get("secondary_image"):
-        bindings.append(("secondary_image", ("secondary_image",), slide["secondary_image"]))
-    if slide.get("template") == "sequence-gallery":
-        for step_index, step in enumerate(slide.get("steps") or []):
-            if isinstance(step, dict) and step.get("image"):
-                bindings.append((
-                    f"steps[{step_index + 1}].image", ("steps", step_index, "image"), step["image"],
-                ))
-    if slide.get("template") == "comparison":
-        for side_index, side in enumerate(slide.get("sides") or []):
-            if not isinstance(side, dict):
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag = tag.lower()
+        values = {name.lower(): value for name, value in attrs if value is not None}
+        index = self._seen.get(tag, 0) + 1
+        self._seen[tag] = index
+        selector = f"{tag}:nth-of-type({index})"
+        if style := values.get("style"):
+            self.css_sources.append((f"{selector}[style]", style))
+        if tag == "style":
+            self._style_selector = selector
+            self._style_chunks = []
+        allowed = self._ATTRIBUTES.get(tag)
+        if not allowed:
+            return
+        if tag == "img" and "alt" not in values:
+            self.errors.append({
+                "selector": selector,
+                "attribute": "alt",
+                "candidate": 1,
+                "path": "",
+                "reason": "img requires an alt attribute (use alt=\"\" only for decoration)",
+            })
+        for attribute in allowed:
+            raw = values.get(attribute)
+            if raw is None:
                 continue
-            for item_index, item in enumerate(side.get("evidence") or []):
-                image = item.get("image") if isinstance(item, dict) else item
-                if image:
-                    bindings.append((
-                        f"sides[{side_index + 1}].evidence[{item_index + 1}].image",
-                        ("sides", side_index, "evidence", item_index, "image") if isinstance(item, dict)
-                        else ("sides", side_index, "evidence", item_index),
-                        image,
-                    ))
-    if slide.get("template") == "card-trio":
-        for card_index, card in enumerate(slide.get("cards") or []):
-            if not isinstance(card, dict):
-                continue
-            for item_index, item in enumerate(card.get("images") or []):
-                image = item.get("image") if isinstance(item, dict) else item
-                if image:
-                    bindings.append((
-                        f"cards[{card_index + 1}].images[{item_index + 1}].image",
-                        ("cards", card_index, "images", item_index, "image") if isinstance(item, dict)
-                        else ("cards", card_index, "images", item_index),
-                        image,
-                    ))
-    return bindings
+            candidates = self._srcset(raw) if attribute == "srcset" else [raw.strip()]
+            for candidate_index, value in enumerate(candidates, start=1):
+                if not value or value.startswith("#"):
+                    continue
+                self.references.append({
+                    "selector": selector,
+                    "attribute": attribute,
+                    "candidate": candidate_index,
+                    "path": value,
+                })
+
+    def handle_data(self, data: str) -> None:
+        if self._style_selector is not None:
+            self._style_chunks.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() == "style" and self._style_selector is not None:
+            self.css_sources.append((self._style_selector, "".join(self._style_chunks)))
+            self._style_selector = None
+            self._style_chunks = []
 
 
-def outline_media_bindings(slide: dict) -> list[tuple[str, object]]:
-    """Return every local image field consumed by a template.
+def _project_relative_path(project: Path, slide_file: Path, value: str) -> tuple[Path | None, str | None]:
+    """Resolve one HTML media URL without permitting a project boundary escape."""
+    if value.startswith("data:"):
+        return None, "embedded data URLs are not accepted in slide sources"
+    if value.startswith(("/", "\\", "//")) or re.match(r"^[A-Za-z]:[\\/]", value):
+        return None, "media must use a project-relative local path"
+    if re.match(r"^[a-z][a-z0-9+.-]*:", value, re.I):
+        return None, "remote or scheme-qualified media is forbidden"
+    resolved = (slide_file.parent / value).resolve()
+    if resolved == project or not resolved.is_relative_to(project):
+        return None, "media must stay inside the project"
+    return resolved, None
 
-    Keeping this traversal in one place makes nested media as strict as the
-    traditional single-image slides without asking the authoring model to
-    remember extra verification commands.
+
+def scan_slide_media(project: Path, slide_path: Path, *, slide_id: str | None = None) -> dict:
+    """Inspect every ``img``, ``source``, and external SVG reference in one slide.
+
+    Results retain the slide file plus a CSS-like selector so failures are
+    actionable at the page source.
     """
-    return [(label, value) for label, _parts, value in _outline_media_binding_parts(slide)]
-
-
-def editable_outline_media(data: dict) -> dict[str, str]:
-    """Map every rendered media binding to the JSON pointer used by the editor."""
-    result: dict[str, str] = {}
-    for slide_index, slide in enumerate(data.get("slides") or []):
-        if not isinstance(slide, dict):
+    root = project.expanduser().resolve()
+    source = slide_path.expanduser().resolve()
+    try:
+        relative_file = source.relative_to(root).as_posix()
+    except ValueError:
+        raise ValueError(f"slide HTML must stay inside the project: {source}") from None
+    if not source.is_file():
+        raise ValueError(f"slide HTML is missing: {relative_file}")
+    text = source.read_text(encoding="utf-8")
+    parser = _MediaReferenceParser()
+    parser.feed(text)
+    parser.close()
+    css_index = 0
+    for selector, css in parser.css_sources:
+        for raw_value in css_urls(css):
+            value = raw_value.strip()
+            if value and not value.startswith("#"):
+                css_index += 1
+                parser.references.append({
+                    "selector": f"{selector} url({css_index})",
+                    "attribute": "css-url",
+                    "candidate": 1,
+                    "path": value,
+                })
+    items: list[dict] = []
+    errors: list[dict] = [
+        {"slide": slide_id, "file": relative_file, **item}
+        for item in parser.errors
+    ]
+    cache: dict[Path, dict | ValueError] = {}
+    for reference in parser.references:
+        value = reference["path"]
+        path, reason = _project_relative_path(root, source, value)
+        location = {"slide": slide_id, "file": relative_file, **reference}
+        if reason:
+            errors.append({**location, "reason": reason})
             continue
-        for _label, parts, value in _outline_media_binding_parts(slide):
-            result[_json_pointer("slides", slide_index, *parts)] = str(value)
-    return result
+        assert path is not None
+        if path not in cache:
+            try:
+                cache[path] = inspect_image(path)
+            except ValueError as error:
+                cache[path] = error
+        inspected = cache[path]
+        if isinstance(inspected, ValueError):
+            errors.append({**location, "reason": str(inspected)})
+            continue
+        items.append({
+            **location,
+            "relative_path": path.relative_to(root).as_posix(),
+            "inspection": dict(inspected),
+        })
+    return {"count": len(items), "items": items, "errors": errors}
 
 
-def inspect_outline_media(data: dict, base: Path) -> dict:
-    root = base.expanduser().resolve()
-    verified: list[dict] = []
+def scan_deck_media(project: Path, deck: dict) -> dict:
+    """Scan the slide HTML paths listed by the minimal deck manifest."""
+    root = project.expanduser().resolve()
+    paths = deck.get("slides") if isinstance(deck, dict) else None
+    if not isinstance(paths, list):
+        raise ValueError("deck manifest must contain a slides array")
+    items: list[dict] = []
     errors: list[dict] = []
-    inspected: dict[Path, dict | ValueError] = {}
-    for index, slide in enumerate(data.get("slides") or [], start=1):
-        for field, bound_value in outline_media_bindings(slide):
-            rendered_value = str(bound_value)
-            if re.match(r"^[a-z][a-z0-9+.-]*:", rendered_value, re.I):
-                errors.append({
-                    "slide": slide.get("id"), "page": index, "field": field,
-                    "path": rendered_value, "reason": "media must be a project-relative local file",
-                })
-                continue
-            path = (root / rendered_value).resolve()
-            if not path.is_relative_to(root) or path == root:
-                errors.append({
-                    "slide": slide.get("id"), "page": index, "field": field,
-                    "path": rendered_value, "reason": "media must stay inside the project",
-                })
-                continue
-            if path not in inspected:
-                try:
-                    inspected[path] = inspect_image(path)
-                except ValueError as error:
-                    inspected[path] = error
-            inspected_value = inspected[path]
-            if isinstance(inspected_value, ValueError):
-                errors.append({
-                    "slide": slide.get("id"), "page": index, "field": field,
-                    "path": rendered_value, "reason": str(inspected_value),
-                })
-                continue
-            details = dict(inspected_value)
-            details["slide_id"] = slide.get("id")
-            details["field"] = field
-            details["relative_path"] = rendered_value
-            verified.append(details)
-    return {"count": len(verified), "items": verified, "errors": errors}
+    for page, relative in enumerate(paths, start=1):
+        if not isinstance(relative, str) or not relative:
+            errors.append({"page": page, "file": str(relative), "reason": "slide path must be a non-empty string"})
+            continue
+        slide_file = (root / relative).resolve()
+        try:
+            result = scan_slide_media(root, slide_file, slide_id=slide_file.stem)
+        except ValueError as error:
+            errors.append({"page": page, "file": relative, "reason": str(error)})
+            continue
+        for item in result["items"]:
+            items.append({"page": page, **item})
+        for error in result["errors"]:
+            errors.append({"page": page, **error})
+    return {"count": len(items), "items": items, "errors": errors}
 
 
-def verify_outline_media(data: dict, base: Path) -> list[dict]:
-    report = inspect_outline_media(data, base)
+def verify_deck_media(project: Path, deck: dict) -> list[dict]:
+    """Raise one aggregated, locator-rich error for invalid slide media."""
+    report = scan_deck_media(project, deck)
     if report["errors"]:
         lines = [
-            f"slide {item['page']} ({item.get('slide') or 'unknown'}) {item['field']}={item['path']}: {item['reason']}"
+            f"{item.get('file', 'unknown')} {item.get('selector', '')} {item.get('attribute', '')}="
+            f"{item.get('path', '')}: {item['reason']}"
             for item in report["errors"]
         ]
         raise SystemExit("Media verification failed:\n- " + "\n- ".join(lines))
-    verified = report["items"]
-    return verified
-
-
-def print_sources() -> None:
-    print(json.dumps({"schema_version": "oil-ppt.media-sources/v1", "sources": MEDIA_SOURCES}, ensure_ascii=False, separators=(",", ":")))
+    return report["items"]

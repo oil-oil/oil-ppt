@@ -8,6 +8,13 @@
   const shell = document.querySelector(isPreview ? ".slide-preview-shell" : ".deck-stage-shell");
   const counter = document.querySelector(".deck-counter");
   const progress = document.querySelector(".progress-bar");
+  const overview = document.querySelector("[data-deck-overview]");
+  const overviewGrid = document.querySelector("[data-deck-overview-grid]");
+  const overviewToggle = document.querySelector("[data-deck-overview-toggle]");
+  const overviewClose = document.querySelector("[data-deck-overview-close]");
+  const originalSlides = new Map();
+  let overviewOpenerState = null;
+  let overviewOpen = false;
   let index = 0;
 
   function scaleStage() {
@@ -20,34 +27,19 @@
   }
 
   function overflows(el) {
-    return el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1;
-  }
-
-  function textThresholds(el) {
-    if (el.dataset.smallOk !== undefined) return { preferred: 0, hard: 0 };
-    const declaredMinimum = Number.parseFloat(el.dataset.minSize || "");
-    if (Number.isFinite(declaredMinimum) && declaredMinimum >= 14) {
-      return { preferred: declaredMinimum, hard: declaredMinimum };
-    }
-    if (el.matches("h1")) return { preferred: 64, hard: 60 };
-    if (el.matches("h2")) return { preferred: 42, hard: 38 };
-    if (el.matches("h3")) return { preferred: 38, hard: 34 };
-    if (el.matches(".tag")) return { preferred: 18, hard: 18 };
-    return { preferred: 34, hard: 32 };
-  }
-
-  function applyPreferredTextSize(el) {
-    const { preferred } = textThresholds(el);
-    if (!preferred || !el.textContent.trim() || !el.getClientRects().length) return;
-    const actual = Number.parseFloat(getComputedStyle(el).fontSize);
-    if (Number.isFinite(actual) && actual < preferred) el.style.fontSize = `${preferred}px`;
+    const widthOverflow = el.scrollWidth > el.clientWidth + 1;
+    const heightOverflow = el.dataset.fitHeight !== undefined
+      && el.scrollHeight > el.clientHeight + 1;
+    return widthOverflow || heightOverflow;
   }
 
   function fitText(el) {
     const computed = getComputedStyle(el);
-    const thresholds = textThresholds(el);
-    const start = Math.max(Number.parseFloat(el.dataset.fitStart || computed.fontSize), thresholds.preferred);
-    const min = Math.max(Number.parseFloat(el.dataset.minSize || "22"), thresholds.hard);
+    const start = Number.parseFloat(el.dataset.fitStart || computed.fontSize);
+    const declaredMinimum = Number.parseFloat(el.dataset.minSize || "");
+    const min = Number.isFinite(declaredMinimum)
+      ? Math.min(start, Math.max(12, declaredMinimum))
+      : Math.max(18, Math.floor(start * .7));
     if (!Number.isFinite(start) || !Number.isFinite(min)) return;
     el.dataset.fitStart = String(start);
     el.style.fontSize = `${start}px`;
@@ -145,7 +137,6 @@
       delete el.dataset.spaceMetrics;
       delete el.dataset.copyMetrics;
     });
-    document.querySelectorAll("h1,h2,h3,p,li,.tag,[data-readable]").forEach(applyPreferredTextSize);
     document.querySelectorAll("[data-fit]").forEach(fitText);
     document.querySelectorAll("[data-max-chars]").forEach(checkTextBudget);
     document.querySelectorAll("h1").forEach(checkTitleOrphan);
@@ -174,6 +165,99 @@
     if (counter) counter.textContent = `${index + 1} / ${slides.length}`;
     if (progress) progress.style.width = `${((index + 1) / slides.length) * 100}%`;
     renderNextPreview();
+    updateOverviewCurrent();
+  }
+
+  function updateOverviewCurrent() {
+    if (!overviewGrid) return;
+    overviewGrid.querySelectorAll("[data-deck-overview-slide]").forEach((button, i) => {
+      const current = i === index;
+      if (current) button.setAttribute("aria-current", "page");
+      else button.removeAttribute("aria-current");
+      button.classList.toggle("is-current", current);
+      button.closest(".deck-overview-card")?.classList.toggle("is-current", current);
+    });
+  }
+
+  function restoreSlides() {
+    if (!stage) return;
+    slides.forEach(slide => {
+      const saved = originalSlides.get(slide);
+      if (!saved) return;
+      slide.className = saved.className;
+      slide.style.cssText = saved.style;
+      if (saved.ariaHidden === null) slide.removeAttribute("aria-hidden");
+      else slide.setAttribute("aria-hidden", saved.ariaHidden);
+      slide.inert = saved.inert;
+      if (saved.inertAttribute === null) slide.removeAttribute("inert");
+      else slide.setAttribute("inert", saved.inertAttribute);
+      stage.appendChild(slide);
+    });
+    originalSlides.clear();
+    if (overviewToggle && overviewOpenerState) {
+      overviewToggle.inert = overviewOpenerState.inert;
+      if (overviewOpenerState.inertAttribute === null) overviewToggle.removeAttribute("inert");
+      else overviewToggle.setAttribute("inert", overviewOpenerState.inertAttribute);
+    }
+    overviewOpenerState = null;
+    overviewGrid?.replaceChildren();
+  }
+
+  function closeOverview() {
+    if (!overview || !overviewOpen) return;
+    overviewOpen = false;
+    overview.hidden = true;
+    overview.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("deck-overview-open");
+    overviewToggle?.setAttribute("aria-expanded", "false");
+    restoreSlides();
+    show(index);
+    overviewToggle?.focus();
+  }
+
+  function openOverview() {
+    if (!overview || !overviewGrid || !stage || overviewOpen || isPreview) return;
+    overviewOpen = true;
+    if (overviewToggle) {
+      overviewOpenerState = { inert: Boolean(overviewToggle.inert), inertAttribute: overviewToggle.getAttribute("inert") };
+      overviewToggle.inert = true;
+    }
+    slides.forEach((slide, i) => {
+      originalSlides.set(slide, { className: slide.className, style: slide.style.cssText, ariaHidden: slide.getAttribute("aria-hidden"), inert: Boolean(slide.inert), inertAttribute: slide.getAttribute("inert") });
+      const card = document.createElement("article");
+      card.className = "deck-overview-card";
+      const visual = document.createElement("div");
+      visual.className = "deck-overview-visual";
+      visual.appendChild(slide);
+      const caption = document.createElement("span");
+      caption.className = "deck-overview-caption";
+      caption.textContent = `${i + 1}. ${slide.dataset.title || slide.dataset.slideId || "未命名"}`;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "deck-overview-hit";
+      button.dataset.deckOverviewSlide = String(i);
+      button.setAttribute("aria-label", `第 ${i + 1} 页：${slide.dataset.title || slide.dataset.slideId || "未命名"}`);
+      button.addEventListener("click", () => { go(i); closeOverview(); });
+      card.append(visual, caption, button);
+      overviewGrid.appendChild(card);
+      slide.setAttribute("aria-hidden", "true");
+      slide.inert = true;
+    });
+    overview.hidden = false;
+    overview.setAttribute("aria-hidden", "false");
+    document.body.classList.add("deck-overview-open");
+    overviewToggle?.setAttribute("aria-expanded", "true");
+    updateOverviewCurrent();
+    requestAnimationFrame(() => { sizeOverviewSlides(); overviewClose?.focus(); });
+  }
+
+  function sizeOverviewSlides() {
+    if (!overviewOpen || !overviewGrid) return;
+    overviewGrid.querySelectorAll(".deck-overview-visual").forEach(visual => {
+      const slide = visual.querySelector(".oil-slide");
+      const width = visual.getBoundingClientRect().width;
+      if (slide && width) slide.style.transform = `scale(${width / W})`;
+    });
   }
 
   function routeIndex() {
@@ -201,6 +285,20 @@
     addEventListener("hashchange", () => show(routeIndex()));
     addEventListener("popstate", () => show(routeIndex()));
     addEventListener("keydown", event => {
+      if (event.key === "Escape" && overviewOpen) { event.preventDefault(); closeOverview(); return; }
+      const editable = event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable]");
+      if (editable || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (overviewOpen && event.key === "Tab") {
+        const focusable = [...overview.querySelectorAll("[data-deck-overview-close], [data-deck-overview-slide]")];
+        const first = focusable[0], last = focusable[focusable.length - 1];
+        if (first && last && (document.activeElement === last && !event.shiftKey || document.activeElement === first && event.shiftKey || !overview.contains(document.activeElement))) {
+          event.preventDefault();
+          (event.shiftKey ? last : first).focus();
+        }
+        return;
+      }
+      if (event.key.toLowerCase() === "o") { event.preventDefault(); overviewOpen ? closeOverview() : openOverview(); return; }
+      if (overviewOpen) return;
       if (["ArrowRight", "ArrowDown", "PageDown", " "].includes(event.key)) { event.preventDefault(); go(index + 1); }
       if (["ArrowLeft", "ArrowUp", "PageUp"].includes(event.key)) { event.preventDefault(); go(index - 1); }
       if (event.key === "Home") { event.preventDefault(); go(0); }
@@ -219,7 +317,7 @@
     }, { passive: true });
     const clickNav = document.body.dataset.clickNav === "true";
     if (clickNav) addEventListener("click", event => {
-      if (event.target.closest(".deck-counter, .next-preview, a, button, input, textarea, select, [contenteditable]")) return;
+      if (overviewOpen || event.target.closest(".deck-counter, .next-preview, .deck-overview, .deck-overview-toggle, a, button, input, textarea, select, [contenteditable]")) return;
       if (window.getSelection()?.toString()) return;
       go(event.clientX < window.innerWidth / 2 ? index - 1 : index + 1);
     });
@@ -240,11 +338,14 @@
   }
 
   document.documentElement.dataset.oilValidated = "pending";
+  overviewToggle?.addEventListener("click", openOverview);
+  overviewClose?.addEventListener("click", closeOverview);
+  addEventListener("beforeprint", closeOverview);
   scaleStage();
   setupTabs();
   initDeck();
   validateLayout();
-  addEventListener("resize", () => { scaleStage(); validateLayout(); });
+  addEventListener("resize", () => { scaleStage(); sizeOverviewSlides(); validateLayout(); });
   const fontsReady = document.fonts?.ready || Promise.resolve();
   fontsReady.then(() => requestAnimationFrame(() => { validateLayout(); renderNextPreview(); }));
 })();
