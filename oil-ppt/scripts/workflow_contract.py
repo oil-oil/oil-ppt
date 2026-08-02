@@ -15,6 +15,10 @@ def validate_next_step(next_step: object, *, allowed_actions: frozenset[str], so
     action = next_step.get("action")
     if not isinstance(action, str) or action not in allowed_actions:
         raise SystemExit(f"{source} contract violation: unsupported next.action {action!r}.")
+    if action == "author_slides":
+        for field in ("brief", "slide_add_usage", "command_when_ready"):
+            if not isinstance(next_step.get(field), str) or not next_step[field].strip():
+                raise SystemExit(f"{source} contract violation: author_slides requires non-empty {field}.")
 
 
 def validate_status_payload(payload: dict) -> dict:

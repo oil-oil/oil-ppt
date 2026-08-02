@@ -10,7 +10,7 @@ from pathlib import Path
 
 from slide_html import parse_slide
 from theme import theme_css
-from workflow_contract import BATCH_NEXT_ACTIONS, STATUS_NEXT_ACTIONS
+from workflow_contract import BATCH_NEXT_ACTIONS, STATUS_NEXT_ACTIONS, validate_next_step
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -107,6 +107,8 @@ def validation_errors() -> list[str]:
         _validate_starter(path, errors)
 
     skill_text = (ROOT / "SKILL.md").read_text(encoding="utf-8") if (ROOT / "SKILL.md").is_file() else ""
+    components_path = ROOT / "references" / "components.md"
+    components_text = components_path.read_text(encoding="utf-8") if components_path.is_file() else ""
     documented_actions = set(re.findall(r"`([a-z][a-z_]+)`", skill_text))
     for action in sorted(STATUS_NEXT_ACTIONS):
         if action not in documented_actions:
@@ -138,7 +140,10 @@ def validation_errors() -> list[str]:
         errors.append("runtime must not depend on remote URLs")
     if "1920px" not in runtime_text or "1080px" not in runtime_text:
         errors.append("runtime must declare the 1920 x 1080 stage")
-    for token in ("oil-text-body", "oil-text-compact", "oil-text-caption"):
+    for token in (
+        "oil-text-body", "oil-text-compact", "oil-text-caption",
+        "oil-leading-display", "oil-leading-body", "oil-tracking-display",
+    ):
         if f"--{token}" not in runtime_text:
             errors.append(f"runtime must declare the typography token: --{token}")
     for selector in (".tag", ".hl"):
@@ -146,6 +151,10 @@ def validation_errors() -> list[str]:
             errors.append(f"runtime author-facing classes must stay in the oil-* namespace: {selector}")
     if ".oil-highlight" not in runtime_text:
         errors.append("runtime must expose the namespaced .oil-highlight helper")
+    if ".oil-copy-center" not in runtime_text:
+        errors.append("runtime must expose the split-layout .oil-copy-center helper")
+    if ".oil-main-fill" not in runtime_text:
+        errors.append("runtime must expose the vertical-fill .oil-main-fill helper")
     for contract in (
         'data-bg="grid-wide"', 'data-bg="soft-spotlight"', 'data-bg="block-field"', 'data-bg="media-owned"',
         '.oil-bleed', '.oil-relationship', '.oil-relationship-node', '.oil-relationship-link',
@@ -153,8 +162,20 @@ def validation_errors() -> list[str]:
     ):
         if contract not in runtime_text:
             errors.append(f"runtime must expose the airy visual contract: {contract}")
-    if not re.search(r"(?:4|四)\s*个及以上等宽(?:重复)?单元", skill_text) or "第二层信息" not in skill_text:
-        errors.append("SKILL.md must preserve the repeated-unit load and second-layer guidance")
+    if not re.search(r"(?:4|四)\s*个及以上等宽(?:重复)?单元", components_text) or "第二层信息" not in components_text:
+        errors.append("components.md must preserve the repeated-unit load and second-layer guidance")
+    for contract in (
+        "55%–70%", "浅色比较或特征卡", "垂直居中",
+        'data-decor="dots"', "oil-main-fill", "oil-copy-center",
+    ):
+        if contract not in components_text:
+            errors.append(f"components.md must preserve the design contract: {contract}")
+    for contract in (
+        "oil-tone", "最短执行路径", "slide add <项目> <页面ID>",
+        "进入正式预览的条件", "只执行 next",
+    ):
+        if contract not in skill_text:
+            errors.append(f"SKILL.md must preserve the workflow contract: {contract}")
     process_rail = STARTERS / "process-rail.html"
     process_source = process_rail.read_text(encoding="utf-8") if process_rail.is_file() else ""
     if process_source.count('class="step"') != 4 or process_source.count('class="rail-note"') != 1:
@@ -166,6 +187,20 @@ def validation_errors() -> list[str]:
     ):
         if contract not in validator_text:
             errors.append(f"browser validator is missing the typography contract: {contract}")
+    valid_authoring = {
+        "action": "author_slides",
+        "brief": "brief",
+        "slide_add_usage": "usage",
+        "command_when_ready": "command",
+    }
+    for field in ("brief", "slide_add_usage", "command_when_ready"):
+        invalid = {**valid_authoring, field: ""}
+        try:
+            validate_next_step(invalid, allowed_actions=STATUS_NEXT_ACTIONS, source="skill validation")
+        except SystemExit:
+            pass
+        else:
+            errors.append(f"workflow contract must reject empty author_slides field: {field}")
     expected_theme = theme_css({"theme": {"palette": "oil-yellow", "typography": "clean", "shape": "soft"}})
     theme_path = RUNTIME / "theme.css"
     if not theme_path.is_file() or theme_path.read_text(encoding="utf-8").strip() != expected_theme:
