@@ -79,19 +79,12 @@ class AiryVisualSystemTests(unittest.TestCase):
         self.assertEqual(set(listing["starters"]), set(listing["guidance"]))
         self.assertGreaterEqual(len(listing["composition_families"]), 4)
         self.assertEqual(set().union(*map(set, listing["composition_families"].values())), set(listing["starters"]))
-        self.assertIn("替换全部示例", listing["instruction"])
-        self.assertIn("四个及以上等宽单元", listing["instruction"])
-        self.assertIn("第二层信息", listing["guidance"]["process-rail"])
         with tempfile.TemporaryDirectory() as directory:
             project = init_project(Path(directory) / "deck", "Starters")
-            first = None
             for index, name in enumerate(listing["starters"], 1):
-                result = oil_ppt.slide_add(project, f"s{index}", name, name, None)
-                first = first or result
+                oil_ppt.slide_add(project, f"s{index}", name, name, None)
             self.assertEqual(len(oil_ppt.slide_check(project)["slides"]), 24)
-            self.assertIn("替换 starter 中的全部示例", first["next"]["brief"])
             confirm_outline(project)
-            self.assertIn("不得只改标题", oil_ppt.status_payload(project)["next"]["brief"])
 
     def test_four_up_rails_with_repeated_second_layers_receive_advice(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

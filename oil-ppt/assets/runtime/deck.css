@@ -4,11 +4,12 @@
   --border:#d8d9d3; --surface:#f1f2ee; --surface-2:#fff; --accent:#79aee8;
   --accent-mark:#79aee8; --highlight-opacity:58%; --accent-fill:#c9dff5; --accent-soft:#eaf3fc; --accent-wash:#eaf3fc;
   --accent-strong:#353633; --accent-ink:#353633; --accent-alt:#86c8aa; --accent-alt-soft:#eaf7f0;
-  --accent-warm:#f0bf4d; --accent-warm-soft:#fff4d5; --grid-color:rgba(0,0,0,.032); --grid-size:48px;
+  --accent-warm:#f0bf4d; --accent-warm-soft:#fff4d5; --grid-color:rgba(0,0,0,.044); --grid-size:48px;
   --surface-radius:36px; --surface-radius-sm:20px; --surface-radius-lg:46px; --media-radius:28px; --surface-shadow:none; --ambient:#f7f7f8;
   --decor-line:8px; --icon-frame:72px; --icon-size:42px; --icon-radius:22px;
   --slide-safe-x:80px; --slide-safe-y:64px; --slide-grid-gap:24px;
   --oil-text-body:28px; --oil-text-compact:24px; --oil-text-caption:20px;
+  --oil-leading-display:1.14; --oil-leading-body:1.5; --oil-tracking-display:-.02em;
   --font-ui:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
   --font-zh:"Noto Sans SC","PingFang SC","Microsoft YaHei",var(--font-ui);
 }
@@ -19,14 +20,16 @@ img,video,canvas,svg{max-width:100%;max-height:100%} p,h1,h2,h3,li,[data-fit]{ov
 .deck-stage-shell,.slide-preview-shell{position:relative;width:100%;height:100%;min-height:1px}
 .deck-stage,.slide-preview-stage{position:absolute;left:50%;top:50%;width: 1920px;height: 1080px;overflow:clip;transform:translate(-50%,-50%);transform-origin:center center;background:var(--slide-bg)}
 .oil-slide{position:absolute;inset:0;width: 1920px;height: 1080px;overflow:clip;visibility:hidden;opacity:0;pointer-events:none;background:var(--slide-bg);color:var(--ink);transition:opacity .35s ease;contain:layout paint style}
-.oil-slide::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background-image:linear-gradient(var(--grid-color) 1px,transparent 1px),linear-gradient(90deg,var(--grid-color) 1px,transparent 1px);background-size:var(--grid-size) var(--grid-size);-webkit-mask-image:radial-gradient(ellipse 86% 72% at 50% 34%,#000 18%,transparent 76%);mask-image:radial-gradient(ellipse 86% 72% at 50% 34%,#000 18%,transparent 76%)}
-.oil-slide::after{content:"";position:absolute;inset:0;z-index:0;pointer-events:none}.oil-slide[data-bg="grid-full"]::before{-webkit-mask-image:none;mask-image:none}.oil-slide[data-bg="grid-fade"]::before{-webkit-mask-image:radial-gradient(ellipse 86% 72% at 50% 34%,#000 18%,transparent 76%);mask-image:radial-gradient(ellipse 86% 72% at 50% 34%,#000 18%,transparent 76%)}.oil-slide[data-bg="grid-wide"]::before{-webkit-mask-image:radial-gradient(ellipse 104% 92% at 50% 46%,#000 24%,transparent 82%);mask-image:radial-gradient(ellipse 104% 92% at 50% 46%,#000 24%,transparent 82%)}.oil-slide[data-bg="soft-spotlight"]::before,.oil-slide[data-bg="block-field"]::before,.oil-slide[data-bg="media-owned"]::before,.oil-slide[data-bg="plain"]::before{background:none}.oil-slide[data-bg="soft-spotlight"]::after{background:radial-gradient(circle at 22% 18%,color-mix(in srgb,var(--accent) 9%,transparent),transparent 34%)}.oil-slide[data-bg="block-field"]::after{inset:auto -52px -72px auto;width:720px;height:480px;background:color-mix(in srgb,var(--accent-soft) 66%,transparent);clip-path:polygon(30% 0,100% 0,100% 100%,0 100%)}.oil-slide[data-bg="media-owned"]::after,.oil-slide[data-bg="plain"]::after{background:none}
+.oil-slide::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background-image:linear-gradient(var(--grid-color) 1px,transparent 1px),linear-gradient(90deg,var(--grid-color) 1px,transparent 1px);background-size:var(--grid-size) var(--grid-size);-webkit-mask-image:radial-gradient(ellipse 94% 84% at 50% 42%,#000 20%,transparent 86%);mask-image:radial-gradient(ellipse 94% 84% at 50% 42%,#000 20%,transparent 86%)}
+.oil-slide::after{content:"";position:absolute;inset:0;z-index:0;pointer-events:none}.oil-slide[data-bg="grid-full"]::before{-webkit-mask-image:none;mask-image:none}.oil-slide[data-bg="grid-fade"]::before{-webkit-mask-image:radial-gradient(ellipse 94% 84% at 50% 42%,#000 20%,transparent 86%);mask-image:radial-gradient(ellipse 94% 84% at 50% 42%,#000 20%,transparent 86%)}.oil-slide[data-bg="grid-wide"]::before{-webkit-mask-image:radial-gradient(ellipse 108% 96% at 50% 48%,#000 26%,transparent 88%);mask-image:radial-gradient(ellipse 108% 96% at 50% 48%,#000 26%,transparent 88%)}.oil-slide[data-bg="soft-spotlight"]::before,.oil-slide[data-bg="block-field"]::before,.oil-slide[data-bg="media-owned"]::before,.oil-slide[data-bg="plain"]::before{background:none}.oil-slide[data-bg="soft-spotlight"]::after{background:radial-gradient(circle at 22% 18%,color-mix(in srgb,var(--accent) 9%,transparent),transparent 34%)}.oil-slide[data-bg="block-field"]::after{inset:auto -52px -72px auto;width:720px;height:480px;background:color-mix(in srgb,var(--accent-soft) 66%,transparent);clip-path:polygon(30% 0,100% 0,100% 100%,0 100%)}.oil-slide[data-bg="media-owned"]::after,.oil-slide[data-bg="plain"]::after{background:none}
 .oil-slide.active,body[data-oil-mode="preview"] .oil-slide{visibility:visible;opacity:1;pointer-events:auto;z-index:1}
 .oil-slide>*{position:relative;z-index:1}.slide-safe{position:absolute;inset:var(--slide-safe-y) var(--slide-safe-x);overflow:visible}
 
 /* Generic author-facing components. They carry geometry, not page-specific layouts. */
 .oil-stack{display:flex;flex-direction:column;gap:var(--stack-gap,24px)}
 .oil-stack[data-direction="row"]{flex-direction:row}.oil-stack[data-align="center"]{align-items:center}.oil-stack[data-align="end"]{align-items:flex-end}
+.oil-main-fill{flex:1;min-height:0}
+.oil-copy-center{display:flex;min-height:0;flex-direction:column;justify-content:center}
 .oil-grid{display:grid;grid-template-columns:repeat(var(--grid-columns,12),minmax(0,1fr));gap:var(--grid-gap,var(--slide-grid-gap))}.oil-grid>*{min-width:0;min-height:0}
 .oil-panel{padding:var(--panel-padding,32px);border:0;border-radius:var(--surface-radius);background:var(--surface-2)}
 .oil-panel[data-stroke="hairline"]{border:1px solid var(--border)}.oil-panel[data-stroke="strong"]{border:2px solid var(--ink)}

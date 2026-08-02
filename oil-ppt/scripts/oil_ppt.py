@@ -16,7 +16,7 @@ from project import ROOT, discover_projects, init_project, read_deck, require_pr
 from slide_html import parse_slide, new_slide_document, style_advice
 from state import input_manifest
 from theme import DIRECTIONS, catalog as theme_catalog, validate_theme
-from workflow import batch as workflow_batch
+from workflow import AUTHORING_RULE, batch as workflow_batch
 from workflow import confirm_outline, confirm_preview, status as workflow_status
 from workflow_contract import validate_batch_payload, validate_status_payload
 
@@ -113,23 +113,31 @@ def slide_add(project_value: Path, slide_id: str, title: str | None, starter: st
             "action": "edit_slide",
             "command": None,
             "path": str(path),
-            "brief": "当前页完成标准：先确定主要视觉关系，再替换 starter 中的全部示例文案、数值、来源和占位视觉，并让构图服务这一页的真实判断。四个及以上等宽重复单元只保留编号或时间、标题和一句短解释；第二层信息改成一个共享区、只展开一个重点，或拆页。完成前不要继续下一页。",
+            "brief": AUTHORING_RULE,
+            "rerun": cli_command("status", project, "--json"),
         },
     }
 
 
 def slide_list(project_value: Path) -> dict:
     project, deck = read_deck(project_value)
-    slides = []
+    slide_rows = []
+    parsed_slides = []
     seen: set[str] = set()
     for index, relative in enumerate(deck["slides"], 1):
         path = slide_path(project, relative)
         item = parse_slide(path, Path(relative).stem)
+        parsed_slides.append(item)
         if item.slide_id in seen:
             raise SystemExit(f"Duplicate slide ID: {item.slide_id}")
         seen.add(item.slide_id)
-        slides.append({"index": index, "id": item.slide_id, "title": item.title, "file": relative})
-    return {"ok": True, "project": str(project), "slides": slides, "style_advice": style_advice(project, deck)}
+        slide_rows.append({"index": index, "id": item.slide_id, "title": item.title, "file": relative})
+    return {
+        "ok": True,
+        "project": str(project),
+        "slides": slide_rows,
+        "style_advice": style_advice(project, deck, slides=parsed_slides),
+    }
 
 
 def slide_check(project_value: Path) -> dict:

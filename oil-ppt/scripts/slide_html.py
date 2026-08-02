@@ -417,6 +417,17 @@ def _style_advice_for_slide(slide: Slide) -> list[dict[str, str]]:
             "message": "检测到深色整页内继续嵌套多层深色容器；可压平为一个主深色画布，用列、留白和一处强调块建立层级。",
         })
     panel_count = len(re.findall(r"\bclass\s*=\s*['\"][^'\"]*\boil-panel\b", slide.section, re.I))
+    dark_summary = bool(re.search(
+        r"<(?:aside|div|section|article)\b(?=[^>]*\bclass\s*=\s*['\"][^'\"]*(?:summary|outcome|result|takeaway|conclusion|rail-note)[^'\"]*['\"])(?=[^>]*\bdata-tone\s*=\s*['\"]ink['\"])[^>]*>",
+        slide.section,
+        re.I | re.S,
+    ))
+    if panel_count >= 2 and dark_summary:
+        advice.append({
+            "slide": slide.slide_id,
+            "rule": "dark-summary-after-light-panels",
+            "message": "检测到多张面板后又追加通栏深色结论。优先把结论写进标题、重点单元，或改成细分隔线后的共享说明；不要让深色页脚截断轻盈层级。",
+        })
     grid_columns = re.findall(r"grid-template-columns\s*:\s*([^;{}]+)", slide.css, re.I)
     equal_grid = any(
         re.search(r"repeat\s*\(\s*[3-9]\s*,\s*(?:minmax\([^)]*\)|1fr)", value, re.I)
@@ -470,16 +481,25 @@ def _style_advice_for_slide(slide: Slide) -> list[dict[str, str]]:
     return advice
 
 
-def style_advice(project: Path, deck: dict) -> list[dict[str, str]]:
+def style_advice(
+    project: Path,
+    deck: dict,
+    *,
+    slides: list[Slide] | None = None,
+) -> list[dict[str, str]]:
     """Read real standalone HTML only; advice never participates in validation."""
     result: list[dict[str, str]] = []
-    for relative in deck.get("slides", []):
-        path = project / str(relative)
-        try:
-            result.extend(_style_advice_for_slide(parse_slide(path, Path(relative).stem)))
-        except SystemExit:
-            # Structural problems are handled by the normal blocking workflow.
-            continue
+    if slides is None:
+        slides = []
+        for relative in deck.get("slides", []):
+            path = project / str(relative)
+            try:
+                slides.append(parse_slide(path, Path(relative).stem))
+            except SystemExit:
+                # Structural problems are handled by the normal blocking workflow.
+                continue
+    for slide in slides:
+        result.extend(_style_advice_for_slide(slide))
     card_wall_slides = [item["slide"] for item in result if item.get("rule") == "equal-card-wall"]
     if len(card_wall_slides) >= 2:
         result.append({
@@ -496,8 +516,8 @@ def new_slide_document(slide_id: str, title: str) -> str:
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{safe_title}</title>
 <link rel="stylesheet" href="../runtime/deck.css"><link rel="stylesheet" href="../runtime/theme.css"><style>
 {CSS_START}
-.s-{slide_id} .slide-title {{ margin: 0; font-size: 88px; line-height: 1.1; }}
-.s-{slide_id} .slide-subtitle {{ margin: 28px 0 0; font-size: 30px; color: var(--ink-2); }}
+.s-{slide_id} .slide-title {{ margin: 0; font-size: 88px; line-height: var(--oil-leading-display); letter-spacing: var(--oil-tracking-display); }}
+.s-{slide_id} .slide-subtitle {{ margin: 28px 0 0; font-size: 30px; line-height: var(--oil-leading-body); color: var(--ink-2); }}
 {CSS_END}
 </style></head><body data-oil-mode="preview"><div class="slide-preview-viewport"><div class="slide-preview-shell"><div class="slide-preview-stage">
 {HTML_START}
