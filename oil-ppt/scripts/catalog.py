@@ -16,7 +16,7 @@ STARTER_GUIDANCE = {
     "blank": "从零开始的留白画布，适合独特构图。",
     "statement": "用一句核心主张建立开场或章节判断。",
     "title-media": "让一项证据或视觉与标题并置。",
-    "comparison": "并列解释现状、选择或前后差异。",
+    "comparison": "用开放中轴对照现状与方向，只有推荐一侧使用色调面。",
     "sequence": "说明 2–4 个连续行动；三步可展开，四步时每步只保留一段解释。",
     "data": "突出一个指标和它的简短解释。",
     "evidence": "把结论与可核验材料放在同一页。",
@@ -41,9 +41,11 @@ STARTER_GUIDANCE = {
 
 COMPOSITION_FAMILIES = {
     "focus": ("blank", "statement", "section", "ending", "metric-spotlight", "quote-focus", "step-focus"),
-    "evidence-and-media": ("title-media", "evidence", "annotated-showcase", "browser-showcase", "bleed-split", "media-collage"),
-    "comparison-and-feature": ("comparison", "problem-canvas", "feature-grid", "editorial-feature"),
-    "sequence-and-system": ("sequence", "process-rail", "converge", "relationship-map", "hierarchy-tree", "cycle"),
+    "comparison": ("comparison", "bleed-split"),
+    "sequence": ("sequence", "process-rail", "cycle"),
+    "hierarchy": ("feature-grid", "editorial-feature", "problem-canvas"),
+    "relationship": ("converge", "relationship-map", "hierarchy-tree"),
+    "evidence": ("title-media", "evidence", "annotated-showcase", "browser-showcase", "media-collage"),
     "data": ("data",),
 }
 
@@ -133,7 +135,7 @@ def _component_examples() -> str:
         for name in ("grid-fade", "grid-wide", "soft-spotlight", "block-field", "media-owned", "grid-full", "plain")
     )
     cards = [
-        ("layout", "oil-stack · oil-grid · oil-surface", '<div class="component-demo"><div class="oil-grid" style="--grid-columns:3"><div class="oil-panel">A</div><div class="oil-panel">B</div><div class="oil-panel">C</div></div></div>'),
+        ("layout", "oil-stack · oil-grid · oil-head · oil-notes · oil-surface", '<div class="component-demo"><div class="oil-grid" style="--grid-columns:3"><div class="oil-panel">A</div><div class="oil-panel">B</div><div class="oil-panel">C</div></div></div>'),
         ("content", "oil-panel · oil-metric · oil-quote · oil-label", demo),
         ("backgrounds", "grid-fade (default) · grid-wide · soft-spotlight · block-field · media-owned · grid-full · plain", f'<div class="component-demo catalog-backgrounds">{backgrounds}</div>'),
         ("media treatments", "natural · muted · mono · overlays · masks · oil-bleed", '<div class="component-demo catalog-media"><div class="oil-media" data-media-treatment="natural"><div class="oil-media-placeholder">NATURAL</div></div><div class="oil-media" data-media-treatment="muted" data-overlay="accent-wash"><div class="oil-media-placeholder">MUTED</div></div><div class="oil-media" data-media-treatment="mono" data-mask="fade-bottom"><div class="oil-media-placeholder">MONO</div></div><div class="oil-bleed" data-side="right"><span>BLEED</span></div></div>'),

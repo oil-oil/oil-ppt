@@ -80,7 +80,7 @@ scripts/oil-ppt status <项目> --json --intent edit --slide <页码或ID>
 
 ## author_slides 的逐页循环
 
-第一次进入 `author_slides` 时完整读取 `references/components.md`。它是构图、网格、字号、纵向占满、分栏、表面纹理和媒体组件的唯一设计规范；主 Skill 不重复这些数值和 API。
+第一次进入 `author_slides` 时完整读取 `references/components.md`。它是视觉层级、版式节奏、构图家族、网格、字号、纵向占满、分栏、表面纹理和媒体组件的唯一设计规范；主 Skill 不重复这些数值和 API。
 
 查看 24 个真实独立 starter 的紧凑目录，只在当前页面需要时读取一个具体 starter：
 
@@ -136,7 +136,7 @@ scripts/oil-ppt slide remove <项目> <页面ID>
 
 ## 参考资料路由
 
-- 构图、网格、字号、组件、表面纹理和媒体框架：`references/components.md`
+- 视觉层级、版式节奏、构图家族、网格、字号、组件、表面纹理和媒体框架：`references/components.md`
 - 外部素材选择：`references/media.md`
 - 概念插画：`references/illustration.md`
 - HTML/CSS/SVG 流程、关系、UI 和图表：`references/programmatic-visuals.md`
