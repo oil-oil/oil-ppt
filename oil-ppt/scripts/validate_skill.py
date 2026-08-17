@@ -8,7 +8,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from slide_html import parse_slide
+from slide_html import parse_slide, style_advice
 from theme import theme_css
 from workflow_contract import BATCH_NEXT_ACTIONS, STATUS_NEXT_ACTIONS, validate_next_step
 
@@ -166,13 +166,13 @@ def validation_errors() -> list[str]:
         errors.append("components.md must preserve the repeated-unit load and second-layer guidance")
     for contract in (
         "55%–70%", "浅色比较或特征卡", "垂直居中",
-        'data-decor="dots"', "oil-main-fill", "oil-copy-center",
+        'data-decor="dots"', "oil-main-fill", "oil-copy-center", "简短内容标签", "可选元素", "把材料写成可以看到的内容", "工具或函数名改成实际动作", "具体对象、动作、数字、文件或状态",
     ):
         if contract not in components_text:
             errors.append(f"components.md must preserve the design contract: {contract}")
     for contract in (
         "oil-tone", "最短执行路径", "slide add <项目> <页面ID>",
-        "进入正式预览的条件", "只执行 next",
+        "进入正式预览的条件", "只执行 next", "本页展示的具体对象", "内部界面标识", "[指标] 从 [数值] 变为 [数值]",
     ):
         if contract not in skill_text:
             errors.append(f"SKILL.md must preserve the workflow contract: {contract}")
@@ -180,6 +180,33 @@ def validation_errors() -> list[str]:
     process_source = process_rail.read_text(encoding="utf-8") if process_rail.is_file() else ""
     if process_source.count('class="step"') != 4 or process_source.count('class="rail-note"') != 1:
         errors.append("process-rail must model four overview steps and one shared second layer")
+    browser_showcase = STARTERS / "browser-showcase.html"
+    browser_source = browser_showcase.read_text(encoding="utf-8") if browser_showcase.is_file() else ""
+    if 'class="summary"' in browser_source or "oil-lede" in browser_source:
+        errors.append("browser-showcase must keep optional external summary copy out of the default starter")
+    if browser_source:
+        regression_source = browser_source.replace("__ID__", "showcase-check").replace(
+            "__TITLE__", "这是一个需要缩短的页面标题，其中包含了过多过程和结果说明"
+        ).replace(
+            "</header>",
+            '<p class="summary">这段说明会和界面争夺注意力。alpha.beta.gamma、delta.epsilon.zeta。</p></header>',
+            1,
+        )
+        with tempfile.TemporaryDirectory(prefix="oil-ppt-style-") as directory:
+            project = Path(directory)
+            (project / "slides").mkdir()
+            shutil.copytree(RUNTIME, project / "runtime")
+            output = project / "slides" / "showcase-check.html"
+            output.write_text(regression_source, encoding="utf-8")
+            slide = parse_slide(output, "showcase-check")
+            rules = {item["rule"] for item in style_advice(project, {"slides": []}, slides=[slide])}
+            for rule in (
+                "long-display-title",
+                "redundant-showcase-summary",
+                "implementation-identifiers-in-audience-copy",
+            ):
+                if rule not in rules:
+                    errors.append(f"style advice regression is missing rule: {rule}")
     validator_text = (ROOT / "scripts" / "cdp_validate.py").read_text(encoding="utf-8")
     for contract in (
         "minimumFontSize", "data-microcopy", "readability.length",

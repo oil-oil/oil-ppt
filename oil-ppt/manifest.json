@@ -2,8 +2,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "17a2341a1b3623152f537732e0f05fd4758d81ef07c29e699bd5b0cbaff0da20",
-      "size": 8191
+      "sha256": "5782c6619f35aa9af559f9156dcb9eba163604ea115befb08d6fca9b214c1b98",
+      "size": 10044
     },
     {
       "path": "agents/openai.yaml",
@@ -112,8 +112,8 @@
     },
     {
       "path": "assets/starters/browser-showcase.html",
-      "sha256": "227d3bf4eca789a93be8d543504eed900915a5a2abba93686290aed1126d51ea",
-      "size": 2548
+      "sha256": "4af78755f854cf7af279b6393b33e66d7be93e71bf8f30a0cd3312ca9f79764d",
+      "size": 2241
     },
     {
       "path": "assets/starters/comparison.html",
@@ -217,8 +217,8 @@
     },
     {
       "path": "references/components.md",
-      "sha256": "c731d85498780bcd8861cee20774681fa1e3f106a3e1c791221a5899fdbaa256",
-      "size": 15397
+      "sha256": "56e752d38395b799ebd656b8cd51856a0dc408efd538564314087b1c8c614d78",
+      "size": 17893
     },
     {
       "path": "references/evolution.md",
@@ -252,8 +252,8 @@
     },
     {
       "path": "scripts/catalog.py",
-      "sha256": "69a8cb4df8c0780667d6b06c5130f578b52e5497a359ac5cb74680cb41ecbcf7",
-      "size": 17459
+      "sha256": "1daabe7c4571e63f4530fb5fe8f84c42de1e5e5de83a898351a45c8ea4040df3",
+      "size": 17534
     },
     {
       "path": "scripts/cdp_validate.py",
@@ -322,8 +322,8 @@
     },
     {
       "path": "scripts/slide_html.py",
-      "sha256": "dd9fb75cb7382e6b3a0f41009bc3f30d001e348a8137f1f8360d0ab9bdefa396",
-      "size": 23638
+      "sha256": "8bc21f0b385d26dd23c3e8fb8a4e273799051270f97e2e30254fe959208c015d",
+      "size": 26433
     },
     {
       "path": "scripts/state.py",
@@ -337,8 +337,8 @@
     },
     {
       "path": "scripts/validate_skill.py",
-      "sha256": "386be4087814dc56a07eff350bf2a3619a6674c975c7192d7570610e1c81b5c3",
-      "size": 10680
+      "sha256": "61fb0f0630d7aabf6cea4e02ab6dd45c034dfd14af48eb0ea5645223d8138225",
+      "size": 12547
     },
     {
       "path": "scripts/workflow.py",
@@ -353,5 +353,5 @@
   ],
   "package_version": "1.0.0",
   "schema_version": "oil-ppt.package/v1",
-  "tree_sha256": "3393c859d404965fe3848033b51f75c76bafa9dff28a85f18f7a83c4cdf0d758"
+  "tree_sha256": "ebfd8be66c08668528bff00c8cbc6b8d09fbcc649ac0f39afbe7e7bb1c25e725"
 }

@@ -27,7 +27,7 @@ STARTER_GUIDANCE = {
     "process-rail": "四阶段总览；每个节点只放时间或编号、标题和一句短解释，第二层信息移到共享区或下一页。",
     "feature-grid": "用一项主特征和少量辅助特征建立层级。",
     "annotated-showcase": "用注释指向一项关键证据或界面细节。",
-    "browser-showcase": "在浏览器框中展示本地产品或网页证据。",
+    "browser-showcase": "让本地产品或网页证据占据页面主体；标题保持简短，只有来源或限制确实必要时再补一行说明。",
     "editorial-feature": "以大标题和一项主表面讲述编辑式判断。",
     "relationship-map": "用真实 DOM 节点和连接线表达对象关系。",
     "hierarchy-tree": "以三层层级展示归属、职责或组织结构。",

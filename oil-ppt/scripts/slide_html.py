@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections import Counter
 from dataclasses import dataclass
 from html.parser import HTMLParser
@@ -185,6 +186,42 @@ def _repeated_semantic_classes(section: str, minimum: int = 3) -> set[str]:
         for token in node.classes - {"oil-panel", "oil-surface"}
     )
     return {token for token, count in counts.items() if count >= minimum}
+
+
+def _composition_nodes(section: str) -> list[_CompositionNode]:
+    parser = _CompositionParser()
+    parser.feed(section)
+    return [node for root in parser.roots for node in [root, *root.descendants()]]
+
+
+def _node_text(node: _CompositionNode) -> str:
+    parts = [*node.own_text]
+    for child in node.children:
+        parts.append(_node_text(child))
+    return " ".join(part for part in parts if part).strip()
+
+
+def _display_units(value: str) -> int:
+    return sum(
+        2 if unicodedata.east_asian_width(character) in {"W", "F"} else 1
+        for character in value
+        if not character.isspace()
+    )
+
+
+def _implementation_identifiers(nodes: list[_CompositionNode]) -> set[str]:
+    """Find implementation-facing dotted identifiers in ordinary audience copy."""
+    identifiers: set[str] = set()
+    for node in nodes:
+        if node.tag in {"code", "pre", "script", "style"} or node.classes & {"oil-code"}:
+            continue
+        for value in node.own_text:
+            identifiers.update(re.findall(
+                r"(?<![a-z0-9_-])[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+(?![a-z0-9_-])",
+                value,
+                re.I,
+            ))
+    return identifiers
 
 
 def _fail(path: Path, message: str) -> None:
@@ -382,6 +419,29 @@ def _style_advice_for_slide(slide: Slide) -> list[dict[str, str]]:
     """Return deliberately conservative, non-blocking composition suggestions."""
     source = slide.css + "\n" + slide.section
     advice: list[dict[str, str]] = []
+    nodes = _composition_nodes(slide.section)
+    display_title = next((_node_text(node) for node in nodes if node.tag == "h1"), "")
+    if _display_units(display_title) > 34:
+        advice.append({
+            "slide": slide.slide_id,
+            "rule": "long-display-title",
+            "message": "标题的投影阅读宽度偏长。先把完整判断留给讲述或主视觉，标题改成简短、平铺直叙的内容标签；界面和证据页优先控制在一行。",
+        })
+    has_browser_showcase = any("oil-browser" in node.classes for node in nodes)
+    has_external_summary = any(node.classes & {"summary", "oil-lede"} for node in nodes)
+    if has_browser_showcase and has_external_summary:
+        advice.append({
+            "slide": slide.slide_id,
+            "rule": "redundant-showcase-summary",
+            "message": "浏览器展示页同时出现了标题外说明段。主界面已经能承担解释时直接删除；只有来源、限制或阅读方法确实必要时才保留一行。",
+        })
+    implementation_identifiers = _implementation_identifiers(nodes)
+    if len(implementation_identifiers) >= 2 or any(value.count(".") >= 2 for value in implementation_identifiers):
+        advice.append({
+            "slide": slide.slide_id,
+            "rule": "implementation-identifiers-in-audience-copy",
+            "message": "页面正文出现多个带点号的内部名称。如果本页不是专门讲实现，请改成观众能识别的位置、动作、用途或产物；原始名称放到附录或讲者备注。",
+        })
     ink_strokes = re.findall(
         r"border(?:-(?:top|right|bottom|left))?\s*:\s*(?:[2-9]\d*|1\d+)px\b[^;{}]*(?:var\(--ink\)|#(?:292929|353633))",
         source,
