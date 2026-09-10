@@ -129,9 +129,10 @@ def _component_examples() -> str:
     runtime = (ROOT / "assets" / "runtime" / "deck.css").read_text(encoding="utf-8")
     theme = (ROOT / "assets" / "runtime" / "theme.css").read_text(encoding="utf-8")
     demo = '''<div class="component-demo"><div class="oil-panel" data-tone="accent"><span class="oil-label">signal</span><div class="oil-metric"><strong class="oil-metric-value">72%</strong><span class="oil-metric-label">关键指标</span></div></div><blockquote class="oil-quote">共享 primitives 负责几何与表现。</blockquote></div>'''
+    owned_media = '<i class="catalog-media-owned-sample" aria-hidden="true"></i>'
     backgrounds = ''.join(
         f'<div class="catalog-bg"><section class="oil-slide s-catalog" data-bg="{name}"><span>{name}</span>'
-        f'{"<i class=\"catalog-media-owned-sample\" aria-hidden=\"true\"></i>" if name == "media-owned" else ""}</section></div>'
+        f'{owned_media if name == "media-owned" else ""}</section></div>'
         for name in ("grid-fade", "grid-wide", "soft-spotlight", "block-field", "media-owned", "grid-full", "plain")
     )
     cards = [

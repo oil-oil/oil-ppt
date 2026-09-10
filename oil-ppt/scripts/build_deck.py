@@ -67,7 +67,9 @@ def build_project(project_value: Path, *, browser: bool = False) -> Path:
     runtime_js = (project / "runtime" / "deck.js").read_text(encoding="utf-8")
     title = html.escape(str(deck.get("title") or "oil-ppt"))
     output = project / "演示文稿.html"
-    rendered = f'''<!doctype html><html lang="{html.escape(str(deck.get("lang") or "zh-CN"))}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><style>{runtime_css}\n{project_theme_css(project, deck)}\n{"\n".join(css for css, _ in pieces)}</style></head><body data-click-nav="{str(bool((deck.get("controls") or {}).get("click_navigation", False))).lower()}"><div class="deck-viewport"><div class="deck-stage-shell"><div class="deck-stage">{"\n".join(section for _, section in pieces)}</div></div></div>{deck_chrome(deck)}<script>{runtime_js}</script></body></html>\n'''
+    slide_css = "\n".join(css for css, _ in pieces)
+    slide_sections = "\n".join(section for _, section in pieces)
+    rendered = f'''<!doctype html><html lang="{html.escape(str(deck.get("lang") or "zh-CN"))}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><style>{runtime_css}\n{project_theme_css(project, deck)}\n{slide_css}</style></head><body data-click-nav="{str(bool((deck.get("controls") or {}).get("click_navigation", False))).lower()}"><div class="deck-viewport"><div class="deck-stage-shell"><div class="deck-stage">{slide_sections}</div></div></div>{deck_chrome(deck)}<script>{runtime_js}</script></body></html>\n'''
     descriptor, temporary_name = tempfile.mkstemp(prefix=".oil-ppt-build-", suffix=".html", dir=project)
     temporary = Path(temporary_name)
     try:

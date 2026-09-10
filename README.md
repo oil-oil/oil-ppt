@@ -10,7 +10,7 @@
   <img src="./assets/readme/readme-section-system.svg" width="100%" alt="02 oil-ppt 是什么">
 </p>
 
-oil-ppt 是一个给 Agent 使用的 PPT Skill。我们可以给它一个主题、一份文档或一组材料，它会直接创作可以全屏播放、离线打开的 16:9 HTML 演示文稿。
+创建、修改和检查 16:9 HTML 演示文稿，支持逐页编辑、离线演示和混合可编辑 PPTX 导出。
 
 上面的十五张页面来自四套真实演示，分别使用黄色、钴蓝、苔绿和陶土色。它们共享同一套设计系统，但素材、密度和页面结构会跟着内容改变。
 
@@ -85,6 +85,10 @@ npx skills add oil-oil/oil-ppt
 
 ```bash
 oil-ppt/scripts/oil-ppt doctor
+# 修改 Skill 包内文件后，先更新并核对发布清单
+python3 oil-ppt/scripts/package_manifest.py --write --json
+python3 oil-ppt/scripts/package_manifest.py --verify --json
+python3 oil-ppt/scripts/validate_skill.py
 python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
@@ -95,3 +99,15 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 </p>
 
 <p align="center"><sub>MIT License</sub></p>
+
+## 配置、依赖与使用边界
+
+需要 Python / Node.js 及项目中声明的构建依赖；油式文案使用 oil-tone，生图按可用工具配置。不是所有页面都能无损转成可编辑 PowerPoint。
+
+导出与渲染按当前运行环境验收；来源、字体与图像权利由实际材料决定。页面检查不能以文件存在替代。
+
+使用示例：
+
+```text
+用 oil-ppt 把这份材料做成 8 页演示文稿。
+```
