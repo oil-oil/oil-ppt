@@ -2,8 +2,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "5782c6619f35aa9af559f9156dcb9eba163604ea115befb08d6fca9b214c1b98",
-      "size": 10044
+      "sha256": "8fc66f0f81dd7c246ac4725c964549ba9ce7d9c92deca4658e6966084439e033",
+      "size": 10103
     },
     {
       "path": "agents/openai.yaml",
@@ -353,5 +353,5 @@
   ],
   "package_version": "1.0.0",
   "schema_version": "oil-ppt.package/v1",
-  "tree_sha256": "ebfd8be66c08668528bff00c8cbc6b8d09fbcc649ac0f39afbe7e7bb1c25e725"
+  "tree_sha256": "0237e4c321364783597d07e0791cf1dc63ce80d5f598663a40cf560ee8f9214b"
 }

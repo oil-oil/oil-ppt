@@ -85,6 +85,10 @@ npx skills add oil-oil/oil-ppt
 
 ```bash
 oil-ppt/scripts/oil-ppt doctor
+# 修改 Skill 包内文件后，先更新并核对发布清单
+python3 oil-ppt/scripts/package_manifest.py --write --json
+python3 oil-ppt/scripts/package_manifest.py --verify --json
+python3 oil-ppt/scripts/validate_skill.py
 python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
