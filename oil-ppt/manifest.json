@@ -247,13 +247,13 @@
     },
     {
       "path": "scripts/build_deck.py",
-      "sha256": "6fb31b5992362bbf360707fe22315cdbf51572a2590d1a44ce3ac513438f5386",
-      "size": 5550
+      "sha256": "132d535589c7f780152057b1e37460dfa47d7cb18a19a3990a3aa70daea42d49",
+      "size": 5612
     },
     {
       "path": "scripts/catalog.py",
-      "sha256": "1daabe7c4571e63f4530fb5fe8f84c42de1e5e5de83a898351a45c8ea4040df3",
-      "size": 17534
+      "sha256": "48a4eab0131bef1b63702ac842a8f8a5f5ddb0390d082d8ad1764c417e63c37f",
+      "size": 17560
     },
     {
       "path": "scripts/cdp_validate.py",
@@ -353,5 +353,5 @@
   ],
   "package_version": "1.0.0",
   "schema_version": "oil-ppt.package/v1",
-  "tree_sha256": "0237e4c321364783597d07e0791cf1dc63ce80d5f598663a40cf560ee8f9214b"
+  "tree_sha256": "bd2c604ab6ea3ef1558dc25284ddb5983ca80e0b295eda6c3d7471f79213ea1a"
 }
