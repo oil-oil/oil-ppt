@@ -95,3 +95,15 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 </p>
 
 <p align="center"><sub>MIT License</sub></p>
+
+## 配置、依赖与使用边界
+
+需要 Python / Node.js 及项目中声明的构建依赖；油式文案使用 oil-tone，生图按可用工具配置。不是所有页面都能无损转成可编辑 PowerPoint。
+
+导出与渲染按当前运行环境验收；来源、字体与图像权利由实际材料决定。页面检查不能以文件存在替代。
+
+使用示例：
+
+```text
+用 oil-ppt 把这份材料做成 8 页演示文稿。
+```
