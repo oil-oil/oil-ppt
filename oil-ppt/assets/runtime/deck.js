@@ -19,8 +19,22 @@
 
   function scaleStage() {
     if (!stage || !shell) return;
-    const width = shell.clientWidth || window.innerWidth;
-    const height = shell.clientHeight || window.innerHeight;
+    /* Embedded browsers and pinch zoom may change the visible viewport
+       without window.resize. Keep the full slide visible. */
+    const visible = window.visualViewport;
+    const root = document.documentElement.style;
+    const view = {
+      width: visible?.width || window.innerWidth,
+      height: visible?.height || window.innerHeight,
+      left: visible?.offsetLeft || 0,
+      top: visible?.offsetTop || 0,
+    };
+    for (const [name, value] of Object.entries({ ...view,
+      right: view.left + view.width, bottom: view.top + view.height })) {
+      root.setProperty(`--oil-viewport-${name}`, `${value}px`);
+    }
+    const width = Math.min(shell.clientWidth || view.width, view.width);
+    const height = Math.min(shell.clientHeight || view.height, view.height);
     const scale = Math.min(width / W, height / H);
     stage.style.transform = `translate(-50%, -50%) scale(${scale})`;
     stage.dataset.scale = String(scale);
@@ -163,7 +177,7 @@
       slide.setAttribute("aria-hidden", i === index ? "false" : "true");
     });
     if (counter) counter.textContent = `${index + 1} / ${slides.length}`;
-    if (progress) progress.style.width = `${((index + 1) / slides.length) * 100}%`;
+    if (progress) progress.style.width = `calc(var(--oil-viewport-width, 100vw) * ${(index + 1) / slides.length})`;
     renderNextPreview();
     updateOverviewCurrent();
   }
@@ -345,7 +359,19 @@
   setupTabs();
   initDeck();
   validateLayout();
-  addEventListener("resize", () => { scaleStage(); sizeOverviewSlides(); validateLayout(); });
+  let resizeFrame = 0;
+  function scheduleResize() {
+    cancelAnimationFrame(resizeFrame);
+    resizeFrame = requestAnimationFrame(() => {
+      scaleStage(); sizeOverviewSlides(); validateLayout();
+    });
+  }
+  addEventListener("resize", scheduleResize);
+  window.visualViewport?.addEventListener("resize", scheduleResize);
+  window.visualViewport?.addEventListener("scroll", scheduleResize);
+  if (shell && typeof ResizeObserver !== "undefined") {
+    new ResizeObserver(scheduleResize).observe(shell);
+  }
   const fontsReady = document.fonts?.ready || Promise.resolve();
   fontsReady.then(() => requestAnimationFrame(() => { validateLayout(); renderNextPreview(); }));
 })();

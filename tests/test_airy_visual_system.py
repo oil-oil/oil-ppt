@@ -165,11 +165,11 @@ class AiryVisualSystemTests(unittest.TestCase):
             oil_ppt.slide_add(project, "one", "One", "statement", None)
             path = project / "slides" / "one.html"
             original = path.read_text(encoding="utf-8")
-            broken = original.replace("一句清晰、可被记住的主张。", r"first\nsecond\nthird")
+            broken = original.replace("</h1>", r"</h1><p>first\nsecond\nthird</p>")
             path.write_text(broken, encoding="utf-8")
             with self.assertRaisesRegex(SystemExit, "literal escape sequences"):
                 oil_ppt.slide_check(project)
-            path.write_text(original.replace("一句清晰、可被记住的主张。", r'<code data-literal-escape="true">first\nsecond\nthird</code>'), encoding="utf-8")
+            path.write_text(original.replace("</h1>", r'</h1><code data-literal-escape="true">first\nsecond\nthird</code>'), encoding="utf-8")
             self.assertEqual(oil_ppt.slide_check(project)["checked"], 1)
 
 

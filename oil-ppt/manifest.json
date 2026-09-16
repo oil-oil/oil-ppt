@@ -2,8 +2,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "8fc66f0f81dd7c246ac4725c964549ba9ce7d9c92deca4658e6966084439e033",
-      "size": 10103
+      "sha256": "e931c372eab8f96ecec17047b2685a413bb6f854bf9cf3c6fa5c8c7bf49dca5b",
+      "size": 10775
     },
     {
       "path": "agents/openai.yaml",
@@ -77,13 +77,13 @@
     },
     {
       "path": "assets/runtime/deck.css",
-      "sha256": "335477687096f3a1de584c1a7a0406abad94e21cb16fbe2c0a620317b8acebc3",
-      "size": 22916
+      "sha256": "b455057c5c2d3404e9cba400512840b6f6d9a742db70a3a88f8f06b4b74df6d1",
+      "size": 23827
     },
     {
       "path": "assets/runtime/deck.js",
-      "sha256": "782f2bda870ad1a0d82a3a7ad46fa2ccee7d30aad9adc6088f7369d8d4445718",
-      "size": 16375
+      "sha256": "6d3c4128622df6568e1d3f57e6710dd5bcaa2b53c8c33ba213a4a8592ab2e100",
+      "size": 17485
     },
     {
       "path": "assets/runtime/theme.css",
@@ -97,8 +97,8 @@
     },
     {
       "path": "assets/starters/annotated-showcase.html",
-      "sha256": "a5821584fa3b01f7782c1da8f533a3d7bf6178ac157d395b49b2e7259f15ca69",
-      "size": 2470
+      "sha256": "81994bfd19caa741cb5dd8baa608f191f7ce3022d65cfcd94ac62f3568e13643",
+      "size": 2437
     },
     {
       "path": "assets/starters/blank.html",
@@ -107,118 +107,118 @@
     },
     {
       "path": "assets/starters/bleed-split.html",
-      "sha256": "03b9eb55b70d881b2b5a20359ee4de4e48a5f255dbeebca109e5745eaec35307",
-      "size": 1507
+      "sha256": "fbf39524054ba5c9432d52369ed264f561bf1fc3a473f830723864df7116b928",
+      "size": 1410
     },
     {
       "path": "assets/starters/browser-showcase.html",
-      "sha256": "4af78755f854cf7af279b6393b33e66d7be93e71bf8f30a0cd3312ca9f79764d",
-      "size": 2241
+      "sha256": "d90751689e96d23bcddae6d41fb62eceabec9d6cbc5b62faab9e5c87e505ee9e",
+      "size": 2194
     },
     {
       "path": "assets/starters/comparison.html",
-      "sha256": "4c39b641e631f32008ccf74fee029c836b95aa0fd8f9e4894f9e0e5a4875db2e",
-      "size": 1883
+      "sha256": "f3ccc435b90af72967d98512db14f2381d31eeffc63467b6d4b3c4284c09f32b",
+      "size": 1842
     },
     {
       "path": "assets/starters/converge.html",
-      "sha256": "b1ba8f5c11f92095815ca131037ce50e16da8df56b9f5ae9dab43ca7a76e21bf",
-      "size": 2280
+      "sha256": "7ec2c49c8e4639db8a0bfd8cb8d8141e9f122b42139e72d93376132b2d0fc02b",
+      "size": 2156
     },
     {
       "path": "assets/starters/cycle.html",
-      "sha256": "fc8c7d3ab937d21651fd5d5c4e0ab11fd71815dceccb0ffbfc24718b6cbdc357",
+      "sha256": "040f0427a9f020e0bfb4054c71d2be6cae142f30ef20ba2bc0a81a3c958e3411",
       "size": 2040
     },
     {
       "path": "assets/starters/data.html",
-      "sha256": "c08fa1b171a05f0c1f53343dd4eb4aff7490694329f2d2a5cbbb9dd93519c06d",
-      "size": 2430
+      "sha256": "ea0e6b9b0f874a164cd6a0170750eaabc8f506da212c1ae6cb62bf55b21838c0",
+      "size": 2395
     },
     {
       "path": "assets/starters/editorial-feature.html",
-      "sha256": "729398eb4c923c61d42633d9d7b5e8f4c7df99b2b3f784c4414deedaec0c4e1f",
-      "size": 1764
+      "sha256": "c3e1e9e3213fd8031e71b4d0df6e51f3d551c9c5c91f376741076383caf97dcf",
+      "size": 1681
     },
     {
       "path": "assets/starters/ending.html",
-      "sha256": "8152a0bd17d14b83ae594e756118d37eb821f0e43a1c9e6351193ff75c0beb85",
-      "size": 1276
+      "sha256": "f1911d9571ab4aad0a4250fad0ce3eaf1ca4374bb4a6213d65a367d91ee4b7b7",
+      "size": 1169
     },
     {
       "path": "assets/starters/evidence.html",
-      "sha256": "b4b7ff96b646b8f53a7ce2c4b174eaf2977ae9c6ed0bbc5719f3b5cf3341fd53",
-      "size": 2093
+      "sha256": "0a8d108fdf78b8b2107f682a7f81bf9b22ebe1ec5f66d2c6df1b0b38499bd4f4",
+      "size": 2054
     },
     {
       "path": "assets/starters/feature-grid.html",
-      "sha256": "912e9c2c2f80f64d7115137dcbba68d4f79bd773e82a1b99c5e915a83a7a8f51",
-      "size": 2421
+      "sha256": "772969cfb376fc2ed01b4e7a06e5adaa35b988fea5470254f4e6c66062a991a9",
+      "size": 2284
     },
     {
       "path": "assets/starters/hierarchy-tree.html",
-      "sha256": "39a973fd3cedebf2f098a9e2900f6b1ec3cacaac8ca11d24bdba6f9135511e53",
+      "sha256": "3e878bd1857e65ca745a1c11902c349bf4eeb1b1488a65320cce406f5bc09f17",
       "size": 2178
     },
     {
       "path": "assets/starters/media-collage.html",
-      "sha256": "5af5deb47652409c6d0fe429b44c7d2997b8a2211cd722d69997c0610e56d3cd",
-      "size": 1838
+      "sha256": "12c03fdd8c2add8d97d9550687487bbf6595c0cc336ce1692f5f0c78b15f4f81",
+      "size": 1735
     },
     {
       "path": "assets/starters/metric-spotlight.html",
-      "sha256": "215ddb1fc0a5e36ecd40221c294ecb997e41af81e4876b486b77c092b0e3bb34",
-      "size": 1747
+      "sha256": "d767a09e52a9b7a43d047a852cf6901b35682b7adbfb4d479553963726cd86e5",
+      "size": 1625
     },
     {
       "path": "assets/starters/problem-canvas.html",
-      "sha256": "fd513f2f98795280e326df08ba6f3da6561932de24654f8d653c45681a7a6f9d",
-      "size": 2100
+      "sha256": "6d1c94680fce32e118913f025fd5928e9ccc2c487281402e28be62b8be1643fc",
+      "size": 2055
     },
     {
       "path": "assets/starters/process-rail.html",
-      "sha256": "7841687fa9a4abe6b2e65125bf57ae11e5e26e81aff9c2b030e52364191ebfe8",
-      "size": 3189
+      "sha256": "763a2bb6cd719b7706ff70b88fae23defb584314d1d10632d834166b77289d6f",
+      "size": 2803
     },
     {
       "path": "assets/starters/quote-focus.html",
-      "sha256": "cfe8027364e730c642619d687d778f0a76ead6954e977914b91cc92bf0eb7563",
-      "size": 1495
+      "sha256": "6fadea8a3d5f3876f081cb4dc406bcee0297755c5babf33822a94145f96e3885",
+      "size": 1396
     },
     {
       "path": "assets/starters/relationship-map.html",
-      "sha256": "f5281f8e5a0cd0a6f8fc2ca9b8746a692a9dab89118bbd42752958d37a7235e9",
-      "size": 3485
+      "sha256": "0a462ff4f3e5f0b075eca4b442fbbab099b9cc6f25c7a9faa436b3c86344be9f",
+      "size": 3382
     },
     {
       "path": "assets/starters/section.html",
-      "sha256": "881dce6d377a421a5a398b2d6c553073efee8ffb69b842d28f9ff619bab74d5c",
-      "size": 1327
+      "sha256": "742a7f26d851f62ef46c3380f65f7d9394ef37ba17b408d8f4be4bd39db54862",
+      "size": 1278
     },
     {
       "path": "assets/starters/sequence.html",
-      "sha256": "fc17d532e2e9bd7a4ec39a1afd9c52024075378d478715d949ab1a73971ab67b",
-      "size": 2168
+      "sha256": "f08fbadf4bb6f9e3e7c79dd803cfc408d1828af0fd0933e3f352d07c509c0639",
+      "size": 2129
     },
     {
       "path": "assets/starters/statement.html",
-      "sha256": "00dafe5d06874fd56da8bcf2a14fcc0ec6e0fccfcc3e4cb06ac45fbb97dd7399",
-      "size": 1295
+      "sha256": "49e13d6f6f8c51e25c05913421b6020e6e4b89e9b672e35a3d4245c604db507c",
+      "size": 1220
     },
     {
       "path": "assets/starters/step-focus.html",
-      "sha256": "52441d90319e36698ff193fbfd16c0479b30eb378037882eec9f1c847c387077",
-      "size": 1640
+      "sha256": "948fae2f139366a81f2306d155b7aced250290935d5adf0283d8756314394976",
+      "size": 1598
     },
     {
       "path": "assets/starters/title-media.html",
-      "sha256": "c45560b625a0596537c8708d9bf3eed46979b0cd8295d7e618172daa313beb83",
-      "size": 1356
+      "sha256": "5fa810ad374fcc1e2c3c69d2c086bf909f27ae3444fc304e32abbbb9e9f78166",
+      "size": 1277
     },
     {
       "path": "references/components.md",
-      "sha256": "56e752d38395b799ebd656b8cd51856a0dc408efd538564314087b1c8c614d78",
-      "size": 17893
+      "sha256": "61e99cbf03812c8877ae3e275b39d0b049cb3e6a3d178a516df5d6b178e0fabc",
+      "size": 21088
     },
     {
       "path": "references/evolution.md",
@@ -322,8 +322,8 @@
     },
     {
       "path": "scripts/slide_html.py",
-      "sha256": "8bc21f0b385d26dd23c3e8fb8a4e273799051270f97e2e30254fe959208c015d",
-      "size": 26433
+      "sha256": "23ad3ea700751d95378dfe7d453c6ffc35cc63882eb39edbe889b6c25a52dbaa",
+      "size": 26240
     },
     {
       "path": "scripts/state.py",
@@ -337,8 +337,8 @@
     },
     {
       "path": "scripts/validate_skill.py",
-      "sha256": "61fb0f0630d7aabf6cea4e02ab6dd45c034dfd14af48eb0ea5645223d8138225",
-      "size": 12547
+      "sha256": "894f1d88fbaf7b7c8f1d311c894c35f91f3cf1f1a290dc182ffa03191b3e2fd7",
+      "size": 12549
     },
     {
       "path": "scripts/workflow.py",
@@ -353,5 +353,5 @@
   ],
   "package_version": "1.0.0",
   "schema_version": "oil-ppt.package/v1",
-  "tree_sha256": "bd2c604ab6ea3ef1558dc25284ddb5983ca80e0b295eda6c3d7471f79213ea1a"
+  "tree_sha256": "43f56880f418181b24ba756ce62f924bcca908d2e16dad16b727745275ba45bc"
 }

@@ -176,7 +176,7 @@ class HtmlWorkflowTests(unittest.TestCase):
         for needle, replacement, expected in (
             (".s-cover .slide-title", "body .slide-title", "leaks outside"),
             ("</body>", "<script>alert(1)</script></body>", "only the ../runtime/deck.js"),
-            ("Edit this slide directly in HTML.", '<img src="https://example.test/image.png">', "remote or file URL"),
+            ("</h1>", '</h1><img src="https://example.test/image.png">', "remote or file URL"),
         ):
             original = source.read_text(encoding="utf-8")
             source.write_text(original.replace(needle, replacement, 1), encoding="utf-8")
@@ -202,8 +202,8 @@ class HtmlWorkflowTests(unittest.TestCase):
         source = self.project / "slides" / "cover.html"
         source.write_text(
             source.read_text(encoding="utf-8").replace(
-                "Edit this slide directly in HTML.",
-                '<code>background:url("https://example.test/demo.png")</code>',
+                "</h1>",
+                '</h1><code>background:url("https://example.test/demo.png")</code>',
             ),
             encoding="utf-8",
         )
@@ -235,7 +235,7 @@ class HtmlWorkflowTests(unittest.TestCase):
         next_step = oil_ppt.status_payload(self.project)["next"]
         self.assertEqual(next_step["action"], "edit_slide")
         self.assertEqual(Path(next_step["path"]), source)
-        source.write_text(original.replace("Edit this slide directly in HTML.", '<img src="../assets/missing.png" alt="Missing">'), encoding="utf-8")
+        source.write_text(original.replace("</h1>", '</h1><img src="../assets/missing.png" alt="Missing">'), encoding="utf-8")
         next_step = oil_ppt.status_payload(self.project)["next"]
         self.assertEqual(next_step["action"], "fix_media")
         self.assertEqual(Path(next_step["path"]), source)
@@ -295,8 +295,8 @@ class HtmlWorkflowTests(unittest.TestCase):
         source = self.project / "slides" / "cover.html"
         text = source.read_text(encoding="utf-8")
         text = text.replace(
-            ".s-cover .slide-subtitle {",
-            '.s-cover .media-proof { background-image: url("../assets/pixel.png"); }\n.s-cover .slide-subtitle {',
+            ".s-cover .slide-title {",
+            '.s-cover .media-proof { background-image: url("../assets/pixel.png"); }\n.s-cover .slide-title {',
         ).replace(
             "</div></section>",
             '<picture class="media-proof"><source srcset="../assets/pixel.png 1x"><img src="../assets/pixel.png" alt="One verification pixel"></picture></div></section>',
@@ -316,8 +316,8 @@ class HtmlWorkflowTests(unittest.TestCase):
         oil_ppt.slide_add(self.project, "cover", "Cover", None, None)
         source = self.project / "slides" / "cover.html"
         text = source.read_text(encoding="utf-8").replace(
-            "Edit this slide directly in HTML.",
-            "Use <code>../assets/example.png</code> in your page.",
+            "</h1>",
+            '</h1><p style="font-size:28px">Use <code>../assets/example.png</code> in your page.</p>',
         )
         source.write_text(text, encoding="utf-8")
         preview = render_preview(self.project).read_text(encoding="utf-8")
@@ -328,7 +328,7 @@ class HtmlWorkflowTests(unittest.TestCase):
         source = self.project / "slides" / "cover.html"
         example = '&lt;img src="../assets/example.png" alt="Example"&gt;'
         source.write_text(
-            source.read_text(encoding="utf-8").replace("Edit this slide directly in HTML.", f"<code>{example}</code>"),
+            source.read_text(encoding="utf-8").replace("</h1>", f'</h1><code style="font-size:24px">{example}</code>'),
             encoding="utf-8",
         )
         preview = render_preview(self.project)

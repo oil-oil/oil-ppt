@@ -178,8 +178,8 @@ def validation_errors() -> list[str]:
             errors.append(f"SKILL.md must preserve the workflow contract: {contract}")
     process_rail = STARTERS / "process-rail.html"
     process_source = process_rail.read_text(encoding="utf-8") if process_rail.is_file() else ""
-    if process_source.count('class="step"') != 4 or process_source.count('class="rail-note"') != 1:
-        errors.append("process-rail must model four overview steps and one shared second layer")
+    if process_source.count('class="step"') != 4 or process_source.count('class="rail-note"') != 0:
+        errors.append("process-rail must model four overview steps without mandatory footer copy")
     browser_showcase = STARTERS / "browser-showcase.html"
     browser_source = browser_showcase.read_text(encoding="utf-8") if browser_showcase.is_file() else ""
     if 'class="summary"' in browser_source or "oil-lede" in browser_source:
