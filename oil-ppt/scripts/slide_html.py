@@ -576,12 +576,11 @@ def new_slide_document(slide_id: str, title: str) -> str:
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{safe_title}</title>
 <link rel="stylesheet" href="../runtime/deck.css"><link rel="stylesheet" href="../runtime/theme.css"><style>
 {CSS_START}
-.s-{slide_id} .slide-title {{ margin: 0; font-size: 88px; line-height: var(--oil-leading-display); letter-spacing: var(--oil-tracking-display); }}
-.s-{slide_id} .slide-subtitle {{ margin: 28px 0 0; font-size: 30px; line-height: var(--oil-leading-body); color: var(--ink-2); }}
+.s-{slide_id} .slide-title {{ margin: 0; font-size: 64px; line-height: var(--oil-leading-display); letter-spacing: var(--oil-tracking-display); }}
 {CSS_END}
 </style></head><body data-oil-mode="preview"><div class="slide-preview-viewport"><div class="slide-preview-shell"><div class="slide-preview-stage">
 {HTML_START}
-<section class="oil-slide s-{slide_id}" data-slide-id="{slide_id}" data-title="{safe_title}"><div class="slide-safe"><h1 class="slide-title">{safe_title}</h1><p class="slide-subtitle">Edit this slide directly in HTML.</p></div></section>
+<section class="oil-slide s-{slide_id}" data-slide-id="{slide_id}" data-title="{safe_title}"><div class="slide-safe"><h1 class="slide-title">{safe_title}</h1></div></section>
 {HTML_END}
 </div></div></div><script src="../runtime/deck.js"></script></body></html>
 '''
