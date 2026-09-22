@@ -1,6 +1,11 @@
 {
   "files": [
     {
+      "path": "README.md",
+      "sha256": "94cc6fde59e3d083f2861f49827d4a73d00e0c1fd80c11e50ba6256cb90739b2",
+      "size": 1533
+    },
+    {
       "path": "SKILL.md",
       "sha256": "8fc66f0f81dd7c246ac4725c964549ba9ce7d9c92deca4658e6966084439e033",
       "size": 10103
@@ -353,5 +358,5 @@
   ],
   "package_version": "1.0.0",
   "schema_version": "oil-ppt.package/v1",
-  "tree_sha256": "bd2c604ab6ea3ef1558dc25284ddb5983ca80e0b295eda6c3d7471f79213ea1a"
+  "tree_sha256": "92cc28768f450528467edb2654280ce15ebffb94858394e3f8238b77081f6eec"
 }
