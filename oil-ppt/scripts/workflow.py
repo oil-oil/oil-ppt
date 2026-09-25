@@ -6,11 +6,11 @@ from pathlib import Path
 from media_assets import scan_deck_media
 from outline import outline_digest, outline_path, read_outline
 from project import read_deck, slide_path
-from slide_html import Slide, parse_slide, style_advice
+from slide_html import parse_slide
 from state import input_manifest, read_state, write_state
 
 
-AUTHORING_RULE = "每次只完成一张真实页面。先按照 references/components.md 确定聚焦、比较、顺序、汇聚、关系、证据或数据中的主要关系，再选择 starter。必须替换全部示例文案、数值、来源和占位视觉，让 DOM/CSS 服务当前页的真实判断；完成并检查当前页后才能继续下一页。"
+AUTHORING_RULE = "按大纲逐页制作真实页面；大纲是页序参考，可随内容调整。每页先确定主画面，正文只保留观众理解它所必需的文字；内容放不下就删重复说明或拆页，不删必要事实、原因和步骤，也不缩小字号。替换 starter 的全部示例内容，完成一页再做下一页。"
 
 
 def _authoring_brief(project: Path) -> str:
@@ -33,7 +33,6 @@ def _authoring_next(project: Path, command: callable) -> dict:
 def status(project_value: Path, command: callable, *, intent: str = "continue", slide: str | None = None) -> dict:
     project, deck = read_deck(project_value)
     state = read_state(project)
-    slide_validation: tuple[tuple[dict, str] | None, list[Slide]] | None = None
     if intent == "edit":
         if slide:
             try:
@@ -48,23 +47,19 @@ def status(project_value: Path, command: callable, *, intent: str = "continue", 
         else:
             next_step = {"action": "edit_outline", "command": None, "path": str(outline_path(project)), "rerun": command("status", project, "--json")}
             phase = "editing_outline"
-    elif not state.get("outline_confirmed"):
-        if state.get("outline_seed_sha256") == outline_digest(project):
-            next_step = {
-                "action": "edit_outline",
-                "path": str(outline_path(project)),
-                "brief": "Write a concise creative reference: audience, setting, core claim, evidence, and a possible narrative. Do not prescribe a slide list.",
-                "rerun": command("status", project, "--json"),
-            }
-            phase = "edit_outline"
-        else:
-            next_step = {"action": "ask_user_to_confirm_outline", "command": None, "artifact": str(outline_path(project)), "command_on_confirm": command("confirm", project, "outline")}
-            phase = "needs_outline_confirmation"
+    elif not deck["slides"] and state.get("outline_seed_sha256") == outline_digest(project):
+        next_step = {
+            "action": "edit_outline",
+            "path": str(outline_path(project)),
+            "brief": "只写逐页大纲：每页一句话，说明这页讲什么、主要画面是什么。不要写受众分析、叙事建议、制作过程、事实核验清单或给模型看的说明；不必为了凑页数增加总结页。",
+            "rerun": command("status", project, "--json"),
+        }
+        phase = "edit_outline"
     elif not deck["slides"]:
         next_step = _authoring_next(project, command)
         phase = "author_slides"
-    elif (slide_validation := _validate_slides(project, deck, command))[0] is not None:
-        next_step, phase = slide_validation[0]
+    elif (slide_issue := _validate_slides(project, deck, command)) is not None:
+        next_step, phase = slide_issue
     elif state.get("browser_manifest") == (current_manifest := input_manifest(project)) and isinstance(state.get("browser_issues"), dict):
         report = state["browser_issues"]
         findings = [
@@ -91,6 +86,9 @@ def status(project_value: Path, command: callable, *, intent: str = "continue", 
     elif state.get("phase") == "complete" and (project / "演示文稿.html").is_file():
         next_step = {"action": "complete", "command": None}
         phase = "complete"
+    elif state.get("preview_confirmed"):
+        next_step = {"action": "run_command", "command": command("build", project)}
+        phase = "ready_to_build"
     else:
         next_step = {"action": "ask_user_to_confirm_preview", "command": None, "artifact": str(project / "预览.html"), "command_on_confirm": command("confirm", project, "preview")}
         phase = "needs_preview_confirmation"
@@ -100,11 +98,6 @@ def status(project_value: Path, command: callable, *, intent: str = "continue", 
         "project": str(project),
         "phase": phase,
         "slides": len(deck["slides"]),
-        "style_advice": style_advice(
-            project,
-            deck,
-            slides=slide_validation[1] if slide_validation is not None else None,
-        ),
         "next": next_step,
     }
 
@@ -113,29 +106,23 @@ def _validate_slides(
     project: Path,
     deck: dict,
     command: callable,
-) -> tuple[tuple[dict, str] | None, list[Slide]]:
-    slides: list[Slide] = []
-    first_issue: tuple[dict, str] | None = None
+) -> tuple[dict, str] | None:
     for relative in deck["slides"]:
         path = slide_path(project, relative)
         try:
-            slides.append(parse_slide(path, Path(relative).stem))
+            parse_slide(path, Path(relative).stem)
         except SystemExit as error:
-            if first_issue is not None:
-                continue
             message = str(error)
             action = "fix_media" if any(
                 phrase in message
                 for phrase in ("asset", "URL", "path escapes slide assets")
             ) else "edit_slide"
-            first_issue = ({
+            return ({
                 "action": action,
                 "path": str(path),
                 "issues": [message],
                 "rerun": command("status", project, "--json"),
             }, "repair_media" if action == "fix_media" else "repair_slide")
-    if first_issue is not None:
-        return first_issue, slides
     media = scan_deck_media(project, deck)
     errors = media.get("errors") or []
     if errors:
@@ -146,12 +133,8 @@ def _validate_slides(
             "path": str((project / first_file).resolve()),
             "issues": page_errors,
             "rerun": command("status", project, "--json"),
-        }, "repair_media"), slides
-    return None, slides
-
-
-def confirm_outline(project: Path) -> None:
-    write_state(project, outline_confirmed=True)
+        }, "repair_media")
+    return None
 
 
 def confirm_preview(project: Path) -> None:

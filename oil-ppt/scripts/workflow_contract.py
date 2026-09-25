@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 STATUS_NEXT_ACTIONS = frozenset({
-    "edit_outline", "ask_user_to_confirm_outline",
+    "edit_outline",
     "author_slides", "edit_slide", "fix_media", "run_command",
     "ask_user_to_confirm_preview", "complete",
 })

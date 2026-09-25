@@ -17,7 +17,7 @@ from slide_html import parse_slide, new_slide_document, style_advice
 from state import input_manifest
 from theme import DIRECTIONS, catalog as theme_catalog, validate_theme
 from workflow import AUTHORING_RULE, batch as workflow_batch
-from workflow import confirm_outline, confirm_preview, status as workflow_status
+from workflow import confirm_preview, status as workflow_status
 from workflow_contract import validate_batch_payload, validate_status_payload
 
 SCRIPTS = Path(__file__).resolve().parent
@@ -221,7 +221,7 @@ def starter_list() -> dict:
         "starters": names,
         "guidance": {name: STARTER_GUIDANCE[name] for name in names},
         "composition_families": {family: [name for name in starters if name in names] for family, starters in COMPOSITION_FAMILIES.items()},
-        "instruction": "starter 只是构图起点；先按聚焦、比较、顺序、汇聚、关系、证据或数据选择构图，再替换全部示例文案、数值、来源和占位视觉。正常 8–10 页至少混用四类构图。四个及以上等宽单元保持总览密度，不重复嵌套第二层信息。",
+        "instruction": "starter 只是构图起点；按当前内容选择画面，替换全部示例文案、数值、来源和占位视觉。相邻页面如果轮廓相同，再调整主画面或重心；不要为凑构图种类增加页面。",
     }
 
 
@@ -265,7 +265,7 @@ def parser() -> argparse.ArgumentParser:
     preview = sub.add_parser("preview", help="render a preview from current slide HTML")
     preview.add_argument("project", type=Path); preview.add_argument("--compact", action="store_true")
     confirm = sub.add_parser("confirm", help="record user confirmation of the preview")
-    confirm.add_argument("project", type=Path); confirm.add_argument("stage", choices=["outline", "preview"]); confirm.add_argument("--compact", action="store_true")
+    confirm.add_argument("project", type=Path); confirm.add_argument("stage", choices=["preview"]); confirm.add_argument("--compact", action="store_true")
     build = sub.add_parser("build", help="create 演示文稿.html without mutating slide sources")
     build.add_argument("project", type=Path); build.add_argument("--browser", action="store_true"); build.add_argument("--compact", action="store_true")
     export = sub.add_parser("export-pptx", help="export the confirmed canonical HTML as a hybrid PPTX")
@@ -309,10 +309,7 @@ def main() -> None:
         output = render_preview(args.project); emit({"ok": True, "artifact": str(output), "next": status_payload(args.project)["next"]}, compact); return
     if args.command == "confirm":
         project = require_project(args.project)
-        if args.stage == "outline":
-            confirm_outline(project); emit({"ok": True, "project": str(project), "next": status_payload(project)["next"]}, compact)
-        else:
-            confirm_preview(project); emit({"ok": True, "project": str(project), "next": {"action": "run_command", "command": cli_command("build", project)}}, compact)
+        confirm_preview(project); emit({"ok": True, "project": str(project), "next": {"action": "run_command", "command": cli_command("build", project)}}, compact)
         return
     if args.command == "build":
         output = build_project(args.project, browser=args.browser); emit({"ok": True, "artifact": str(output), "next": {"action": "complete", "command": None}}, compact); return

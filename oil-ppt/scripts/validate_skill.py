@@ -43,7 +43,6 @@ REQUIRED_FILES = {
     "assets/runtime/deck.js",
     "assets/runtime/theme.css",
     "assets/starter/deck.json",
-    "references/evolution.md",
     "references/components.md",
     "references/illustration.md",
     "references/media.md",
@@ -162,20 +161,12 @@ def validation_errors() -> list[str]:
     ):
         if contract not in runtime_text:
             errors.append(f"runtime must expose the airy visual contract: {contract}")
-    if not re.search(r"(?:4|四)\s*个及以上等宽(?:重复)?单元", components_text) or "第二层信息" not in components_text:
-        errors.append("components.md must preserve the repeated-unit load and second-layer guidance")
-    for contract in (
-        "55%–70%", "浅色比较或特征卡", "垂直居中",
-        'data-decor="dots"', "oil-main-fill", "oil-copy-center", "简短内容标签", "可选元素", "把材料写成可以看到的内容", "工具或函数名改成实际动作", "具体对象、动作、数字、文件或状态",
-    ):
+    for contract in ("可见文字取舍", "字号与文字节奏", "oil-main-fill"):
         if contract not in components_text:
-            errors.append(f"components.md must preserve the design contract: {contract}")
-    for contract in (
-        "oil-tone", "最短执行路径", "slide add <项目> <页面ID>",
-        "进入正式预览的条件", "只执行 next", "本页展示的具体对象", "内部界面标识", "[指标] 从 [数值] 变为 [数值]",
-    ):
+            errors.append(f"components.md is missing essential guidance: {contract}")
+    for contract in ("oil-tone", "大纲：只写每页做什么", "slide add <项目> <页面ID>"):
         if contract not in skill_text:
-            errors.append(f"SKILL.md must preserve the workflow contract: {contract}")
+            errors.append(f"SKILL.md is missing essential guidance: {contract}")
     process_rail = STARTERS / "process-rail.html"
     process_source = process_rail.read_text(encoding="utf-8") if process_rail.is_file() else ""
     if process_source.count('class="step"') != 4 or process_source.count('class="rail-note"') != 0:
@@ -235,8 +226,6 @@ def validation_errors() -> list[str]:
     starter_deck = ROOT / "assets" / "starter" / "deck.json"
     if starter_deck.is_file() and '"direction": "fresh-default"' not in starter_deck.read_text(encoding="utf-8"):
         errors.append("assets/starter/deck.json must declare the fresh-default direction")
-    if "24 个真实独立 starter" not in skill_text or "4 类构图" not in skill_text:
-        errors.append("SKILL.md must document the 24-starter, four-family visual workflow")
     return errors
 
 

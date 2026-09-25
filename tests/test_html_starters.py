@@ -150,6 +150,7 @@ class HtmlStarterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             output = render_starter_catalog(Path(temporary) / "catalog.html")
             source = output.read_text(encoding="utf-8")
+            self.assertNotIn("至少混用四类构图", source)
             self.assertGreaterEqual(source.count("min-height:1080px"), 7)
             self.assertEqual(source.count('class="card wide"'), 4)
             self.assertIn("catalog-media-owned-sample", source)
