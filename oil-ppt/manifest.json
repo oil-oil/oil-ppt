@@ -1,9 +1,14 @@
 {
   "files": [
     {
+      "path": "README.md",
+      "sha256": "231914129dd799dae02cb1a27d8c1e3191a5f162bfdf902aceda1121c2bbf58a",
+      "size": 1725
+    },
+    {
       "path": "SKILL.md",
-      "sha256": "9fbf362bc0f57cf472fad8a3afea86149c990086b16f83ede53703bbb5cc494a",
-      "size": 5547
+      "sha256": "5c7d9b94384793700c2aaaebf2c8a8d4595858dc81173ec2b751515033d48f87",
+      "size": 6489
     },
     {
       "path": "agents/openai.yaml",
@@ -222,13 +227,13 @@
     },
     {
       "path": "references/illustration.md",
-      "sha256": "475fbae80d5b600ce0d3e917105ca49dabdf3b1e6a8bdaa1fd727acc47be06a4",
-      "size": 3567
+      "sha256": "86ece4ad64120a360e9eb71cab54a50b0455f1dfa52e41b10d53268b745dffaf",
+      "size": 5370
     },
     {
       "path": "references/media.md",
-      "sha256": "e139d212064b12e64b17e4b5eb732628dab4f531f0f22237dd0c102d51da3e1b",
-      "size": 2060
+      "sha256": "f4e44e8e8ac7c03eac14a8269c9abf88cc4129c6efccde3363d005be44bb3f6d",
+      "size": 4209
     },
     {
       "path": "references/programmatic-visuals.md",
@@ -348,5 +353,5 @@
   ],
   "package_version": "1.0.0",
   "schema_version": "oil-ppt.package/v1",
-  "tree_sha256": "21922bbef87520628b1cfc03ed87376761caa8250252d361175a62c16697ecdd"
+  "tree_sha256": "12ede5b7e0d4aad78065a957860ec60e179d68e7acf4765088b01f56140c3997"
 }
