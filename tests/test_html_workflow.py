@@ -38,11 +38,8 @@ class HtmlWorkflowTests(unittest.TestCase):
         self.assertEqual(oil_ppt.status_payload(self.project)["next"]["action"], "edit_outline")
         self.assertTrue((self.project / "assets" / "icons" / "arrow-right.svg").is_file())
 
-    def test_confirmed_outline_is_a_non_binding_reference(self) -> None:
-        from workflow import confirm_outline
+    def test_written_outline_is_a_non_binding_reference(self) -> None:
         (self.project / "outline.md").write_text("# HTML deck\n\nAudience and core claim.\n", encoding="utf-8")
-        self.assertEqual(oil_ppt.status_payload(self.project)["next"]["action"], "ask_user_to_confirm_outline")
-        confirm_outline(self.project)
         self.assertEqual(oil_ppt.status_payload(self.project)["next"]["action"], "author_slides")
         self.assertNotIn("outline.md", __import__("state").input_manifest(self.project))
 
@@ -56,6 +53,14 @@ class HtmlWorkflowTests(unittest.TestCase):
         oil_ppt.slide_remove(self.project, "problem")
         self.assertFalse((self.project / "slides" / "problem.html").exists())
 
+    def test_slide_mutation_refreshes_package_runtime(self) -> None:
+        runtime_js = self.project / "runtime" / "deck.js"
+        runtime_js.write_text("// old runtime sentinel\n", encoding="utf-8")
+
+        oil_ppt.slide_add(self.project, "cover", "Cover", None, None)
+
+        self.assertEqual(runtime_js.read_bytes(), (RUNTIME_SOURCE / "deck.js").read_bytes())
+
     def test_starter_lookup_stays_inside_the_starter_directory(self) -> None:
         with self.assertRaisesRegex(SystemExit, "Starter name"):
             oil_ppt.starter_show("../slides/secret")
@@ -68,6 +73,7 @@ class HtmlWorkflowTests(unittest.TestCase):
         self.assertTrue(preview.is_file())
         self.assertEqual(before, hashlib.sha256(source.read_bytes()).hexdigest())
         confirm_preview(self.project)
+        self.assertEqual(oil_ppt.status_payload(self.project)["next"]["action"], "run_command")
         output = build_project(self.project)
         self.assertTrue(output.is_file())
         self.assertEqual(before, hashlib.sha256(source.read_bytes()).hexdigest())
@@ -80,7 +86,7 @@ class HtmlWorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "stale"):
             confirm_preview(self.project)
 
-    def test_read_deck_refreshes_only_package_owned_runtime_and_invalidates_preview(self) -> None:
+    def test_status_and_checks_are_read_only_until_preview_refreshes_runtime(self) -> None:
         oil_ppt.slide_add(self.project, "cover", "Cover", "statement", None)
         source = self.project / "slides" / "cover.html"
         theme = self.project / "runtime" / "theme.css"
@@ -94,13 +100,19 @@ class HtmlWorkflowTests(unittest.TestCase):
         (runtime / "deck.js").write_text("// old runtime sentinel\n", encoding="utf-8")
         (runtime / "deck.css").write_text("/* old runtime sentinel */\n", encoding="utf-8")
         state = __import__("state")
-        old_manifest = state.input_manifest(self.project)
-        state.write_state(self.project, preview_manifest=old_manifest, preview_confirmed=True, phase="complete")
+        stale_manifest = state.input_manifest(self.project)
+        state_bytes = state.state_path(self.project).read_bytes()
+        runtime_bytes = {name: (runtime / name).read_bytes() for name in ("deck.js", "deck.css")}
+        runtime_mtime = {name: (runtime / name).stat().st_mtime_ns for name in runtime_bytes}
 
         project, _ = oil_ppt.read_deck(self.project)
+        oil_ppt.status_payload(project)
+        oil_ppt.slide_check(project)
+        __import__("workflow").batch([project], oil_ppt.cli_command)
 
-        self.assertEqual((runtime / "deck.js").read_bytes(), (RUNTIME_SOURCE / "deck.js").read_bytes())
-        self.assertEqual((runtime / "deck.css").read_bytes(), (RUNTIME_SOURCE / "deck.css").read_bytes())
+        self.assertEqual({name: (runtime / name).read_bytes() for name in runtime_bytes}, runtime_bytes)
+        self.assertEqual({name: (runtime / name).stat().st_mtime_ns for name in runtime_mtime}, runtime_mtime)
+        self.assertEqual(state.state_path(project).read_bytes(), state_bytes)
         self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(), source_hash)
         self.assertEqual(theme.read_bytes(), theme_bytes)
         self.assertEqual(icon.read_bytes(), icon_bytes)
@@ -108,18 +120,20 @@ class HtmlWorkflowTests(unittest.TestCase):
         self.assertIn("@renderer/project.py", manifest)
         self.assertIn("@runtime-source/deck.css", manifest)
         self.assertIn("@runtime-source/deck.js", manifest)
-        self.assertNotEqual(manifest, old_manifest)
+        self.assertEqual(manifest, stale_manifest)
         with self.assertRaisesRegex(SystemExit, "stale"):
             confirm_preview(project)
         with self.assertRaisesRegex(SystemExit, "stale"):
             build_project(project)
         refreshed_preview = render_preview(project).read_text(encoding="utf-8")
+        self.assertEqual((runtime / "deck.js").read_bytes(), (RUNTIME_SOURCE / "deck.js").read_bytes())
+        self.assertEqual((runtime / "deck.css").read_bytes(), (RUNTIME_SOURCE / "deck.css").read_bytes())
+        self.assertNotEqual(state.input_manifest(project), stale_manifest)
+        self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(), source_hash)
+        self.assertEqual(theme.read_bytes(), theme_bytes)
+        self.assertEqual(icon.read_bytes(), icon_bytes)
         self.assertIn("deck-overview-toggle", refreshed_preview)
         self.assertIn("restoreSlides", refreshed_preview)
-
-        before_mtime = {name: (runtime / name).stat().st_mtime_ns for name in ("deck.js", "deck.css")}
-        oil_ppt.read_deck(project)
-        self.assertEqual(before_mtime, {name: (runtime / name).stat().st_mtime_ns for name in before_mtime})
 
     @unittest.skipUnless(hasattr(os, "symlink"), "symlinks are required for runtime ownership coverage")
     def test_read_deck_rejects_runtime_directory_symlink_without_touching_external_files(self) -> None:
@@ -176,7 +190,7 @@ class HtmlWorkflowTests(unittest.TestCase):
         for needle, replacement, expected in (
             (".s-cover .slide-title", "body .slide-title", "leaks outside"),
             ("</body>", "<script>alert(1)</script></body>", "only the ../runtime/deck.js"),
-            ("Edit this slide directly in HTML.", '<img src="https://example.test/image.png">', "remote or file URL"),
+            ("</h1>", '</h1><img src="https://example.test/image.png">', "remote or file URL"),
         ):
             original = source.read_text(encoding="utf-8")
             source.write_text(original.replace(needle, replacement, 1), encoding="utf-8")
@@ -202,8 +216,8 @@ class HtmlWorkflowTests(unittest.TestCase):
         source = self.project / "slides" / "cover.html"
         source.write_text(
             source.read_text(encoding="utf-8").replace(
-                "Edit this slide directly in HTML.",
-                '<code>background:url("https://example.test/demo.png")</code>',
+                "</h1>",
+                '</h1><code>background:url("https://example.test/demo.png")</code>',
             ),
             encoding="utf-8",
         )
@@ -226,8 +240,6 @@ class HtmlWorkflowTests(unittest.TestCase):
         self.assertEqual(scan_slide_media(self.project, source)["errors"], [])
 
     def test_status_points_to_the_single_page_that_needs_repair(self) -> None:
-        from workflow import confirm_outline
-        confirm_outline(self.project)
         oil_ppt.slide_add(self.project, "cover", "Cover", None, None)
         source = self.project / "slides" / "cover.html"
         original = source.read_text(encoding="utf-8")
@@ -235,7 +247,7 @@ class HtmlWorkflowTests(unittest.TestCase):
         next_step = oil_ppt.status_payload(self.project)["next"]
         self.assertEqual(next_step["action"], "edit_slide")
         self.assertEqual(Path(next_step["path"]), source)
-        source.write_text(original.replace("Edit this slide directly in HTML.", '<img src="../assets/missing.png" alt="Missing">'), encoding="utf-8")
+        source.write_text(original.replace("</h1>", '</h1><img src="../assets/missing.png" alt="Missing">'), encoding="utf-8")
         next_step = oil_ppt.status_payload(self.project)["next"]
         self.assertEqual(next_step["action"], "fix_media")
         self.assertEqual(Path(next_step["path"]), source)
@@ -269,8 +281,6 @@ class HtmlWorkflowTests(unittest.TestCase):
         parse_slide(self.project / "slides" / "1copy.html", "1copy")
 
     def test_theme_is_metadata_only_and_reaches_generated_outputs(self) -> None:
-        from workflow import confirm_outline
-        confirm_outline(self.project)
         oil_ppt.slide_add(self.project, "cover", "Cover", None, None)
         project, deck = oil_ppt.read_deck(self.project)
         deck["theme"] = {"palette": "ink-slate", "typography": "technical", "shape": "crisp"}
@@ -295,8 +305,8 @@ class HtmlWorkflowTests(unittest.TestCase):
         source = self.project / "slides" / "cover.html"
         text = source.read_text(encoding="utf-8")
         text = text.replace(
-            ".s-cover .slide-subtitle {",
-            '.s-cover .media-proof { background-image: url("../assets/pixel.png"); }\n.s-cover .slide-subtitle {',
+            ".s-cover .slide-title {",
+            '.s-cover .media-proof { background-image: url("../assets/pixel.png"); }\n.s-cover .slide-title {',
         ).replace(
             "</div></section>",
             '<picture class="media-proof"><source srcset="../assets/pixel.png 1x"><img src="../assets/pixel.png" alt="One verification pixel"></picture></div></section>',
@@ -316,8 +326,8 @@ class HtmlWorkflowTests(unittest.TestCase):
         oil_ppt.slide_add(self.project, "cover", "Cover", None, None)
         source = self.project / "slides" / "cover.html"
         text = source.read_text(encoding="utf-8").replace(
-            "Edit this slide directly in HTML.",
-            "Use <code>../assets/example.png</code> in your page.",
+            "</h1>",
+            '</h1><p style="font-size:28px">Use <code>../assets/example.png</code> in your page.</p>',
         )
         source.write_text(text, encoding="utf-8")
         preview = render_preview(self.project).read_text(encoding="utf-8")
@@ -328,7 +338,7 @@ class HtmlWorkflowTests(unittest.TestCase):
         source = self.project / "slides" / "cover.html"
         example = '&lt;img src="../assets/example.png" alt="Example"&gt;'
         source.write_text(
-            source.read_text(encoding="utf-8").replace("Edit this slide directly in HTML.", f"<code>{example}</code>"),
+            source.read_text(encoding="utf-8").replace("</h1>", f'</h1><code style="font-size:24px">{example}</code>'),
             encoding="utf-8",
         )
         preview = render_preview(self.project)

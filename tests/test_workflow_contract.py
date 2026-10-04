@@ -14,7 +14,7 @@ CLI = SCRIPTS / "oil-ppt"
 sys.path.insert(0, str(SCRIPTS))
 
 from project import discover_projects, init_project  # noqa: E402
-from workflow import batch  # noqa: E402
+from workflow import batch, status  # noqa: E402
 from workflow_contract import (  # noqa: E402
     BATCH_NEXT_ACTIONS,
     STATUS_NEXT_ACTIONS,
@@ -24,12 +24,23 @@ from workflow_contract import (  # noqa: E402
 
 
 class WorkflowContractTests(unittest.TestCase):
+    def test_new_outline_requests_pages_instead_of_creative_notes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = init_project(Path(directory) / "deck", "演示")
+            next_step = status(project, lambda *parts: " ".join(map(str, parts)))["next"]
+            self.assertEqual(next_step["action"], "edit_outline")
+            self.assertIn("每页一句话", next_step["brief"])
+            self.assertIn("主要画面", next_step["brief"])
+            self.assertNotIn("audience", next_step["brief"])
+            (project / "outline.md").write_text("# 演示\n\n1. 封面：展示标题。\n", encoding="utf-8")
+            self.assertEqual(status(project, lambda *parts: " ".join(map(str, parts)))["next"]["action"], "author_slides")
+
     def test_action_vocabulary_is_closed(self) -> None:
         self.assertEqual(BATCH_NEXT_ACTIONS, STATUS_NEXT_ACTIONS)
         self.assertEqual(
             STATUS_NEXT_ACTIONS,
             {
-                "edit_outline", "ask_user_to_confirm_outline",
+                "edit_outline",
                 "author_slides", "edit_slide", "fix_media", "run_command",
                 "ask_user_to_confirm_preview", "complete",
             },

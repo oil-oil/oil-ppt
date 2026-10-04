@@ -51,9 +51,9 @@ class VisualCatalogAndOverviewTests(unittest.TestCase):
             contents = output.read_text(encoding="utf-8")
             self.assertEqual(len(starters), 24)
             self.assertEqual(contents.count("assets/starters/"), 24)
-            self.assertIn("Generic .oil-* primitives", contents)
+            self.assertIn("通用 .oil-* 组件", contents)
             self.assertIn("oil-panel", contents)
-            self.assertIn("Composition families", contents)
+            self.assertIn("构图家族", contents)
             self.assertIn("oil-relationship", contents)
             for sample in ("grid-fade", "grid-wide", "soft-spotlight", "block-field", "media-owned", "grid-full", "plain", "DOTS", "RING", "TRIANGLE", "SLASH", "NATURAL", "MUTED", "MONO", "CENTER", "INPUT"):
                 self.assertIn(sample, contents)

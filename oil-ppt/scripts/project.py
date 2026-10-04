@@ -45,16 +45,24 @@ def require_project(value: Path) -> Path:
     return project
 
 
-def sync_project_runtime(project: Path) -> None:
-    """Refresh only package-owned runtime files without touching authored content."""
+def validate_project_runtime(project: Path) -> Path:
+    """Check runtime ownership without changing the project."""
     runtime = project / "runtime"
     if runtime.is_symlink() or not runtime.is_dir():
         raise SystemExit(f"Project runtime directory must be a real directory, not a symlink: {runtime}")
     for name in ("deck.css", "deck.js"):
-        source = RUNTIME_SOURCE / name
         destination = runtime / name
         if destination.is_symlink():
             raise SystemExit(f"Project runtime file must not be a symlink: {destination}")
+    return runtime
+
+
+def sync_project_runtime(project: Path) -> None:
+    """Refresh only package-owned runtime files without touching authored content."""
+    runtime = validate_project_runtime(project)
+    for name in ("deck.css", "deck.js"):
+        source = RUNTIME_SOURCE / name
+        destination = runtime / name
         if not source.is_file():
             raise SystemExit(f"Package runtime file is missing: {source}")
         expected = source.read_bytes()
@@ -178,14 +186,13 @@ def init_project(target: Path, title: str | None = None) -> Path:
         project,
         phase="edit_outline",
         outline_seed_sha256=hashlib.sha256(outline.read_bytes()).hexdigest(),
-        outline_confirmed=False,
     )
     return project
 
 
 def read_deck(project_value: Path) -> tuple[Path, dict]:
     project = require_project(project_value)
-    sync_project_runtime(project)
+    validate_project_runtime(project)
     try:
         deck = json.loads(deck_path(project).read_text(encoding="utf-8"))
     except json.JSONDecodeError as error:
@@ -197,6 +204,7 @@ def read_deck(project_value: Path) -> tuple[Path, dict]:
 
 def save_deck(project: Path, deck: dict) -> None:
     deck = validate_deck(deck)
+    sync_project_runtime(project)
     previous: dict | None = None
     try:
         previous = validate_deck(json.loads(deck_path(project).read_text(encoding="utf-8")))

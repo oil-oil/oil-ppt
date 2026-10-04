@@ -9,7 +9,7 @@ from pathlib import Path
 from media_assets import verify_deck_media
 from cdp_validate import validate_file
 from html_urls import rewrite_css_urls, rewrite_html_urls
-from project import deck_chrome, read_deck, slide_path
+from project import deck_chrome, read_deck, slide_path, sync_project_runtime
 from slide_html import parse_slide
 from state import input_manifest, write_state
 from theme import project_theme_css
@@ -20,6 +20,7 @@ def _preview_url(value: str) -> str:
 
 def render_preview(project_value: Path, output: Path | None = None) -> Path:
     project, deck = read_deck(project_value)
+    sync_project_runtime(project)
     verify_deck_media(project, deck)
     slides = [parse_slide(slide_path(project, relative), Path(relative).stem) for relative in deck["slides"]]
     if not slides:

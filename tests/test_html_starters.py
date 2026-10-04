@@ -104,11 +104,11 @@ class HtmlStarterTests(unittest.TestCase):
         ):
             self.assertIn(contract, css)
 
-    def test_process_rail_models_one_shared_second_layer(self) -> None:
+    def test_process_rail_keeps_secondary_copy_optional(self) -> None:
         source = self.starter_text("process-rail")
         self.assertEqual(source.count('class="step"'), 4)
-        self.assertEqual(source.count('class="rail-note"'), 1)
-        self.assertIn("补充信息只出现一次", source)
+        self.assertEqual(source.count('class="rail-note"'), 0)
+        self.assertNotIn("补充信息只出现一次", source)
         self.assertNotIn('class="guard"', source)
 
     def test_relationship_map_centers_the_core_with_grid_and_svg_connectors(self) -> None:
@@ -150,6 +150,7 @@ class HtmlStarterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             output = render_starter_catalog(Path(temporary) / "catalog.html")
             source = output.read_text(encoding="utf-8")
+            self.assertNotIn("至少混用四类构图", source)
             self.assertGreaterEqual(source.count("min-height:1080px"), 7)
             self.assertEqual(source.count('class="card wide"'), 4)
             self.assertIn("catalog-media-owned-sample", source)

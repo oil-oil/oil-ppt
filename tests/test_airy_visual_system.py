@@ -14,7 +14,6 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import oil_ppt  # noqa: E402
 from project import init_project, read_deck  # noqa: E402
 from theme import DIRECTIONS, theme_css, validate_theme  # noqa: E402
-from workflow import confirm_outline  # noqa: E402
 
 
 class AiryVisualSystemTests(unittest.TestCase):
@@ -60,7 +59,6 @@ class AiryVisualSystemTests(unittest.TestCase):
     def test_advice_is_optional_and_cannot_change_status_next(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             project = init_project(Path(directory) / "deck", "Advice")
-            confirm_outline(project)
             oil_ppt.slide_add(project, "one", "One", "feature-grid", None)
             path = project / "slides" / "one.html"
             path.write_text(path.read_text(encoding="utf-8").replace(
@@ -69,13 +67,13 @@ class AiryVisualSystemTests(unittest.TestCase):
             ), encoding="utf-8")
             status = oil_ppt.status_payload(project)
             self.assertEqual(status["next"]["action"], "author_slides")
-            self.assertTrue(status["style_advice"])
-            self.assertNotIn("style_advice", status["next"])
-            self.assertEqual(oil_ppt.slide_check(project)["style_advice"], status["style_advice"])
+            self.assertNotIn("style_advice", status)
+            self.assertTrue(oil_ppt.slide_check(project)["style_advice"])
 
     def test_twenty_four_starters_have_guidance_families_and_copy_without_rewrite(self) -> None:
         listing = oil_ppt.starter_list()
         self.assertEqual(len(listing["starters"]), 24)
+        self.assertNotIn("至少混用四类构图", listing["instruction"])
         self.assertEqual(set(listing["starters"]), set(listing["guidance"]))
         self.assertGreaterEqual(len(listing["composition_families"]), 4)
         self.assertEqual(set().union(*map(set, listing["composition_families"].values())), set(listing["starters"]))
@@ -84,7 +82,6 @@ class AiryVisualSystemTests(unittest.TestCase):
             for index, name in enumerate(listing["starters"], 1):
                 oil_ppt.slide_add(project, f"s{index}", name, name, None)
             self.assertEqual(len(oil_ppt.slide_check(project)["slides"]), 24)
-            confirm_outline(project)
 
     def test_four_up_rails_with_repeated_second_layers_receive_advice(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -103,7 +100,6 @@ class AiryVisualSystemTests(unittest.TestCase):
     def test_three_decorated_surfaces_receive_nonblocking_advice(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             project = init_project(Path(directory) / "deck", "Decor advice")
-            confirm_outline(project)
             oil_ppt.slide_add(project, "one", "One", "statement", None)
             path = project / "slides" / "one.html"
             text = path.read_text(encoding="utf-8").replace(
@@ -119,7 +115,6 @@ class AiryVisualSystemTests(unittest.TestCase):
     def test_mixed_surface_craft_is_advice_not_a_workflow_gate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             project = init_project(Path(directory) / "deck", "Mixed craft")
-            confirm_outline(project)
             oil_ppt.slide_add(project, "one", "One", "statement", None)
             path = project / "slides" / "one.html"
             path.write_text(path.read_text(encoding="utf-8").replace('<div class="slide-safe">', '<div class="slide-safe"><div class="oil-surface" data-decor="dots" data-motif="ring"></div>', 1), encoding="utf-8")
@@ -148,10 +143,10 @@ class AiryVisualSystemTests(unittest.TestCase):
             self.assertIn("repeated-card-silhouette", rules)
             self.assertIn("nested-dark-surfaces", rules)
 
-    def test_annotated_showcase_keeps_visible_example_copy_in_dom(self) -> None:
+    def test_annotated_showcase_keeps_placeholder_in_dom(self) -> None:
         starter = (ROOT / "assets" / "starters" / "annotated-showcase.html").read_text(encoding="utf-8")
-        self.assertIn('<span class="artifact-label">关键证据或界面</span>', starter)
-        self.assertNotIn('content:"关键证据或界面"', starter)
+        self.assertIn('<span class="artifact-label">【真实截图或证据】</span>', starter)
+        self.assertNotIn('content:"【真实截图或证据】"', starter)
 
     def test_sequence_numbers_are_real_microcopy_text(self) -> None:
         starter = (ROOT / "assets" / "starters" / "sequence.html").read_text(encoding="utf-8")
@@ -165,11 +160,11 @@ class AiryVisualSystemTests(unittest.TestCase):
             oil_ppt.slide_add(project, "one", "One", "statement", None)
             path = project / "slides" / "one.html"
             original = path.read_text(encoding="utf-8")
-            broken = original.replace("一句清晰、可被记住的主张。", r"first\nsecond\nthird")
+            broken = original.replace("</h1>", r"</h1><p>first\nsecond\nthird</p>")
             path.write_text(broken, encoding="utf-8")
             with self.assertRaisesRegex(SystemExit, "literal escape sequences"):
                 oil_ppt.slide_check(project)
-            path.write_text(original.replace("一句清晰、可被记住的主张。", r'<code data-literal-escape="true">first\nsecond\nthird</code>'), encoding="utf-8")
+            path.write_text(original.replace("</h1>", r'</h1><code data-literal-escape="true">first\nsecond\nthird</code>'), encoding="utf-8")
             self.assertEqual(oil_ppt.slide_check(project)["checked"], 1)
 
 
